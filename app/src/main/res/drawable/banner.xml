@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android TV launcher banner, 320x180: "JDVR" on ink with a red recording dot. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="320dp" android:height="180dp"
+    android:viewportWidth="320" android:viewportHeight="180">
+    <path android:fillColor="#0D1117" android:pathData="M0,0h320v180h-320z" />
+    <path android:fillColor="#E5484D" android:pathData="M64,90m-22,0a22,22 0,1 1,44 0a22,22 0,1 1,-44 0" />
+    <path android:fillColor="#00000000" android:strokeColor="#3BA3FF" android:strokeWidth="6"
+        android:pathData="M64,90m-34,0a34,34 0,1 1,68 0a34,34 0,1 1,-68 0" />
+    <!-- J -->
+    <path android:fillColor="#E6EAF0" android:pathData="M126,60h12v44c0,10 -7,16 -17,16h-7v-11h6c4,0 6,-2 6,-6z" />
+    <!-- D -->
+    <path android:fillColor="#E6EAF0" android:pathData="M146,60h18c17,0 26,11 26,30s-9,30 -26,30h-18zM158,71v38h5c9,0 14,-6 14,-19s-5,-19 -14,-19z" />
+    <!-- V -->
+    <path android:fillColor="#E6EAF0" android:pathData="M194,60h13l11,43l11,-43h13l-18,60h-12z" />
+    <!-- R -->
+    <path android:fillColor="#E6EAF0" android:pathData="M247,60h21c13,0 20,7 20,18c0,8 -4,13 -10,16l12,26h-14l-10,-24h-7v24h-12zM259,71v15h8c5,0 8,-3 8,-8s-3,-7 -8,-7z" />
+</vector>

@@ -1,0 +1,470 @@
+package com.mackandall.jdvr.ui
+
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.tv.material3.Border
+import androidx.tv.material3.ClickableSurfaceDefaults
+import androidx.tv.material3.Surface
+import androidx.tv.material3.Text
+import coil3.compose.AsyncImage
+import com.mackandall.jdvr.data.Channel
+import com.mackandall.jdvr.data.Jdvr
+import com.mackandall.jdvr.data.LiveTvRepository
+import com.mackandall.jdvr.data.Program
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import timber.log.Timber
+import java.time.Duration
+import java.time.LocalDateTime
+import java.time.temporal.ChronoUnit
+import java.util.UUID
+
+private const val WINDOW_MINUTES = 120L
+private const val STEP_MINUTES = 30L
+private val ChannelColumn = 150.dp
+private val RowHeight = 62.dp
+
+private fun floorToHalfHour(t: LocalDateTime): LocalDateTime = t.truncatedTo(ChronoUnit.HOURS).plusMinutes(if (t.minute >= 30) 30 else 0)
+
+/**
+ * The guide: channels down, a 2-hour window of programmes across. Right past the end of a row moves
+ * the window 30 minutes later (left moves it back, not before now); select a programme for its
+ * panel (watch, record, record series, record this instead, Recording Favourite).
+ */
+@Composable
+fun GuideScreen(onPlay: (UUID) -> Unit) {
+    var channels by remember { mutableStateOf<List<Channel>?>(null) }
+    var windowStart by remember { mutableStateOf(floorToHalfHour(LocalDateTime.now())) }
+    var programs by remember { mutableStateOf<Map<UUID, List<Program>>>(emptyMap()) }
+    var reload by remember { mutableIntStateOf(0) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var selected by remember { mutableStateOf<Program?>(null) }
+    // After the window moves: which channel and moment should take focus.
+    var pendingFocus by remember { mutableStateOf<Pair<UUID, LocalDateTime>?>(null) }
+    val symbols = rememberMarkSymbols()
+
+    LaunchedEffect(Unit) {
+        try {
+            channels = Jdvr.liveTv.channels()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Timber.w(e, "Loading channels failed")
+            error = "Couldn't load channels: ${e.message}"
+        }
+    }
+
+    LaunchedEffect(channels, windowStart, reload) {
+        val list = channels ?: return@LaunchedEffect
+        try {
+            programs =
+                Jdvr.liveTv
+                    .programs(list.map { it.id }, windowStart, windowStart.plusMinutes(WINDOW_MINUTES))
+                    .groupBy { it.channelId }
+            error = null
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Timber.w(e, "Loading programmes failed")
+            error = "Couldn't load the guide: ${e.message}"
+        }
+    }
+
+    // Keep "now" honest: refresh dots and the window's start every couple of minutes.
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(120_000)
+            val floor = floorToHalfHour(LocalDateTime.now())
+            if (windowStart.isBefore(floor)) windowStart = floor
+            reload++
+        }
+    }
+
+    fun shift(
+        minutes: Long,
+        channelId: UUID,
+    ) {
+        val floor = floorToHalfHour(LocalDateTime.now())
+        val next = windowStart.plusMinutes(minutes).let { if (it.isBefore(floor)) floor else it }
+        if (next == windowStart) return
+        windowStart = next
+        pendingFocus = channelId to (if (minutes > 0) next.plusMinutes(WINDOW_MINUTES - STEP_MINUTES) else next)
+    }
+
+    Box(Modifier.fillMaxSize()) {
+        Column(Modifier.fillMaxSize().padding(start = 20.dp, top = 20.dp)) {
+            Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                Text("Guide", color = Jc.Text, fontSize = 28.sp, fontWeight = FontWeight.SemiBold)
+                Text(windowStart.day(), color = Jc.Muted, fontSize = 16.sp, modifier = Modifier.padding(bottom = 4.dp))
+                error?.let { Text(it, color = Jc.Amber, fontSize = 14.sp, modifier = Modifier.padding(bottom = 4.dp)) }
+            }
+            val list = channels
+            if (list == null) {
+                Spacer(12)
+                Text("Loading the guide…", color = Jc.Muted, fontSize = 16.sp)
+                return@Column
+            }
+            androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize()) {
+                val gridWidth = maxWidth - ChannelColumn - 20.dp
+                val perMinute = gridWidth / WINDOW_MINUTES.toFloat()
+                Column {
+                    TimeRuler(windowStart, perMinute)
+                    Box {
+                        LazyColumn(contentPadding = PaddingValues(bottom = 40.dp)) {
+                            items(list, key = { it.id }) { ch ->
+                                GuideRow(
+                                    channel = ch,
+                                    programs = programs[ch.id].orEmpty(),
+                                    windowStart = windowStart,
+                                    perMinute = perMinute,
+                                    gridWidth = gridWidth,
+                                    symbols = symbols,
+                                    pendingFocus = pendingFocus?.takeIf { it.first == ch.id }?.second,
+                                    onFocusTaken = { pendingFocus = null },
+                                    onSelect = { selected = it },
+                                    onShift = { minutes -> shift(minutes, ch.id) },
+                                )
+                            }
+                        }
+                        NowLine(windowStart, perMinute)
+                    }
+                }
+            }
+        }
+        selected?.let { p ->
+            BackHandler { selected = null }
+            ProgramPanel(
+                program = p,
+                channel = channels?.firstOrNull { it.id == p.channelId },
+                symbols = symbols,
+                onWatch = {
+                    selected = null
+                    onPlay(p.channelId)
+                },
+                onChanged = { reload++ },
+                onClose = { selected = null },
+                modifier = Modifier.align(Alignment.CenterEnd),
+            )
+        }
+    }
+}
+
+@Composable
+private fun TimeRuler(
+    windowStart: LocalDateTime,
+    perMinute: Dp,
+) {
+    Box(Modifier.fillMaxWidth().height(30.dp)) {
+        var t = windowStart
+        while (t.isBefore(windowStart.plusMinutes(WINDOW_MINUTES))) {
+            val x = ChannelColumn + perMinute * Duration.between(windowStart, t).toMinutes().toFloat()
+            Text(t.time(), color = Jc.Muted, fontSize = 14.sp, modifier = Modifier.offset(x = x + 6.dp))
+            t = t.plusMinutes(STEP_MINUTES)
+        }
+    }
+}
+
+@Composable
+private fun NowLine(
+    windowStart: LocalDateTime,
+    perMinute: Dp,
+) {
+    val minutes = Duration.between(windowStart, LocalDateTime.now()).toMinutes()
+    if (minutes < 0 || minutes > WINDOW_MINUTES) return
+    Box(
+        Modifier
+            .offset(x = ChannelColumn + perMinute * minutes.toFloat())
+            .width(2.dp)
+            .fillMaxHeight()
+            .background(Jc.Focus.copy(alpha = 0.7f)),
+    )
+}
+
+@Composable
+private fun GuideRow(
+    channel: Channel,
+    programs: List<Program>,
+    windowStart: LocalDateTime,
+    perMinute: Dp,
+    gridWidth: Dp,
+    symbols: LiveTvRepository.MarkSymbols?,
+    pendingFocus: LocalDateTime?,
+    onFocusTaken: () -> Unit,
+    onSelect: (Program) -> Unit,
+    onShift: (Long) -> Unit,
+) {
+    val windowEnd = windowStart.plusMinutes(WINDOW_MINUTES)
+    val visible = programs.filter { it.end.isAfter(windowStart) && it.start.isBefore(windowEnd) }.sortedBy { it.start }
+    Row(Modifier.height(RowHeight).fillMaxWidth().padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.width(ChannelColumn).fillMaxHeight(), verticalAlignment = Alignment.CenterVertically) {
+            Text(channel.number, color = Jc.Text, fontSize = 15.sp, fontWeight = FontWeight.Bold, modifier = Modifier.width(48.dp))
+            if (channel.logoUrl != null) {
+                AsyncImage(model = channel.logoUrl, contentDescription = channel.name, modifier = Modifier.height(34.dp).width(84.dp))
+            } else {
+                Text(channel.name, color = Jc.Muted, fontSize = 12.sp, maxLines = 2, modifier = Modifier.width(90.dp))
+            }
+        }
+        if (visible.isEmpty()) {
+            Box(Modifier.width(gridWidth).fillMaxHeight().background(Jc.Panel, RoundedCornerShape(8.dp)), contentAlignment = Alignment.CenterStart) {
+                Text("No guide data", color = Jc.Muted, fontSize = 14.sp, modifier = Modifier.padding(start = 12.dp))
+            }
+            return@Row
+        }
+        visible.forEachIndexed { i, p ->
+            val from = if (p.start.isBefore(windowStart)) windowStart else p.start
+            val to = if (p.end.isAfter(windowEnd)) windowEnd else p.end
+            val width = perMinute * Duration.between(from, to).toMinutes().toFloat()
+            // A gap before the first programme (missing guide data).
+            if (i == 0 && from.isAfter(windowStart)) {
+                androidx.compose.foundation.layout.Spacer(Modifier.width(perMinute * Duration.between(windowStart, from).toMinutes().toFloat()))
+            }
+            val wantFocus = pendingFocus != null && !p.start.isAfter(pendingFocus) && p.end.isAfter(pendingFocus)
+            ProgramCell(
+                program = p,
+                width = width,
+                symbols = symbols,
+                requestFocus = wantFocus,
+                onFocusTaken = onFocusTaken,
+                onClick = { onSelect(p) },
+                onEdgeRight = if (i == visible.lastIndex) ({ onShift(STEP_MINUTES) }) else null,
+                onEdgeLeft = if (i == 0) ({ onShift(-STEP_MINUTES) }) else null,
+            )
+        }
+    }
+}
+
+@Composable
+private fun ProgramCell(
+    program: Program,
+    width: Dp,
+    symbols: LiveTvRepository.MarkSymbols?,
+    requestFocus: Boolean,
+    onFocusTaken: () -> Unit,
+    onClick: () -> Unit,
+    onEdgeRight: (() -> Unit)?,
+    onEdgeLeft: (() -> Unit)?,
+) {
+    val focus = remember { FocusRequester() }
+    LaunchedEffect(requestFocus) {
+        if (requestFocus) {
+            runCatching { focus.requestFocus() }
+            onFocusTaken()
+        }
+    }
+    val marks = Marks.parse(program.rawEpisodeTitle, symbols)
+    Surface(
+        onClick = onClick,
+        modifier =
+            Modifier
+                .width((width - 4.dp).coerceAtLeast(8.dp))
+                .padding(end = 4.dp)
+                .fillMaxHeight()
+                .focusRequester(focus)
+                .onPreviewKeyEvent { e ->
+                    if (e.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                    when {
+                        e.key == Key.DirectionRight && onEdgeRight != null -> {
+                            onEdgeRight()
+                            true
+                        }
+                        e.key == Key.DirectionLeft && onEdgeLeft != null -> {
+                            onEdgeLeft()
+                            true
+                        }
+                        else -> false
+                    }
+                },
+        shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(8.dp)),
+        colors =
+            ClickableSurfaceDefaults.colors(
+                containerColor = if (program.isRecording) Jc.Recording.copy(alpha = 0.14f) else Jc.Panel,
+                focusedContainerColor = Jc.FocusFill,
+                contentColor = Jc.Text,
+                focusedContentColor = Jc.Text,
+            ),
+        border = ClickableSurfaceDefaults.border(focusedBorder = Border(BorderStroke(2.dp, Jc.Focus))),
+        scale = ClickableSurfaceDefaults.scale(focusedScale = 1f),
+    ) {
+        Column(Modifier.fillMaxSize().padding(horizontal = 8.dp, vertical = 5.dp), verticalArrangement = Arrangement.Center) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                if (program.isRecording) Box(Modifier.size(8.dp).background(Jc.Recording, CircleShape))
+                Text(program.name, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            val sub = marks.title ?: if (program.isMovie) "Movie" else null
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                if (marks.skipped) Text("■", color = Jc.Amber, fontSize = 12.sp)
+                if (marks.otherAiring) Text("↪", color = Jc.Focus, fontSize = 12.sp)
+                if (marks.inLibrary) Text("●", color = Jc.Green, fontSize = 12.sp)
+                if (marks.watched) Text("✓", color = Jc.Green, fontSize = 12.sp)
+                if (sub != null) Text(sub, color = Jc.Muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
+    }
+}
+
+/** The selected programme: details and what can be done with it. */
+@Composable
+private fun ProgramPanel(
+    program: Program,
+    channel: Channel?,
+    symbols: LiveTvRepository.MarkSymbols?,
+    onWatch: () -> Unit,
+    onChanged: () -> Unit,
+    onClose: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var p by remember(program.id) { mutableStateOf(program) }
+    var schedule by remember(program.id) { mutableStateOf<LiveTvRepository.ScheduleState?>(null) }
+    var note by remember(program.id) { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+    val first = remember { FocusRequester() }
+    val marks = Marks.parse(p.rawEpisodeTitle, symbols)
+
+    suspend fun refresh() {
+        Jdvr.liveTv.program(p.id)?.let { p = it }
+        schedule = Jdvr.liveTv.scheduleState(p.id)
+    }
+    LaunchedEffect(program.id) {
+        schedule = Jdvr.liveTv.scheduleState(program.id)
+        runCatching { first.requestFocus() }
+    }
+
+    fun act(block: suspend () -> String?) {
+        scope.launch {
+            try {
+                note = block()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                note = "Didn't work: ${e.message}"
+            }
+            delay(1500) // the server schedules in the background
+            refresh()
+            onChanged()
+        }
+    }
+
+    Column(
+        modifier =
+            modifier
+                .width(380.dp)
+                .fillMaxHeight()
+                .background(Jc.Panel)
+                .padding(22.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Text(p.name, color = Jc.Text, fontSize = 24.sp, fontWeight = FontWeight.SemiBold, maxLines = 2)
+        val episode = listOfNotNull(p.seasonEpisode, marks.title).joinToString(" · ")
+        if (episode.isNotEmpty()) Text(episode, color = Jc.Text, fontSize = 16.sp)
+        Text(
+            "${p.start.day()} · ${p.start.time()} – ${p.end.time()}" + (channel?.let { " · ${it.number} ${it.name}" } ?: ""),
+            color = Jc.Muted,
+            fontSize = 15.sp,
+        )
+        MarkChips(marks)
+        p.overview?.let { Text(it, color = Jc.Muted, fontSize = 14.sp, maxLines = 4, overflow = TextOverflow.Ellipsis) }
+        schedule?.outcome?.let {
+            Text(
+                it.detail,
+                color = Jc.Amber,
+                fontSize = 14.sp,
+                modifier = Modifier.background(Jc.Amber.copy(alpha = 0.12f), RoundedCornerShape(8.dp)).padding(10.dp),
+            )
+        }
+        Spacer(4)
+        if (p.isOn()) Button("Watch live", modifier = Modifier.fillMaxWidth().focusRequester(first), onClick = onWatch)
+        val recordModifier = if (p.isOn()) Modifier.fillMaxWidth() else Modifier.fillMaxWidth().focusRequester(first)
+        if (p.isRecording) {
+            Button("Don't record this", modifier = recordModifier, leading = { Dot(Jc.Recording) }) {
+                act {
+                    Jdvr.liveTv.cancelRecording(p.timerId!!)
+                    "Recording cancelled."
+                }
+            }
+        } else {
+            Button("Record", modifier = recordModifier, leading = { Dot(Jc.Recording) }) {
+                act {
+                    Jdvr.liveTv.record(p.id, series = false)
+                    "Recording scheduled."
+                }
+            }
+        }
+        if (p.isSeries) {
+            if (p.seriesTimerId != null) {
+                Button("Cancel series recording", modifier = Modifier.fillMaxWidth()) {
+                    act {
+                        Jdvr.liveTv.cancelSeries(p.seriesTimerId!!)
+                        "Series recording cancelled."
+                    }
+                }
+            } else {
+                Button("Record series", modifier = Modifier.fillMaxWidth()) {
+                    act {
+                        Jdvr.liveTv.record(p.id, series = true)
+                        "Series recording set up."
+                    }
+                }
+            }
+        }
+        if (schedule?.outcome != null) {
+            Button("Record this instead", modifier = Modifier.fillMaxWidth(), leading = { Dot(Jc.Amber) }) {
+                act { Jdvr.liveTv.recordInstead(p.id)?.message }
+            }
+        }
+        if (schedule != null) {
+            val fav = schedule?.favourite
+            Button(
+                if (fav == null) "Add to Recording Favourites" else "Remove from Recording Favourites",
+                modifier = Modifier.fillMaxWidth(),
+                leading = { Text(if (fav == null) "☆" else "★", color = Jc.Gold, fontSize = 18.sp) },
+            ) {
+                act { (if (fav == null) Jdvr.liveTv.addFavourite(p.id) else Jdvr.liveTv.removeFavourite(fav.id))?.message }
+            }
+        }
+        note?.let { Text(it, color = Jc.Muted, fontSize = 14.sp) }
+    }
+}
+
+@Composable
+fun Dot(color: androidx.compose.ui.graphics.Color) = Box(Modifier.size(12.dp).background(color, CircleShape))
