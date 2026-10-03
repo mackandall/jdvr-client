@@ -24,6 +24,8 @@ import org.jellyfin.sdk.model.api.PlaybackStopInfo
 import org.jellyfin.sdk.model.api.RepeatMode
 import org.jellyfin.sdk.model.api.TimerInfoDto
 import org.jellyfin.sdk.model.api.request.GetLiveTvChannelsRequest
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import timber.log.Timber
 import java.time.LocalDateTime
 import java.util.UUID
@@ -73,11 +75,15 @@ data class LivePlayback(
 class LiveTvRepository {
     private val json = Json { ignoreUnknownKeys = true }
 
+    // The Jellyfin SDK reads replies on the calling thread: never the main one (Android forbids it).
+    private suspend fun <T> io(block: suspend () -> T): T = withContext(Dispatchers.IO) { block() }
+
     private val api: ApiClient get() = Jdvr.api ?: error("Not signed in")
 
     // ---- channels and guide --------------------------------------------------------------
 
-    suspend fun channels(): List<Channel> {
+    suspend fun channels(): List<Channel> =
+        io {
         val items =
             api.liveTvApi
                 .getLiveTvChannels(
@@ -90,7 +96,7 @@ class LiveTvRepository {
                         enableUserData = false,
                     ),
                 ).content.items
-        return items
+        items
             .map { dto ->
                 Channel(
                     id = dto.id,
@@ -107,7 +113,8 @@ class LiveTvRepository {
         from: LocalDateTime,
         to: LocalDateTime,
     ): List<Program> =
-        api.liveTvApi
+        io {
+            api.liveTvApi
             .getPrograms(
                 GetProgramsDto(
                     channelIds = channelIds,
@@ -120,8 +127,9 @@ class LiveTvRepository {
                 ),
             ).content.items
             .mapNotNull { toProgram(it) }
+        }
 
-    suspend fun program(id: UUID): Program? = api.liveTvApi.getProgram(id.toString(), Jdvr.userId).content.let { toProgram(it) }
+    suspend fun program(id: UUID): Program? = io { api.liveTvApi.getProgram(id.toString(), Jdvr.userId).content.let { toProgram(it) } }
 
     fun imageUrl(
         itemId: UUID,
@@ -186,18 +194,21 @@ class LiveTvRepository {
         }
     }
 
-    suspend fun cancelRecording(timerId: String) {
+    suspend fun cancelRecording(timerId: String) =
+        io {
         api.liveTvApi.cancelTimer(timerId)
     }
 
-    suspend fun cancelSeries(seriesTimerId: String) {
+    suspend fun cancelSeries(seriesTimerId: String) =
+        io {
         api.liveTvApi.cancelSeriesTimer(seriesTimerId)
     }
 
     // ---- playback --------------------------------------------------------------------------
 
     /** Opens the channel's live stream and works out how to play it. */
-    suspend fun startLive(channelId: UUID): LivePlayback {
+    suspend fun startLive(channelId: UUID): LivePlayback =
+        io {
         val response =
             api.mediaInfoApi
                 .getPostedPlaybackInfo(
@@ -237,10 +248,11 @@ class LiveTvRepository {
                 else -> PlayMethod.TRANSCODE
             }
         Timber.i("Live %s: %s via %s", channelId, method, url.substringBefore('?'))
-        return LivePlayback(channelId, url, source.id, source.liveStreamId, response.playSessionId, method)
+        LivePlayback(channelId, url, source.id, source.liveStreamId, response.playSessionId, method)
     }
 
-    suspend fun reportStart(p: LivePlayback) {
+    suspend fun reportStart(p: LivePlayback) =
+        io {
         api.playStateApi.reportPlaybackStart(
             PlaybackStartInfo(
                 canSeek = false,
@@ -278,7 +290,8 @@ class LiveTvRepository {
     }
 
     /** Must carry the live stream id, or Jellyfin keeps the tuner open (found with Moonfin). */
-    suspend fun reportStopped(p: LivePlayback) {
+    suspend fun reportStopped(p: LivePlayback) =
+        io {
         api.playStateApi.reportPlaybackStopped(
             PlaybackStopInfo(
                 itemId = p.channelId,
@@ -298,7 +311,7 @@ class LiveTvRepository {
         query: Map<String, Any?> = emptyMap(),
     ): T? =
         try {
-            val r = api.request(method = method, pathTemplate = path, queryParameters = query)
+            val r = withContext(Dispatchers.IO) { api.request(method = method, pathTemplate = path, queryParameters = query) }
             json.decodeFromString<T>(r.body.decodeToString())
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e

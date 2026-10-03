@@ -33,7 +33,9 @@ import androidx.compose.ui.unit.sp
 import androidx.tv.material3.Text
 import com.mackandall.jdvr.data.Jdvr
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
 import org.jellyfin.sdk.api.client.extensions.authenticateUserByName
 import org.jellyfin.sdk.api.client.extensions.quickConnectApi
@@ -69,14 +71,14 @@ fun LoginScreen(onSignedIn: () -> Unit) {
         code = null
         try {
             val api = Jdvr.jellyfin.createApi(baseUrl = server.trimEnd('/'))
-            var state = api.quickConnectApi.initiateQuickConnect().content
+            var state = withContext(Dispatchers.IO) { api.quickConnectApi.initiateQuickConnect().content }
             code = state.code
             message = null
             while (!state.authenticated) {
                 delay(3000)
-                state = api.quickConnectApi.getQuickConnectState(secret = state.secret).content
+                state = withContext(Dispatchers.IO) { api.quickConnectApi.getQuickConnectState(secret = state.secret).content }
             }
-            finish(api.userApi.authenticateWithQuickConnect(QuickConnectDto(secret = state.secret)).content)
+            finish(withContext(Dispatchers.IO) { api.userApi.authenticateWithQuickConnect(QuickConnectDto(secret = state.secret)).content })
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -113,7 +115,7 @@ fun LoginScreen(onSignedIn: () -> Unit) {
                         scope.launch {
                             try {
                                 val api = Jdvr.jellyfin.createApi(baseUrl = server.trimEnd('/'))
-                                finish(api.userApi.authenticateUserByName(username = user, password = password).content)
+                                finish(withContext(Dispatchers.IO) { api.userApi.authenticateUserByName(username = user, password = password).content })
                             } catch (e: CancellationException) {
                                 throw e
                             } catch (e: Exception) {
