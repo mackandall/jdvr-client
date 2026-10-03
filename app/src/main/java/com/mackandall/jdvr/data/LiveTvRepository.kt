@@ -9,6 +9,7 @@ import org.jellyfin.sdk.api.client.extensions.imageApi
 import org.jellyfin.sdk.api.client.extensions.liveTvApi
 import org.jellyfin.sdk.api.client.extensions.mediaInfoApi
 import org.jellyfin.sdk.api.client.extensions.playStateApi
+import org.jellyfin.sdk.api.client.extensions.userLibraryApi
 import org.jellyfin.sdk.api.client.extensions.videosApi
 import org.jellyfin.sdk.model.api.BaseItemDto
 import org.jellyfin.sdk.model.api.GetProgramsDto
@@ -26,6 +27,7 @@ import org.jellyfin.sdk.model.api.TimerInfoDto
 import org.jellyfin.sdk.model.api.request.GetLiveTvChannelsRequest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.jellyfin.sdk.model.serializer.toUUIDOrNull
 import timber.log.Timber
 import java.time.LocalDateTime
 import java.util.UUID
@@ -251,6 +253,87 @@ class LiveTvRepository {
         LivePlayback(channelId, url, source.id, source.liveStreamId, response.playSessionId, method)
     }
 
+    /** A recording (library item): how to play it, and where the user left off. */
+    data class ItemPlayback(
+        val itemId: UUID,
+        val name: String,
+        val url: String,
+        val mediaSourceId: String?,
+        val playSessionId: String?,
+        val playMethod: PlayMethod,
+        val resumeMs: Long,
+        val durationMs: Long?,
+    )
+
+    suspend fun startItem(itemId: UUID): ItemPlayback =
+        io {
+            val item = api.userLibraryApi.getItem(itemId, Jdvr.userId).content
+            val response =
+                api.mediaInfoApi
+                    .getPostedPlaybackInfo(
+                        itemId,
+                        PlaybackInfoDto(
+                            userId = Jdvr.userId,
+                            deviceProfile = Jdvr.deviceProfile,
+                            maxStreamingBitrate = 120_000_000,
+                            enableDirectPlay = true,
+                            enableDirectStream = true,
+                            enableTranscoding = true,
+                            allowVideoStreamCopy = true,
+                            allowAudioStreamCopy = true,
+                        ),
+                    ).content
+            response.errorCode?.let { error("Jellyfin can't play this: $it") }
+            val source = response.mediaSources.firstOrNull() ?: error("No stream for this recording")
+            val url =
+                if (source.supportsDirectPlay || source.transcodingUrl == null) {
+                    api.videosApi.getVideoStreamUrl(itemId = itemId, mediaSourceId = source.id, static = true, tag = source.eTag, playSessionId = response.playSessionId)
+                } else {
+                    api.createUrl(source.transcodingUrl!!)
+                }
+            ItemPlayback(
+                itemId = itemId,
+                name = listOfNotNull(item.seriesName, item.name).distinct().joinToString(" - "),
+                url = url,
+                mediaSourceId = source.id,
+                playSessionId = response.playSessionId,
+                playMethod = if (source.supportsDirectPlay) PlayMethod.DIRECT_PLAY else if (source.supportsDirectStream) PlayMethod.DIRECT_STREAM else PlayMethod.TRANSCODE,
+                resumeMs = (item.userData?.playbackPositionTicks ?: 0L) / 10_000L,
+                durationMs = item.runTimeTicks?.let { it / 10_000L },
+            )
+        }
+
+    suspend fun reportItem(
+        p: ItemPlayback,
+        positionMs: Long,
+        paused: Boolean,
+        event: String,
+    ) = io {
+        val ticks = positionMs * 10_000L
+        when (event) {
+            "start" ->
+                api.playStateApi.reportPlaybackStart(
+                    PlaybackStartInfo(
+                        canSeek = true, itemId = p.itemId, mediaSourceId = p.mediaSourceId, isPaused = paused, isMuted = false,
+                        positionTicks = ticks, playMethod = p.playMethod, repeatMode = RepeatMode.REPEAT_NONE,
+                        playbackOrder = PlaybackOrder.DEFAULT, playSessionId = p.playSessionId,
+                    ),
+                )
+            "progress" ->
+                api.playStateApi.reportPlaybackProgress(
+                    PlaybackProgressInfo(
+                        canSeek = true, itemId = p.itemId, mediaSourceId = p.mediaSourceId, isPaused = paused, isMuted = false,
+                        positionTicks = ticks, playMethod = p.playMethod, repeatMode = RepeatMode.REPEAT_NONE,
+                        playbackOrder = PlaybackOrder.DEFAULT, playSessionId = p.playSessionId,
+                    ),
+                )
+            else ->
+                api.playStateApi.reportPlaybackStopped(
+                    PlaybackStopInfo(itemId = p.itemId, mediaSourceId = p.mediaSourceId, positionTicks = ticks, failed = false, playSessionId = p.playSessionId),
+                )
+        }
+    }
+
     suspend fun reportStart(p: LivePlayback) =
         io {
         api.playStateApi.reportPlaybackStart(
@@ -309,9 +392,10 @@ class LiveTvRepository {
         method: HttpMethod,
         path: String,
         query: Map<String, Any?> = emptyMap(),
+        body: String? = null,
     ): T? =
         try {
-            val r = withContext(Dispatchers.IO) { api.request(method = method, pathTemplate = path, queryParameters = query) }
+            val r = withContext(Dispatchers.IO) { api.request(method = method, pathTemplate = path, queryParameters = query, requestBody = body) }
             json.decodeFromString<T>(r.body.decodeToString())
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
@@ -384,5 +468,129 @@ class LiveTvRepository {
     )
 
     /** JellyDVR Schedule: can this channel start, and what are the tuners busy with. */
+    // ---- Recorded Shows (Episode History), recordings folder only ------------------------------
+
+    @Serializable
+    data class RecordingCard(
+        @SerialName("Type") val type: String = "",
+        @SerialName("Id") val id: String,
+        @SerialName("ImageId") val imageId: String? = null,
+        @SerialName("Name") val name: String = "",
+        @SerialName("Subtitle") val subtitle: String? = null,
+        @SerialName("Count") val count: Int = 1,
+        @SerialName("UnplayedCount") val unplayedCount: Int = 0,
+        @SerialName("PartialCount") val partialCount: Int = 0,
+        @SerialName("PartialMinutes") val partialMinutes: Int? = null,
+        @SerialName("RecordedUtc") val recordedUtc: String? = null,
+    )
+
+    @Serializable
+    private data class RecordingCards(
+        @SerialName("Cards") val cards: List<RecordingCard> = emptyList(),
+    )
+
+    /** What the DVR recorded, newest first, from the recordings folders ("current"). */
+    suspend fun recordedShows(): List<RecordingCard>? =
+        plugin<RecordingCards>(HttpMethod.GET, "/EpisodeHistory/Recordings", mapOf("filter" to "current", "limit" to 200))?.cards
+
+    @Serializable
+    data class EpisodeRecording(
+        @SerialName("Id") val id: String,
+        @SerialName("Name") val name: String = "",
+        @SerialName("Season") val season: Int? = null,
+        @SerialName("Episode") val episode: Int? = null,
+        @SerialName("Played") val played: Boolean = false,
+        @SerialName("Archived") val archived: Boolean = false,
+        @SerialName("RecordedUtc") val recordedUtc: String? = null,
+        @SerialName("Partial") val partial: Boolean = false,
+        @SerialName("Minutes") val minutes: Int? = null,
+    )
+
+    @Serializable
+    private data class EpisodeRecordings(
+        @SerialName("Recordings") val recordings: List<EpisodeRecording> = emptyList(),
+    )
+
+    /** A show's recordings, newest first (archived ones left out: recordings folder only for now). */
+    suspend fun showRecordings(seriesId: String): List<EpisodeRecording>? =
+        plugin<EpisodeRecordings>(HttpMethod.GET, "/EpisodeHistory/Recordings/Series/$seriesId")?.recordings?.filterNot { it.archived }
+
+    fun imageUrl(
+        itemId: String,
+        maxHeight: Int,
+    ): String? = itemId.toUuid()?.let { imageUrl(it, maxHeight) }
+
+    // ---- Series recordings and Recording Favourites ------------------------------------------
+
+    suspend fun seriesTimers(): List<org.jellyfin.sdk.model.api.SeriesTimerInfoDto> =
+        io { api.liveTvApi.getSeriesTimers().content.items }
+
+    @Serializable
+    data class NextRecording(
+        @SerialName("Title") val title: String = "",
+        @SerialName("Channel") val channel: String = "",
+        @SerialName("Start") val start: String = "",
+    )
+
+    @Serializable
+    data class FavouriteEntry(
+        @SerialName("Id") val id: String,
+        @SerialName("Title") val title: String = "",
+        @SerialName("Match") val match: String = "title",
+        @SerialName("Channels") val channels: String = "",
+        @SerialName("NewOnly") val newOnly: Boolean = false,
+        @SerialName("Type") val type: String = "series",
+        @SerialName("Enabled") val enabled: Boolean = true,
+        @SerialName("Upcoming") val upcoming: Int = 0,
+        @SerialName("Next") val next: List<NextRecording> = emptyList(),
+    )
+
+    @Serializable
+    data class FavouritesList(
+        @SerialName("CanManage") val canManage: Boolean = false,
+        @SerialName("Favourites") val favourites: List<FavouriteEntry> = emptyList(),
+    )
+
+    suspend fun favourites(): FavouritesList? = plugin(HttpMethod.GET, "/JellyDvrSchedule/Favourites")
+
+    suspend fun setFavouriteEnabled(
+        ruleId: String,
+        enabled: Boolean,
+    ): Message? = plugin(HttpMethod.POST, "/JellyDvrSchedule/Favourites/$ruleId", body = "{\"Enabled\":$enabled}")
+
+    suspend fun addFavouriteByTitle(
+        title: String,
+        keyword: Boolean,
+    ): Message? =
+        plugin(
+            HttpMethod.POST,
+            "/JellyDvrSchedule/Favourites",
+            body = json.encodeToString(mapOf("Title" to title, "Match" to if (keyword) "keyword" else "title", "Type" to "any")),
+        )
+
+    // ---- Scheduled recordings (JellyDVR Schedule's fast list) ---------------------------------
+
+    @Serializable
+    data class Upcoming(
+        @SerialName("TimerId") val timerId: String = "",
+        @SerialName("ProgramId") val programId: String? = null,
+        @SerialName("Name") val name: String = "",
+        @SerialName("EpisodeTitle") val episodeTitle: String? = null,
+        @SerialName("SeasonEpisode") val seasonEpisode: String? = null,
+        @SerialName("IsRepeat") val isRepeat: Boolean = false,
+        @SerialName("Start") val start: String = "",
+        @SerialName("End") val end: String = "",
+        @SerialName("ChannelNumber") val channelNumber: String? = null,
+        @SerialName("ChannelName") val channelName: String? = null,
+        @SerialName("Kind") val kind: String = "",
+        @SerialName("Favourite") val favourite: String? = null,
+        @SerialName("RecordingNow") val recordingNow: Boolean = false,
+    )
+
+    suspend fun upcoming(): List<Upcoming>? = plugin(HttpMethod.GET, "/JellyDvrSchedule/Upcoming")
+
     suspend fun tuners(channelId: UUID): TunerStatus? = plugin(HttpMethod.GET, "/JellyDvrSchedule/Tuners", mapOf("channelId" to channelId.toString()))
 }
+
+/** Jellyfin ids come without dashes; UUID.fromString needs them. */
+fun String.toUuid(): UUID? = toUUIDOrNull()

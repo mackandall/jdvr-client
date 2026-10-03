@@ -1,0 +1,245 @@
+package com.mackandall.jdvr.ui
+
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.tv.material3.Text
+import com.mackandall.jdvr.data.Jdvr
+import com.mackandall.jdvr.data.LiveTvRepository
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import org.jellyfin.sdk.model.api.SeriesTimerInfoDto
+import java.time.Instant
+import java.time.LocalDateTime
+import java.time.ZoneId
+
+/**
+ * Series recordings (Jellyfin's, tied to the guide's series id) beside Recording Favourites
+ * (JellyDVR Schedule's, by title): see and manage both while testing. Removing asks twice.
+ */
+@Composable
+fun SeriesScreen(entry: FocusRequester) {
+    var series by remember { mutableStateOf<List<SeriesTimerInfoDto>?>(null) }
+    var favourites by remember { mutableStateOf<LiveTvRepository.FavouritesList?>(null) }
+    var reload by remember { mutableIntStateOf(0) }
+    var note by remember { mutableStateOf<String?>(null) }
+    var newTitle by remember { mutableStateOf("") }
+    var keyword by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+
+    LaunchedEffect(reload) {
+        series = runCatching { Jdvr.liveTv.seriesTimers() }.getOrNull()
+        favourites = Jdvr.liveTv.favourites()
+    }
+
+    fun act(block: suspend () -> String?) {
+        scope.launch {
+            note = runCatching { block() }.getOrElse { "Didn't work: ${it.message}" }
+            delay(1500) // the server schedules in the background
+            reload++
+        }
+    }
+
+    Column(Modifier.fillMaxSize().padding(start = 28.dp, top = 24.dp, end = 28.dp)) {
+        Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            Text("Series", color = Jc.Text, fontSize = 28.sp, fontWeight = FontWeight.SemiBold)
+            note?.let { Text(it, color = Jc.Muted, fontSize = 15.sp, modifier = Modifier.padding(bottom = 4.dp)) }
+        }
+        Spacer(12)
+        Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+            // Jellyfin series recordings.
+            Column(Modifier.weight(1f).fillMaxHeight()) {
+                Text("Series recordings", color = Jc.Text, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+                Text("Jellyfin's: tied to the guide's id for the show", color = Jc.Muted, fontSize = 13.sp)
+                Spacer(8)
+                val list = series
+                when {
+                    list == null -> Text("Loading…", color = Jc.Muted, fontSize = 15.sp)
+                    list.isEmpty() -> Text("No series recordings.", color = Jc.Muted, fontSize = 15.sp)
+                    else ->
+                        LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(bottom = 40.dp)) {
+                            items(list, key = { it.id ?: it.name ?: "" }) { s ->
+                                SeriesRow(s, if (s == list.first()) Modifier.focusRequester(entry) else Modifier) {
+                                    act {
+                                        Jdvr.liveTv.cancelSeries(s.id!!)
+                                        "Series recording cancelled: ${s.name}"
+                                    }
+                                }
+                            }
+                        }
+                }
+            }
+            // Recording Favourites.
+            Column(Modifier.weight(1f).fillMaxHeight()) {
+                Text("Recording Favourites", color = Jc.Text, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+                Text("JellyDVR Schedule's: by title, on any channel", color = Jc.Muted, fontSize = 13.sp)
+                Spacer(8)
+                val fav = favourites
+                if (fav?.canManage == true) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        BasicTextField(
+                            value = newTitle,
+                            onValueChange = { newTitle = it },
+                            singleLine = true,
+                            textStyle = TextStyle(color = Jc.Text, fontSize = 16.sp),
+                            cursorBrush = SolidColor(Jc.Focus),
+                            modifier =
+                                Modifier
+                                    .weight(1f)
+                                    .border(BorderStroke(2.dp, Jc.Line), RoundedCornerShape(10.dp))
+                                    .background(Jc.Panel2, RoundedCornerShape(10.dp))
+                                    .padding(horizontal = 12.dp, vertical = 11.dp),
+                            decorationBox = { inner ->
+                                if (newTitle.isEmpty()) Text("Title or keyword", color = Jc.Muted, fontSize = 16.sp)
+                                inner()
+                            },
+                        )
+                        Button(if (keyword) "Keyword" else "Exact title") { keyword = !keyword }
+                        Button("+ Add", primary = true) {
+                            val t = newTitle.trim()
+                            if (t.isNotEmpty()) {
+                                newTitle = ""
+                                act { Jdvr.liveTv.addFavouriteByTitle(t, keyword)?.message }
+                            }
+                        }
+                    }
+                    Spacer(10)
+                }
+                when {
+                    fav == null -> Text("Loading… (needs the JellyDVR Schedule plugin)", color = Jc.Muted, fontSize = 15.sp)
+                    fav.favourites.isEmpty() -> Text("No recording favourites yet.", color = Jc.Muted, fontSize = 15.sp)
+                    else ->
+                        LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(bottom = 40.dp)) {
+                            items(fav.favourites.sortedBy { it.title.lowercase() }, key = { it.id }) { f ->
+                                FavouriteRow(
+                                    f = f,
+                                    canManage = fav.canManage,
+                                    modifier = if (series.isNullOrEmpty() && f == fav.favourites.minByOrNull { it.title.lowercase() }) Modifier.focusRequester(entry) else Modifier,
+                                    onToggle = { act { Jdvr.liveTv.setFavouriteEnabled(f.id, !f.enabled)?.message } },
+                                    onRemove = { act { Jdvr.liveTv.removeFavourite(f.id)?.message } },
+                                )
+                            }
+                        }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SeriesRow(
+    s: SeriesTimerInfoDto,
+    modifier: Modifier,
+    onCancel: () -> Unit,
+) {
+    var armed by remember(s.id) { mutableStateOf(false) }
+    LaunchedEffect(armed) {
+        if (armed) {
+            delay(4000)
+            armed = false
+        }
+    }
+    Column(
+        Modifier.fillMaxWidth().background(Jc.Panel, RoundedCornerShape(10.dp)).padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Text(s.name ?: "", color = Jc.Text, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+        val details =
+            listOfNotNull(
+                if (s.recordAnyChannel == true) "any channel" else s.channelName,
+                if (s.recordAnyTime == true) "any time" else null,
+                if (s.recordNewOnly == true) "new episodes only" else "all episodes",
+                if (s.skipEpisodesInLibrary == true) "skips ones in the library" else null,
+            ).joinToString(" · ")
+        Text(details, color = Jc.Muted, fontSize = 14.sp)
+        Row(Modifier.padding(top = 4.dp)) {
+            Button(if (armed) "Press again: cancel the series" else "Cancel series recording", modifier = modifier) {
+                if (armed) onCancel() else armed = true
+            }
+        }
+    }
+}
+
+@Composable
+private fun FavouriteRow(
+    f: LiveTvRepository.FavouriteEntry,
+    canManage: Boolean,
+    modifier: Modifier,
+    onToggle: () -> Unit,
+    onRemove: () -> Unit,
+) {
+    var armed by remember(f.id) { mutableStateOf(false) }
+    LaunchedEffect(armed) {
+        if (armed) {
+            delay(4000)
+            armed = false
+        }
+    }
+    Column(
+        Modifier.fillMaxWidth().background(Jc.Panel, RoundedCornerShape(10.dp)).padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("★", color = if (f.enabled) Jc.Gold else Jc.Muted, fontSize = 18.sp)
+            Text(f.title, color = if (f.enabled) Jc.Text else Jc.Muted, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+            if (!f.enabled) Chip("off", Jc.Muted)
+        }
+        Text(
+            listOfNotNull(
+                if (f.match == "keyword") "keyword" else "exact title",
+                if (f.channels.isBlank()) "any channel" else "channels ${f.channels}",
+                if (f.newOnly) "new episodes only" else null,
+            ).joinToString(" · "),
+            color = Jc.Muted,
+            fontSize = 14.sp,
+        )
+        val next =
+            f.next.joinToString("  ·  ") {
+                runCatching { LocalDateTime.ofInstant(Instant.parse(it.start), ZoneId.systemDefault()) }.getOrNull()?.let { t -> "${t.day()} ${t.time()} ${it.channel}" } ?: ""
+            }
+        Text(
+            when {
+                !f.enabled -> "Switched off: records nothing new."
+                next.isEmpty() -> "Nothing scheduled: not in the guide right now."
+                else -> "Next: $next" + if (f.upcoming > f.next.size) "  (+${f.upcoming - f.next.size} more)" else ""
+            },
+            color = Jc.Text,
+            fontSize = 14.sp,
+        )
+        if (canManage) {
+            Row(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(if (f.enabled) "Switch off" else "Switch on", modifier = modifier, onClick = onToggle)
+                Button(if (armed) "Press again: remove" else "Remove") { if (armed) onRemove() else armed = true }
+            }
+        }
+    }
+}

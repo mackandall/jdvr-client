@@ -27,6 +27,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -55,7 +56,10 @@ fun rememberMarkSymbols(): LiveTvRepository.MarkSymbols? {
 
 /** Live TV: every channel with what's on now; select one to watch. */
 @Composable
-fun ChannelsScreen(onPlay: (UUID) -> Unit) {
+fun ChannelsScreen(
+    entry: androidx.compose.ui.focus.FocusRequester,
+    onPlay: (UUID) -> Unit,
+) {
     var channels by remember { mutableStateOf<List<Channel>?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     val symbols = rememberMarkSymbols()
@@ -88,7 +92,9 @@ fun ChannelsScreen(onPlay: (UUID) -> Unit) {
             verticalArrangement = Arrangement.spacedBy(6.dp),
             contentPadding = PaddingValues(bottom = 32.dp),
         ) {
-            items(list, key = { it.id }) { ch -> ChannelRow(ch, symbols) { onPlay(ch.id) } }
+            items(list, key = { it.id }) { ch ->
+                ChannelRow(ch, symbols, if (ch == list.first()) Modifier.focusRequester(entry) else Modifier) { onPlay(ch.id) }
+            }
         }
     }
 }
@@ -97,13 +103,14 @@ fun ChannelsScreen(onPlay: (UUID) -> Unit) {
 private fun ChannelRow(
     ch: Channel,
     symbols: LiveTvRepository.MarkSymbols?,
+    modifier: Modifier,
     onClick: () -> Unit,
 ) {
     val now = ch.now
     val marks = Marks.parse(now?.rawEpisodeTitle, symbols)
     Surface(
         onClick = onClick,
-        modifier = Modifier.fillMaxWidth().height(72.dp),
+        modifier = modifier.fillMaxWidth().height(72.dp),
         shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(10.dp)),
         colors =
             ClickableSurfaceDefaults.colors(

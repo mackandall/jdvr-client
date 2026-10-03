@@ -73,13 +73,17 @@ private fun floorToHalfHour(t: LocalDateTime): LocalDateTime = t.truncatedTo(Chr
  * panel (watch, record, record series, record this instead, Recording Favourite).
  */
 @Composable
-fun GuideScreen(onPlay: (UUID) -> Unit) {
+fun GuideScreen(
+    entry: FocusRequester,
+    onPlay: (UUID) -> Unit,
+) {
     var channels by remember { mutableStateOf<List<Channel>?>(null) }
     var windowStart by remember { mutableStateOf(floorToHalfHour(LocalDateTime.now())) }
     var programs by remember { mutableStateOf<Map<UUID, List<Program>>>(emptyMap()) }
     var reload by remember { mutableIntStateOf(0) }
     var error by remember { mutableStateOf<String?>(null) }
     var selected by remember { mutableStateOf<Program?>(null) }
+    var focused by remember { mutableStateOf<Program?>(null) }
     // After the window moves: which channel and moment should take focus.
     var pendingFocus by remember { mutableStateOf<Pair<UUID, LocalDateTime>?>(null) }
     val symbols = rememberMarkSymbols()
@@ -121,19 +125,21 @@ fun GuideScreen(onPlay: (UUID) -> Unit) {
         }
     }
 
+    // Moves the window; false when it can't (already at now), so Left can open the rail instead.
     fun shift(
         minutes: Long,
         channelId: UUID,
-    ) {
+    ): Boolean {
         val floor = floorToHalfHour(LocalDateTime.now())
         val next = windowStart.plusMinutes(minutes).let { if (it.isBefore(floor)) floor else it }
-        if (next == windowStart) return
+        if (next == windowStart) return false
         windowStart = next
         pendingFocus = channelId to (if (minutes > 0) next.plusMinutes(WINDOW_MINUTES - STEP_MINUTES) else next)
+        return true
     }
 
-    Box(Modifier.fillMaxSize()) {
-        Column(Modifier.fillMaxSize().padding(start = 20.dp, top = 20.dp)) {
+    Row(Modifier.fillMaxSize()) {
+        Column(Modifier.weight(0.74f).fillMaxHeight().padding(start = 20.dp, top = 20.dp)) {
             Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 Text("Guide", color = Jc.Text, fontSize = 28.sp, fontWeight = FontWeight.SemiBold)
                 Text(windowStart.day(), color = Jc.Muted, fontSize = 16.sp, modifier = Modifier.padding(bottom = 4.dp))
@@ -146,11 +152,13 @@ fun GuideScreen(onPlay: (UUID) -> Unit) {
                 return@Column
             }
             androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize()) {
-                val gridWidth = maxWidth - ChannelColumn - 20.dp
+                val gridWidth = maxWidth - ChannelColumn - 12.dp
                 val perMinute = gridWidth / WINDOW_MINUTES.toFloat()
                 Column {
                     TimeRuler(windowStart, perMinute)
                     Box {
+                        // Behind the cells: shows in the gaps between them, never over the titles.
+                        NowLine(windowStart, perMinute)
                         LazyColumn(contentPadding = PaddingValues(bottom = 40.dp)) {
                             items(list, key = { it.id }) { ch ->
                                 GuideRow(
@@ -163,30 +171,64 @@ fun GuideScreen(onPlay: (UUID) -> Unit) {
                                     pendingFocus = pendingFocus?.takeIf { it.first == ch.id }?.second,
                                     onFocusTaken = { pendingFocus = null },
                                     onSelect = { selected = it },
+                                    onFocused = { focused = it },
+                                    entry = if (ch == list.first()) entry else null,
                                     onShift = { minutes -> shift(minutes, ch.id) },
                                 )
                             }
                         }
-                        NowLine(windowStart, perMinute)
                     }
                 }
             }
         }
-        selected?.let { p ->
-            BackHandler { selected = null }
-            ProgramPanel(
-                program = p,
-                channel = channels?.firstOrNull { it.id == p.channelId },
-                symbols = symbols,
-                onWatch = {
-                    selected = null
-                    onPlay(p.channelId)
-                },
-                onChanged = { reload++ },
-                onClose = { selected = null },
-                modifier = Modifier.align(Alignment.CenterEnd),
-            )
+        // The right quarter: the programme the cursor is on, or its actions after OK.
+        Box(Modifier.weight(0.26f).fillMaxHeight().background(Jc.Panel)) {
+            val p = selected
+            if (p == null) {
+                focused?.let { InfoPanel(it, channels?.firstOrNull { c -> c.id == it.channelId }, symbols) }
+                    ?: Text("Move through the guide to see a programme here; OK for what you can do with it.", color = Jc.Muted, fontSize = 15.sp, modifier = Modifier.padding(22.dp))
+            } else {
+                BackHandler { selected = null }
+                ProgramPanel(
+                    program = p,
+                    channel = channels?.firstOrNull { it.id == p.channelId },
+                    symbols = symbols,
+                    onWatch = {
+                        selected = null
+                        onPlay(p.channelId)
+                    },
+                    onChanged = { reload++ },
+                    onClose = { selected = null },
+                    modifier = Modifier,
+                )
+            }
         }
+    }
+}
+
+/** The programme under the cursor: what it is, when, and what's planned for it. */
+@Composable
+private fun InfoPanel(
+    p: Program,
+    channel: Channel?,
+    symbols: LiveTvRepository.MarkSymbols?,
+) {
+    val marks = Marks.parse(p.rawEpisodeTitle, symbols)
+    Column(Modifier.fillMaxSize().padding(22.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text(p.name, color = Jc.Text, fontSize = 24.sp, fontWeight = FontWeight.SemiBold, maxLines = 3)
+        val episode = listOfNotNull(p.seasonEpisode, marks.title).joinToString(" · ")
+        if (episode.isNotEmpty()) Text(episode, color = Jc.Text, fontSize = 17.sp)
+        Text("${p.start.day()} · ${p.start.time()} – ${p.end.time()}", color = Jc.Muted, fontSize = 15.sp)
+        channel?.let { Text("${it.number} ${it.name}", color = Jc.Muted, fontSize = 15.sp) }
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            if (p.isRecording) Chip(if (p.seriesTimerId != null) "● series recording" else "● recording", Jc.Recording)
+            if (p.isRepeat) Chip("repeat", Jc.Muted)
+            if (p.isMovie) Chip("movie", Jc.Muted)
+        }
+        MarkChips(marks)
+        p.overview?.let { Text(it, color = Jc.Muted, fontSize = 15.sp, maxLines = 10, overflow = TextOverflow.Ellipsis) }
+        androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
+        Text("OK: watch, record, favourites", color = Jc.Muted, fontSize = 13.sp)
     }
 }
 
@@ -232,7 +274,9 @@ private fun GuideRow(
     pendingFocus: LocalDateTime?,
     onFocusTaken: () -> Unit,
     onSelect: (Program) -> Unit,
-    onShift: (Long) -> Unit,
+    onFocused: (Program) -> Unit,
+    entry: FocusRequester?,
+    onShift: (Long) -> Boolean,
 ) {
     val windowEnd = windowStart.plusMinutes(WINDOW_MINUTES)
     val visible = programs.filter { it.end.isAfter(windowStart) && it.start.isBefore(windowEnd) }.sortedBy { it.start }
@@ -267,6 +311,8 @@ private fun GuideRow(
                 requestFocus = wantFocus,
                 onFocusTaken = onFocusTaken,
                 onClick = { onSelect(p) },
+                onFocused = { onFocused(p) },
+                entry = if (i == 0) entry else null,
                 onEdgeRight = if (i == visible.lastIndex) ({ onShift(STEP_MINUTES) }) else null,
                 onEdgeLeft = if (i == 0) ({ onShift(-STEP_MINUTES) }) else null,
             )
@@ -282,10 +328,12 @@ private fun ProgramCell(
     requestFocus: Boolean,
     onFocusTaken: () -> Unit,
     onClick: () -> Unit,
-    onEdgeRight: (() -> Unit)?,
-    onEdgeLeft: (() -> Unit)?,
+    onFocused: () -> Unit,
+    entry: FocusRequester?,
+    onEdgeRight: (() -> Boolean)?,
+    onEdgeLeft: (() -> Boolean)?,
 ) {
-    val focus = remember { FocusRequester() }
+    val focus = entry ?: remember { FocusRequester() }
     LaunchedEffect(requestFocus) {
         if (requestFocus) {
             runCatching { focus.requestFocus() }
@@ -301,17 +349,13 @@ private fun ProgramCell(
                 .padding(end = 4.dp)
                 .fillMaxHeight()
                 .focusRequester(focus)
+                .onFocusChangedCompat { if (it) onFocused() }
                 .onPreviewKeyEvent { e ->
                     if (e.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                     when {
-                        e.key == Key.DirectionRight && onEdgeRight != null -> {
-                            onEdgeRight()
-                            true
-                        }
-                        e.key == Key.DirectionLeft && onEdgeLeft != null -> {
-                            onEdgeLeft()
-                            true
-                        }
+                        e.key == Key.DirectionRight && onEdgeRight != null -> onEdgeRight()
+                        // At now already: not used, so it reaches the screen and opens the rail.
+                        e.key == Key.DirectionLeft && onEdgeLeft != null -> onEdgeLeft()
                         else -> false
                     }
                 },
@@ -388,7 +432,6 @@ private fun ProgramPanel(
     Column(
         modifier =
             modifier
-                .width(380.dp)
                 .fillMaxHeight()
                 .background(Jc.Panel)
                 .padding(22.dp),
