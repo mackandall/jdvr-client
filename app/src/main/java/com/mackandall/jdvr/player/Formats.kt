@@ -175,7 +175,7 @@ private fun FormatDetail(f: PlayingFormats) {
     if (text.isNotEmpty()) Text(text, color = Jc.Muted, fontSize = 12.sp, maxLines = 1, softWrap = false)
 }
 
-private val PillBorder = Color(0xFF3A4452)
+private val PillBorder get() = Jc.Muted.copy(alpha = 0.35f)
 
 @Composable
 private fun Pill(
@@ -184,7 +184,7 @@ private fun Pill(
 ) {
     Row(Modifier.clip(RoundedCornerShape(5.dp)).border(1.dp, PillBorder, RoundedCornerShape(5.dp))) {
         PillPart(key, Jc.Panel2)
-        value?.let { PillPart(it, Color(0xFF2C3644)) }
+        value?.let { PillPart(it, Jc.Line) }
     }
 }
 

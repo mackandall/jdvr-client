@@ -51,12 +51,18 @@ fun SettingsScreen(
     ) {
         Text("Settings", color = Jc.Text, fontSize = 28.sp, fontWeight = FontWeight.SemiBold)
         Spacer(6)
+        Section("Appearance")
+        Choice(
+            label = "Theme",
+            help = "The colours of the whole app. Recording red, commercial amber and watched green stay the same in every theme.",
+            value = paletteFor(prefs.theme).name,
+            modifier = Modifier.focusRequester(entry),
+        ) { prefs.changeTheme(Palettes[(Palettes.indexOf(paletteFor(prefs.theme)) + 1) % Palettes.size].key) }
         Section("Guide")
         Choice(
             label = "Programme details",
             help = "Beside the guide, or above it so the guide uses the full width.",
             value = if (prefs.guideInfo == Prefs.TOP) "Above the guide" else "Beside the guide",
-            modifier = Modifier.focusRequester(entry),
         ) { prefs.changeGuideInfo(if (prefs.guideInfo == Prefs.TOP) Prefs.SIDE else Prefs.TOP) }
         Choice(
             label = "Background art",

@@ -419,14 +419,14 @@ fun RecordingPlayerScreen(
         prompt?.let {
             Text(
                 skipLabel(it) + "  ›  OK",
-                color = Color(0xFF06121F),
+                color = Jc.OnFocus,
                 fontSize = 20.sp,
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.align(Alignment.TopEnd).padding(start = 32.dp, end = 32.dp, top = cornerTop).background(Jc.Focus, RoundedCornerShape(10.dp)).padding(horizontal = 18.dp, vertical = 10.dp),
             )
         }
         note?.let {
-            Text(it, color = Jc.Text, fontSize = 16.sp, modifier = Modifier.align(Alignment.TopEnd).padding(start = 32.dp, end = 32.dp, top = cornerTop).background(Color(0xCC0D1117), RoundedCornerShape(10.dp)).padding(14.dp))
+            Text(it, color = Jc.Text, fontSize = 16.sp, modifier = Modifier.align(Alignment.TopEnd).padding(start = 32.dp, end = 32.dp, top = cornerTop).background(Jc.Ink.copy(alpha = 0.8f), RoundedCornerShape(10.dp)).padding(14.dp))
         }
 
         if (osd && prefs.infoBoxTop) details?.let { RecordingTopBox(it, nextTitle, Modifier.align(Alignment.TopCenter)) }
@@ -447,7 +447,7 @@ fun RecordingPlayerScreen(
         if (osd) {
             val duration = player.duration.takeIf { it > 0 } ?: playback?.durationMs ?: 0L
             Column(
-                Modifier.align(Alignment.BottomCenter).fillMaxWidth().background(Color(0xF00D1117)).padding(horizontal = 36.dp, vertical = 22.dp),
+                Modifier.align(Alignment.BottomCenter).fillMaxWidth().background(Jc.Ink.copy(alpha = 0.94f)).padding(horizontal = 36.dp, vertical = 22.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 TitleWithFormats(formats, Modifier.fillMaxWidth()) {

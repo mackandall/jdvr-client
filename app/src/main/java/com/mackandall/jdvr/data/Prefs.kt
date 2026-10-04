@@ -61,6 +61,20 @@ class Prefs(
         p.edit().putInt("guideArtSeconds", v).apply()
     }
 
+    /** The colour theme (Settings › Appearance): a key of [com.mackandall.jdvr.ui.Palettes]. */
+    var theme by mutableStateOf(p.getString("theme", "midnight") ?: "midnight")
+        private set
+
+    init {
+        com.mackandall.jdvr.ui.Jc.palette = com.mackandall.jdvr.ui.paletteFor(theme)
+    }
+
+    fun changeTheme(v: String) {
+        theme = v
+        com.mackandall.jdvr.ui.Jc.palette = com.mackandall.jdvr.ui.paletteFor(v)
+        p.edit().putString("theme", v).apply()
+    }
+
     /** The box at the top of a recording or archive item while it plays (with the info bar). */
     var infoBoxTop by mutableStateOf(p.getBoolean("infoBoxTop", true))
         private set

@@ -112,7 +112,7 @@ fun RecordingTopBox(
     next: String?,
     modifier: Modifier = Modifier,
 ) {
-    Row(modifier.padding(top = 18.dp).fillMaxWidth(0.76f).clip(RoundedCornerShape(14.dp)).background(Color(0xEB0D1117))) {
+    Row(modifier.padding(top = 18.dp).fillMaxWidth(0.76f).clip(RoundedCornerShape(14.dp)).background(Jc.Ink.copy(alpha = 0.92f))) {
         Column(
             Modifier.width(96.dp).background(Jc.Panel2.copy(alpha = 0.9f)).padding(vertical = 12.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -160,7 +160,7 @@ fun RecordingInfoPanel(
     @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
     CompositionLocalProvider(LocalBringIntoViewSpec provides MinimalScroll) {
     Column(
-        modifier.fillMaxHeight().fillMaxWidth(0.43f).background(Color(0xF50D1117)).verticalScroll(scroll).padding(28.dp),
+        modifier.fillMaxHeight().fillMaxWidth(0.43f).background(Jc.Ink.copy(alpha = 0.96f)).verticalScroll(scroll).padding(28.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {

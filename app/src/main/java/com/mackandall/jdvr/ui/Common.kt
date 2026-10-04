@@ -36,8 +36,8 @@ fun Button(
             ClickableSurfaceDefaults.colors(
                 containerColor = if (primary) Jc.Focus else Jc.Panel2,
                 focusedContainerColor = if (primary) Jc.Focus else Jc.FocusFill,
-                contentColor = if (primary) Color(0xFF06121F) else Jc.Text,
-                focusedContentColor = if (primary) Color(0xFF06121F) else Jc.Text,
+                contentColor = if (primary) Jc.OnFocus else Jc.Text,
+                focusedContentColor = if (primary) Jc.OnFocus else Jc.Text,
             ),
         border = ClickableSurfaceDefaults.border(focusedBorder = Border(BorderStroke(2.dp, Jc.Focus))),
         scale = ClickableSurfaceDefaults.scale(focusedScale = 1.03f),

@@ -557,11 +557,11 @@ fun PlayerScreen(
                 "❚❚  Paused at " + LocalDateTime.ofInstant(at, ZoneId.systemDefault()).time() + "  ·  ▶ or OK to resume",
                 color = Jc.Text,
                 fontSize = 18.sp,
-                modifier = Modifier.align(Alignment.TopStart).padding(28.dp).background(Color(0xCC0D1117), RoundedCornerShape(10.dp)).padding(horizontal = 16.dp, vertical = 10.dp),
+                modifier = Modifier.align(Alignment.TopStart).padding(28.dp).background(Jc.Ink.copy(alpha = 0.8f), RoundedCornerShape(10.dp)).padding(horizontal = 16.dp, vertical = 10.dp),
             )
         }
         note?.let {
-            Text(it, color = Jc.Text, fontSize = 16.sp, modifier = Modifier.align(Alignment.TopCenter).padding(28.dp).background(Color(0xCC0D1117), RoundedCornerShape(10.dp)).padding(14.dp))
+            Text(it, color = Jc.Text, fontSize = 16.sp, modifier = Modifier.align(Alignment.TopCenter).padding(28.dp).background(Jc.Ink.copy(alpha = 0.8f), RoundedCornerShape(10.dp)).padding(14.dp))
         }
         if (typed.isNotEmpty()) {
             Text(
@@ -569,7 +569,7 @@ fun PlayerScreen(
                 color = Jc.Text,
                 fontSize = 48.sp,
                 fontWeight = FontWeight.Bold,
-                modifier = Modifier.align(Alignment.TopEnd).padding(32.dp).background(Color(0xCC0D1117), RoundedCornerShape(12.dp)).padding(horizontal = 22.dp, vertical = 8.dp),
+                modifier = Modifier.align(Alignment.TopEnd).padding(32.dp).background(Jc.Ink.copy(alpha = 0.8f), RoundedCornerShape(12.dp)).padding(horizontal = 22.dp, vertical = 8.dp),
             )
         }
         error?.let {
@@ -668,7 +668,7 @@ private fun TuningFiller(channel: Channel?) {
         Box(Modifier.fillMaxSize().background(Color(0x73080B10)))
         Row(
             // Middle right: the top box and the info bar are up while it tunes.
-            Modifier.align(Alignment.CenterEnd).padding(28.dp).background(Color(0xCC0D1117), RoundedCornerShape(50)).padding(horizontal = 14.dp, vertical = 7.dp),
+            Modifier.align(Alignment.CenterEnd).padding(28.dp).background(Jc.Ink.copy(alpha = 0.8f), RoundedCornerShape(50)).padding(horizontal = 14.dp, vertical = 7.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
@@ -709,7 +709,7 @@ private fun TopInfoBox(
     val now = channel.now
     val marks = Marks.parse(now?.rawEpisodeTitle, symbols)
     Row(
-        modifier.padding(top = 18.dp).fillMaxWidth(0.76f).background(Color(0xEB0D1117), RoundedCornerShape(14.dp)),
+        modifier.padding(top = 18.dp).fillMaxWidth(0.76f).background(Jc.Ink.copy(alpha = 0.92f), RoundedCornerShape(14.dp)),
     ) {
         Column(
             Modifier.width(96.dp).background(Jc.Panel2.copy(alpha = 0.9f), RoundedCornerShape(topStart = 14.dp, bottomStart = 14.dp)).padding(vertical = 12.dp),
@@ -762,7 +762,7 @@ private fun InfoBar(
     val now = channel?.now
     val marks = Marks.parse(now?.rawEpisodeTitle, symbols)
     Column(
-        modifier.fillMaxWidth().background(Color(0xF00D1117)).padding(horizontal = 36.dp, vertical = 22.dp),
+        modifier.fillMaxWidth().background(Jc.Ink.copy(alpha = 0.94f)).padding(horizontal = 36.dp, vertical = 22.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         TitleWithFormats(formats, Modifier.fillMaxWidth()) {

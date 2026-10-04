@@ -163,7 +163,7 @@ fun MiniGuide(
         Modifier
             .align(Alignment.BottomCenter)
             .fillMaxWidth()
-            .background(Color(0xDC0D1117))
+            .background(Jc.Ink.copy(alpha = 0.86f))
             .focusRequester(focus)
             .focusable()
             .onKeyEvent { e ->
