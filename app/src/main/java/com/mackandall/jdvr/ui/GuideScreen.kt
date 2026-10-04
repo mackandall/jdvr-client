@@ -83,6 +83,9 @@ private data class GuideExtras(
 
 private val LocalGuideExtras = androidx.compose.runtime.compositionLocalOf { GuideExtras() }
 
+/** Each programme cell's own focus handle, by programme id: to put focus back on exactly that cell. */
+private val LocalCellFocus = androidx.compose.runtime.staticCompositionLocalOf { mutableMapOf<UUID, FocusRequester>() }
+
 private fun floorToHalfHour(t: LocalDateTime): LocalDateTime = t.truncatedTo(ChronoUnit.HOURS).plusMinutes(if (t.minute >= 30) 30 else 0)
 
 /**
@@ -108,6 +111,16 @@ fun GuideScreen(
     var pendingFocus by remember { mutableStateOf<Pair<UUID, LocalDateTime>?>(null) }
     val symbols = rememberMarkSymbols()
     var extras by remember { mutableStateOf(GuideExtras()) }
+    val cellFocus = remember { mutableMapOf<UUID, FocusRequester>() }
+    val guideScope = androidx.compose.runtime.rememberCoroutineScope()
+    // What the last action did, shown briefly once its panel has closed.
+    var guideNote by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(guideNote) {
+        if (guideNote != null) {
+            delay(3500)
+            guideNote = null
+        }
+    }
     LaunchedEffect(Unit) {
         while (true) {
             extras = GuideExtras(Jdvr.liveTv.bufferPrograms(), Jdvr.liveTv.guideScanning())
@@ -155,8 +168,18 @@ fun GuideScreen(
     // Closing the panel: focus goes back to the programme it was opened on (else it lands on
     // whatever comes first in the grid, channels away).
     fun closePanel() {
-        selected?.let { p -> pendingFocus = p.channelId to (if (p.start.isBefore(windowStart)) windowStart else p.start) }
+        val id = selected?.id
         selected = null
+        if (id != null) {
+            guideScope.launch {
+                // Once the panel is gone and the grid has redrawn, focus that exact cell.
+                repeat(10) {
+                    delay(60)
+                    val r = cellFocus[id] ?: return@repeat
+                    if (runCatching { r.requestFocus() }.isSuccess) return@launch
+                }
+            }
+        }
     }
 
     @Composable
@@ -180,6 +203,15 @@ fun GuideScreen(
             },
             onChanged = { reload++ },
             onClose = { closePanel() },
+            // An action that worked: close the panel, say what happened, refresh the guide.
+            onActed = { msg ->
+                guideNote = msg
+                closePanel()
+                guideScope.launch {
+                    delay(1500) // the server schedules in the background
+                    reload++
+                }
+            },
             modifier = Modifier,
         )
     }
@@ -197,7 +229,7 @@ fun GuideScreen(
         return true
     }
 
-    androidx.compose.runtime.CompositionLocalProvider(LocalGuideExtras provides extras) {
+    androidx.compose.runtime.CompositionLocalProvider(LocalGuideExtras provides extras, LocalCellFocus provides cellFocus) {
     Box(Modifier.fillMaxSize()) {
     Column(Modifier.fillMaxSize()) {
     // "Above the guide" (Settings): the details on a band at the top, the grid at full width.
@@ -213,6 +245,7 @@ fun GuideScreen(
                 Text("Guide", color = Jc.Text, fontSize = 28.sp, fontWeight = FontWeight.SemiBold)
                 Text(windowStart.day(), color = Jc.Muted, fontSize = 16.sp, modifier = Modifier.padding(bottom = 4.dp))
                 error?.let { Text(it, color = Jc.Amber, fontSize = 14.sp, modifier = Modifier.padding(bottom = 4.dp)) }
+                guideNote?.let { Text(it, color = Jc.Focus, fontSize = 15.sp, modifier = Modifier.padding(bottom = 4.dp)) }
             }
             val list = channels
             if (list == null) {
@@ -442,7 +475,14 @@ private fun ProgramCell(
     onEdgeRight: (() -> Boolean)?,
     onEdgeLeft: (() -> Boolean)?,
 ) {
-    val focus = entry ?: remember { FocusRequester() }
+    // Its own handle (stable), registered so the guide can refocus it; plus the screen's entry when
+    // it's the way back in.
+    val focus = remember(program.id) { FocusRequester() }
+    val registry = LocalCellFocus.current
+    androidx.compose.runtime.DisposableEffect(program.id) {
+        registry[program.id] = focus
+        onDispose { if (registry[program.id] === focus) registry.remove(program.id) }
+    }
     LaunchedEffect(requestFocus) {
         if (requestFocus) {
             runCatching { focus.requestFocus() }
@@ -459,6 +499,7 @@ private fun ProgramCell(
                 .padding(end = 4.dp)
                 .fillMaxHeight()
                 .focusRequester(focus)
+                .then(if (entry != null) Modifier.focusRequester(entry) else Modifier)
                 .onFocusChangedCompat { if (it) onFocused() }
                 .onPreviewKeyEvent { e ->
                     if (e.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
@@ -511,6 +552,9 @@ internal fun ProgramPanel(
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
     onPlayItem: (com.mackandall.jdvr.PlayRecording) -> Unit = {},
+    // When given, a successful action hands its message here (the caller closes the panel);
+    // otherwise the panel shows it and stays open.
+    onActed: ((String?) -> Unit)? = null,
 ) {
     var p by remember(program.id) { mutableStateOf(program) }
     // Episode History (watched mark, a copy to play, forget) and JellyDVR Live (is this only a buffer).
@@ -552,13 +596,21 @@ internal fun ProgramPanel(
 
     fun act(block: suspend () -> String?) {
         scope.launch {
-            try {
-                note = block()
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                note = "Didn't work: ${e.message}"
+            val msg =
+                try {
+                    block()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    note = "Didn't work: ${e.message}"
+                    return@launch
+                }
+            val done = onActed
+            if (done != null) {
+                done(msg)
+                return@launch
             }
+            note = msg
             delay(1500) // the server schedules in the background
             refresh()
             onChanged()

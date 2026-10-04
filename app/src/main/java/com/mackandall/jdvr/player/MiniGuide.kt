@@ -293,6 +293,16 @@ fun MiniGuide(
             },
             onChanged = { reload++ },
             onClose = { detail = null },
+            onActed = { msg ->
+                note = msg
+                detail = null
+                scope.launch {
+                    delay(1500)
+                    reload++
+                    delay(2000)
+                    note = null
+                }
+            },
             modifier = Modifier.align(Alignment.CenterEnd).width(380.dp),
         )
     }
