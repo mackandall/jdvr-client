@@ -33,6 +33,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
@@ -98,6 +100,7 @@ fun EpisodeBrowser(
     onInfo: (EpisodeEntry) -> Unit,
     onToggleWatched: ((EpisodeEntry) -> Unit)? = null,
     emptyText: String = "No episodes.",
+    onPlayFromStart: (EpisodeEntry) -> Unit = onPlay,
 ) {
     val tiles = Jdvr.prefs.episodeView == Prefs.TILES
     var backdrop by remember { mutableStateOf<UUID?>(null) }
@@ -107,11 +110,13 @@ fun EpisodeBrowser(
     }
 
     Box(Modifier.fillMaxSize()) {
-        backdrop?.let {
-            AsyncImage(model = Jdvr.liveTv.backdropUrl(it), contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
-            Box(Modifier.fillMaxSize().background(Jc.Ink.copy(alpha = 0.88f)))
-        }
         val list = entries
+        if (!tiles || list.isNullOrEmpty()) {
+            backdrop?.let {
+                AsyncImage(model = Jdvr.liveTv.backdropUrl(it), contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+                Box(Modifier.fillMaxSize().background(Jc.Ink.copy(alpha = 0.88f)))
+            }
+        }
         if (list == null || list.isEmpty()) {
             Column(Modifier.padding(start = 28.dp, top = 22.dp)) {
                 Header(title, subtitle, null, tiles)
@@ -119,7 +124,7 @@ fun EpisodeBrowser(
                 Text(if (list == null) "Loading…" else emptyText, color = Jc.Muted, fontSize = 16.sp)
             }
         } else if (tiles) {
-            TilesView(seriesId, title, subtitle, overview, list, entry, onPlay, onInfo)
+            TilesView(seriesId, backdrop, title, subtitle, list, entry, { e, fromStart -> if (fromStart) onPlayFromStart(e) else onPlay(e) }, onInfo, onToggleWatched)
         } else {
             ListView(title, subtitle, list, entry, onPlay, onInfo, onToggleWatched)
         }
@@ -254,108 +259,174 @@ private fun Tag(
     modifier = Modifier.background(color.copy(alpha = 0.92f), RoundedCornerShape(5.dp)).padding(horizontal = 6.dp, vertical = 2.dp),
 )
 
-// ---- Tiles: the web client's layout -------------------------------------------------------------
+// ---- Tiles: Wholphin's show page ---------------------------------------------------------------
 
+/**
+ * Over the show's backdrop: season tabs, the title, everything about the focused episode (S/E,
+ * details, video / audio, description), one row of episode cards (the others dimmed), its buttons,
+ * then its cast and guest stars below.
+ */
 @Composable
 private fun TilesView(
     seriesId: UUID?,
+    backdrop: UUID?,
     title: String,
     subtitle: String?,
-    overview: String?,
     list: List<EpisodeEntry>,
     entry: FocusRequester?,
-    onPlay: (EpisodeEntry) -> Unit,
+    onPlay: (EpisodeEntry, Boolean) -> Unit,
     onInfo: (EpisodeEntry) -> Unit,
+    onToggleWatched: ((EpisodeEntry) -> Unit)?,
 ) {
     val bySeason = list.groupBy { it.season }
     val seasons = bySeason.keys.toList()
-    // Start on the first season with something unwatched.
     var season by remember { mutableStateOf(seasons.firstOrNull { s -> bySeason[s].orEmpty().any { !it.played } } ?: seasons.first()) }
-    // Season posters, when the show is in the library.
-    var seasonItems by remember { mutableStateOf<List<LiveTvRepository.LibItem>>(emptyList()) }
-    LaunchedEffect(seriesId) { seriesId?.let { id -> seasonItems = runCatching { Jdvr.liveTv.seasons(id) }.getOrDefault(emptyList()) } }
-    val first = remember { FocusRequester() }
-    LaunchedEffect(season) { runCatching { first.requestFocus() } }
-
     val shown = bySeason[season].orEmpty()
-    LazyVerticalGrid(
-        columns = GridCells.Fixed(4),
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 28.dp, top = 20.dp, end = 28.dp, bottom = 40.dp),
-        horizontalArrangement = Arrangement.spacedBy(14.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
-    ) {
-        item(span = { GridItemSpan(maxLineSpan) }) { Header(title, subtitle, overview, tiles = true) }
-        if (seasons.size > 1) {
-            item(span = { GridItemSpan(maxLineSpan) }) {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Seasons", color = Jc.Text, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        items(seasons, key = { it ?: -1 }) { s ->
-                            val poster = seasonItems.firstOrNull { it.episode == s || (s == null && it.episode == null) }
-                            SeasonFolder(seasonTitle(s), bySeason[s].orEmpty().size, poster?.id ?: seriesId, s == season) { season = s }
-                        }
-                    }
+    var focusedId by remember(season) { mutableStateOf((shown.firstOrNull { !it.played } ?: shown.first()).id) }
+    val focused = shown.firstOrNull { it.id == focusedId } ?: shown.first()
+    var rowHasFocus by remember { mutableStateOf(false) }
+    // Full details (video, audio, credits, description) for episodes as they get focus.
+    val details = remember { mutableStateMapOf<UUID, LiveTvRepository.ItemDetails>() }
+    LaunchedEffect(focusedId) {
+        if (focusedId !in details) {
+            kotlinx.coroutines.delay(200)
+            runCatching { Jdvr.liveTv.details(focusedId) }.getOrNull()?.let { details[focusedId] = it }
+        }
+    }
+    val d = details[focused.id]
+    val start = remember(season) { FocusRequester() }
+    LaunchedEffect(season) { runCatching { start.requestFocus() } }
+
+    Box(Modifier.fillMaxSize()) {
+        backdrop?.let {
+            AsyncImage(model = Jdvr.liveTv.backdropUrl(it), contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+        }
+        Box(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Brush.horizontalGradient(0f to Jc.Ink.copy(alpha = 0.97f), 0.6f to Jc.Ink.copy(alpha = 0.8f), 1f to Jc.Ink.copy(alpha = 0.35f))))
+        Column(
+            Modifier.fillMaxSize().verticalScroll(androidx.compose.foundation.rememberScrollState()).padding(top = 14.dp, bottom = 30.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            // Season tabs and the view switch.
+            Row(Modifier.padding(horizontal = 36.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                if (seasons.size > 1) {
+                    seasons.forEach { s -> SeasonTab(seasonTitle(s), s == season) { season = s } }
+                } else {
+                    Text(seasonTitle(season), color = Jc.Muted, fontSize = 15.sp, modifier = Modifier.padding(vertical = 6.dp))
+                }
+                Box(Modifier.weight(1f))
+                subtitle?.let { Text(it, color = Jc.Muted, fontSize = 13.sp, modifier = Modifier.padding(end = 8.dp)) }
+                Button("View: Tiles") { Jdvr.prefs.changeEpisodeView(Prefs.LIST) }
+            }
+            Text(title, color = Jc.Text, fontSize = 32.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = 36.dp))
+
+            // The focused episode.
+            Column(Modifier.padding(horizontal = 36.dp).fillMaxWidth(0.62f).height(128.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    focused.seasonEpisode?.let { Text(it, color = Jc.Muted, fontSize = 16.sp) }
+                    Text(focused.name, color = Jc.Text, fontSize = 20.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    d?.premiere?.let { Text(it.format(java.time.format.DateTimeFormatter.ofPattern("MMM d, yyyy")), color = Jc.Text, fontSize = 13.sp) }
+                    (focused.runtimeMin ?: d?.item?.runtimeMin)?.let { Text("$it min", color = Jc.Text, fontSize = 13.sp) }
+                    d?.item?.officialRating?.let { Text(it, color = Jc.Text, fontSize = 12.sp, modifier = Modifier.background(Jc.Panel2, RoundedCornerShape(4.dp)).padding(horizontal = 5.dp)) }
+                    d?.communityRating?.let { Text("★ %.1f".format(it), color = Jc.Gold, fontSize = 13.sp) }
+                    focused.recordedAt?.let { Text("Recorded ${it.day()} ${it.time()}", color = Jc.Muted, fontSize = 13.sp) }
+                    Badges(focused)
+                }
+                d?.let { listOfNotNull(it.video, it.audio.firstOrNull(), it.subtitles.firstOrNull()).joinToString(" · ").ifEmpty { null } }?.let {
+                    Text(it, color = Jc.Muted, fontSize = 12.sp, maxLines = 1)
+                }
+                (focused.overview ?: d?.item?.overview)?.let { Text(it, color = Jc.Text, fontSize = 13.sp, maxLines = 3, overflow = TextOverflow.Ellipsis) }
+            }
+
+            // One row of episodes; the ones not focused are dimmed while the row has focus.
+            LazyRow(
+                Modifier.onFocusChanged { rowHasFocus = it.hasFocus },
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                contentPadding = PaddingValues(horizontal = 36.dp),
+            ) {
+                itemsIndexed(shown, key = { _, e -> e.id }) { i, e ->
+                    val isStart = e.id == (shown.firstOrNull { !it.played } ?: shown.first()).id
+                    EpisodeCard(
+                        e = e,
+                        dim = rowHasFocus && e.id != focused.id,
+                        modifier = (if (isStart) Modifier.focusRequester(start).let { m -> entry?.let { m.focusRequester(it) } ?: m } else Modifier).onFocusChanged { if (it.isFocused) focusedId = e.id },
+                        onClick = { onPlay(e, false) },
+                        onLongClick = { onInfo(e) },
+                    )
                 }
             }
-        }
-        item(span = { GridItemSpan(maxLineSpan) }) {
-            Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.padding(top = 4.dp)) {
-                Text(seasonTitle(season), color = Jc.Text, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
-                Text("${shown.size} episode" + (if (shown.size == 1) "" else "s") + " · OK plays · Menu for details", color = Jc.Muted, fontSize = 13.sp)
+
+            // The focused episode's buttons.
+            Row(Modifier.padding(horizontal = 36.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                // Recordings' lists carry no resume point: the details have it.
+                val resumeMs = focused.resumeMs.takeIf { it > 0 } ?: d?.item?.resumeMs ?: 0L
+                val resume = resumeMs > 0 && !focused.played
+                Button(if (resume) "Resume from ${resumeMs / 60_000} min" else "Play", primary = true) { onPlay(focused, false) }
+                if (resume) Button("Play from start") { onPlay(focused, true) }
+                onToggleWatched?.let { t -> Button(if (focused.played) "Mark unwatched" else "Mark watched") { t(focused) } }
+                Button("Details") { onInfo(focused) }
             }
-        }
-        itemsIndexed(shown, key = { _, e -> e.id }) { i, e ->
-            EpisodeTile(e, if (i == 0) Modifier.focusRequester(first).let { m -> entry?.let { m.focusRequester(it) } ?: m } else Modifier, onPlay, onInfo)
+
+            // Who's in it.
+            d?.let { det ->
+                val (guests, crew) = det.people.partition { it.kind == "GuestStar" }
+                if (crew.isNotEmpty()) PeopleRow("Cast & crew", crew)
+                if (guests.isNotEmpty()) PeopleRow("Guest stars in this episode", guests)
+            }
         }
     }
 }
 
 @Composable
-private fun SeasonFolder(
+private fun SeasonTab(
     name: String,
-    count: Int,
-    imageOf: UUID?,
     selected: Boolean,
     onClick: () -> Unit,
 ) {
-    Column(Modifier.width(110.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Surface(
-            onClick = onClick,
-            modifier = Modifier.fillMaxWidth().aspectRatio(2f / 3f),
-            shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(9.dp)),
-            colors = ClickableSurfaceDefaults.colors(containerColor = Jc.Panel2, focusedContainerColor = Jc.Panel2),
-            border = ClickableSurfaceDefaults.border(border = if (selected) Border(BorderStroke(2.dp, Jc.Muted)) else Border.None, focusedBorder = Border(BorderStroke(3.dp, Jc.Focus))),
-            scale = ClickableSurfaceDefaults.scale(focusedScale = 1.05f),
-        ) {
-            imageOf?.let { AsyncImage(model = Jdvr.liveTv.imageUrl(it, 300), contentDescription = name, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize()) }
+    Surface(
+        onClick = onClick,
+        shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(8.dp)),
+        colors = ClickableSurfaceDefaults.colors(containerColor = Color.Transparent, focusedContainerColor = Jc.FocusFill, contentColor = if (selected) Jc.Text else Jc.Muted, focusedContentColor = Jc.Text),
+        border = ClickableSurfaceDefaults.border(focusedBorder = Border(BorderStroke(2.dp, Jc.Focus))),
+        scale = ClickableSurfaceDefaults.scale(focusedScale = 1.03f),
+    ) {
+        Column(Modifier.padding(horizontal = 12.dp, vertical = 5.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(name, fontSize = 16.sp, fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal)
+            Box(Modifier.width(36.dp).height(3.dp).background(if (selected) Jc.Focus else Color.Transparent, RoundedCornerShape(2.dp)))
         }
-        Text(name, color = if (selected) Jc.Text else Jc.Muted, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
-        Text("$count", color = Jc.Muted, fontSize = 11.sp)
     }
 }
 
 @Composable
-private fun EpisodeTile(
+private fun EpisodeCard(
     e: EpisodeEntry,
+    dim: Boolean,
     modifier: Modifier,
-    onPlay: (EpisodeEntry) -> Unit,
-    onInfo: (EpisodeEntry) -> Unit,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    Column(Modifier.width(176.dp).alpha(if (dim) 0.45f else 1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Surface(
-            onClick = { onPlay(e) },
-            onLongClick = { onInfo(e) },
-            modifier =
-                modifier.fillMaxWidth().aspectRatio(16f / 9f).onPreviewKeyMenu { onInfo(e) },
+            onClick = onClick,
+            onLongClick = onLongClick,
+            modifier = modifier.fillMaxWidth().aspectRatio(16f / 9f).onPreviewKeyMenu(onLongClick),
             shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(9.dp)),
             colors = ClickableSurfaceDefaults.colors(containerColor = Jc.Panel2, focusedContainerColor = Jc.Panel2),
             border = ClickableSurfaceDefaults.border(focusedBorder = Border(BorderStroke(3.dp, Jc.Focus))),
-            scale = ClickableSurfaceDefaults.scale(focusedScale = 1.05f),
+            scale = ClickableSurfaceDefaults.scale(focusedScale = 1.1f),
         ) {
             Box(Modifier.fillMaxSize()) {
                 AsyncImage(model = Jdvr.liveTv.imageUrl(e.id, 300), contentDescription = e.name, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
-                Row(Modifier.align(Alignment.BottomStart).padding(6.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) { Badges(e) }
+                e.episode?.let {
+                    Text("E$it", color = Jc.Text, fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.align(Alignment.TopEnd).padding(6.dp).background(Jc.Ink.copy(alpha = 0.85f), RoundedCornerShape(5.dp)).padding(horizontal = 6.dp, vertical = 1.dp))
+                }
+                if (e.played) {
+                    Text("✓", color = Jc.Text, fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.align(Alignment.TopStart).padding(6.dp).background(Jc.Green, RoundedCornerShape(5.dp)).padding(horizontal = 6.dp, vertical = 1.dp))
+                }
+                if (e.partial) {
+                    Text("Partial", color = Color(0xFF1A1206), fontSize = 10.sp, fontWeight = FontWeight.Bold, modifier = Modifier.align(Alignment.BottomStart).padding(6.dp).background(Jc.Amber, RoundedCornerShape(5.dp)).padding(horizontal = 5.dp, vertical = 1.dp))
+                }
                 if (e.resumeMs > 0 && !e.played && e.runtimeMin != null) {
                     val f = (e.resumeMs / 60_000f / e.runtimeMin).coerceIn(0f, 1f)
                     Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().height(4.dp).background(Jc.Line)) {
@@ -364,12 +435,45 @@ private fun EpisodeTile(
                 }
             }
         }
-        Text(listOfNotNull(e.seasonEpisode, e.name).joinToString(" · "), color = Jc.Text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        e.recordedAt?.let { Text("Recorded ${it.day()} ${it.time()}", color = Jc.Muted, fontSize = 11.sp) }
+        Text(e.name, color = Jc.Text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
-/** The remote's Menu key on a tile opens its details (OK plays). */
+@Composable
+private fun PeopleRow(
+    title: String,
+    people: List<LiveTvRepository.Person>,
+) {
+    Column(Modifier.padding(top = 6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(title, color = Jc.Text, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(horizontal = 36.dp))
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(horizontal = 30.dp)) {
+            items(people.take(30), key = { it.id.toString() + it.role + it.kind }) { p ->
+                Surface(
+                    onClick = {},
+                    modifier = Modifier.width(96.dp),
+                    shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(10.dp)),
+                    colors = ClickableSurfaceDefaults.colors(containerColor = Color.Transparent, focusedContainerColor = Jc.FocusFill, contentColor = Jc.Text, focusedContentColor = Jc.Text),
+                    border = ClickableSurfaceDefaults.border(focusedBorder = Border(BorderStroke(2.dp, Jc.Focus))),
+                    scale = ClickableSurfaceDefaults.scale(focusedScale = 1.04f),
+                ) {
+                    Column(Modifier.padding(6.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        Box(Modifier.width(70.dp).height(70.dp).clip(androidx.compose.foundation.shape.CircleShape).background(Jc.Panel2), contentAlignment = Alignment.Center) {
+                            if (p.hasImage) {
+                                AsyncImage(model = Jdvr.liveTv.personImageUrl(p.id), contentDescription = p.name, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+                            } else {
+                                Text(p.name.split(' ').mapNotNull { it.firstOrNull()?.toString() }.take(2).joinToString(""), color = Jc.Muted, fontSize = 18.sp)
+                            }
+                        }
+                        Text(p.name, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        Text(p.role ?: p.kind, color = Jc.Muted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** The remote's Menu key on a card opens its details (OK plays). */
 private fun Modifier.onPreviewKeyMenu(action: () -> Unit) =
     this.then(
         Modifier.onPreviewKeyEvent { k ->

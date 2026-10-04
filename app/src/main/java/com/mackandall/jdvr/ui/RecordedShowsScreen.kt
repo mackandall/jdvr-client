@@ -26,6 +26,8 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import kotlinx.coroutines.launch
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -209,7 +211,9 @@ private fun ShowEpisodes(
 ) {
     var info by remember { mutableStateOf<UUID?>(null) }
     var episodes by remember { mutableStateOf<List<EpisodeEntry>?>(null) }
-    LaunchedEffect(show.id, refresh) {
+    var reload by remember { mutableStateOf(0) }
+    val scope = rememberCoroutineScope()
+    LaunchedEffect(show.id, refresh, reload) {
         episodes =
             Jdvr.liveTv.showRecordings(show.id, filter)?.mapNotNull { e ->
                 e.id.toUuid()?.let { id ->
@@ -239,7 +243,14 @@ private fun ShowEpisodes(
         entries = episodes,
         entry = entry,
         onPlay = { onPlay(it.id) },
+        onPlayFromStart = { onPlayItem(com.mackandall.jdvr.PlayRecording(it.id, startMs = 0L)) },
         onInfo = { info = it.id },
+        onToggleWatched = { e ->
+            scope.launch {
+                runCatching { Jdvr.liveTv.setPlayed(e.id, !e.played) }
+                reload++
+            }
+        },
         emptyText = "No recordings of this show here.",
     )
 }

@@ -231,6 +231,7 @@ private fun ShowPage(
         entries = episodes,
         entry = null,
         onPlay = { onPlay(PlayRecording(it.id)) },
+        onPlayFromStart = { onPlay(PlayRecording(it.id, startMs = 0L)) },
         onInfo = { episodeInfo = it.id },
         onToggleWatched = { e ->
             scope.launch {
