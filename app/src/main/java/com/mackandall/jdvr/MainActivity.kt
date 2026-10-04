@@ -28,6 +28,7 @@ import com.mackandall.jdvr.player.PlayerScreen
 import com.mackandall.jdvr.player.RecordingPlayerScreen
 import com.mackandall.jdvr.ui.ChannelsScreen
 import com.mackandall.jdvr.ui.GuideScreen
+import com.mackandall.jdvr.ui.HomeScreen
 import com.mackandall.jdvr.ui.Jc
 import com.mackandall.jdvr.ui.JdvrTheme
 import com.mackandall.jdvr.ui.LoginScreen
@@ -43,6 +44,7 @@ import java.util.UUID
 enum class Screen(
     val label: String,
 ) {
+    Home("Home"),
     Guide("Guide"),
     LiveTv("Live TV"),
     RecordedShows("Recorded Shows"),
@@ -74,7 +76,9 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun AppRoot() {
     var signedIn by remember { mutableStateOf(Jdvr.signedIn) }
-    var screen by remember { mutableStateOf(Screen.Guide) }
+    var screen by remember { mutableStateOf(Screen.Home) }
+    // A show for Recorded Shows to open straight away (from Home's New recordings).
+    var openShow by remember { mutableStateOf<String?>(null) }
     var railOpen by remember { mutableStateOf(false) }
     var playingChannel by remember { mutableStateOf<UUID?>(null) }
     var playingRecording by remember { mutableStateOf<PlayRecording?>(null) }
@@ -121,9 +125,20 @@ fun AppRoot() {
         }
         Box(Modifier.fillMaxSize().onFocusChanged { screenHasFocus = it.hasFocus }) {
             when (screen) {
+                Screen.Home ->
+                    HomeScreen(
+                        entry = entry,
+                        onPlayChannel = { playingChannel = it },
+                        onPlayRecording = { playingRecording = it },
+                        onOpenScreen = { screen = it },
+                        onOpenShow = {
+                            openShow = it
+                            screen = Screen.RecordedShows
+                        },
+                    )
                 Screen.Guide -> GuideScreen(entry = entry, onPlay = { playingChannel = it }, onPlayRecording = { playingRecording = it })
                 Screen.LiveTv -> ChannelsScreen(entry = entry, onPlay = { playingChannel = it })
-                Screen.RecordedShows -> RecordedShowsScreen(entry = entry, onPlay = { playingRecording = PlayRecording(it) })
+                Screen.RecordedShows -> RecordedShowsScreen(entry = entry, onPlay = { playingRecording = PlayRecording(it) }, openShowId = openShow, onShowOpened = { openShow = null })
                 Screen.Scheduled -> ScheduledScreen(entry = entry)
                 Screen.Series -> SeriesScreen(entry = entry)
                 Screen.Settings -> SettingsScreen(entry = entry)

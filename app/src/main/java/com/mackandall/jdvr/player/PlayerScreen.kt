@@ -98,6 +98,8 @@ fun PlayerScreen(
     val playFocus = remember { FocusRequester() }
     var lastKeyAt by remember { mutableStateOf(System.currentTimeMillis()) }
     var pausedAt by remember(channelId) { mutableStateOf<Instant?>(null) }
+    // The mini guide over the bottom of the picture: ▼ opens it, Back closes it.
+    var miniOpen by remember { mutableStateOf(false) }
     // Hybrid: the channel starts as direct play (quick to tune) while the server starts an HLS copy
     // of the same stream; pause and rewind move over to the HLS copy, where they're instant.
     var onHls by remember(channelId) { mutableStateOf(false) }
@@ -220,6 +222,8 @@ fun PlayerScreen(
         actionsOpen = false
     }
     if (actionsOpen) androidx.activity.compose.BackHandler { actionsOpen = false }
+    if (miniOpen) androidx.activity.compose.BackHandler { miniOpen = false }
+    LaunchedEffect(miniOpen) { if (!miniOpen) runCatching { focus.requestFocus() } }
 
     fun showOsd() {
         osdUntil = System.currentTimeMillis() + 5000
@@ -368,14 +372,18 @@ fun PlayerScreen(
             }
             .onKeyEvent { e ->
                 // A dialog (tuners busy, error) or the actions row has the remote.
-                if (e.type != KeyEventType.KeyDown || busy != null || error != null || actionsOpen) return@onKeyEvent false
+                if (e.type != KeyEventType.KeyDown || busy != null || error != null || actionsOpen || miniOpen) return@onKeyEvent false
                 when (val code = e.key.nativeKeyCode) {
                     AndroidKeyEvent.KEYCODE_DPAD_UP, AndroidKeyEvent.KEYCODE_CHANNEL_UP -> {
                         step(1)
                         true
                     }
-                    AndroidKeyEvent.KEYCODE_DPAD_DOWN, AndroidKeyEvent.KEYCODE_CHANNEL_DOWN -> {
+                    AndroidKeyEvent.KEYCODE_CHANNEL_DOWN -> {
                         step(-1)
+                        true
+                    }
+                    AndroidKeyEvent.KEYCODE_DPAD_DOWN, AndroidKeyEvent.KEYCODE_GUIDE -> {
+                        miniOpen = true
                         true
                     }
                     AndroidKeyEvent.KEYCODE_DPAD_CENTER, AndroidKeyEvent.KEYCODE_ENTER -> {
@@ -422,7 +430,7 @@ fun PlayerScreen(
         )
 
         val channel = channels.firstOrNull { it.id == channelId }
-        if (System.currentTimeMillis() < osdUntil || error != null || actionsOpen || pausedAt != null) {
+        if (!miniOpen && (System.currentTimeMillis() < osdUntil || error != null || actionsOpen || pausedAt != null)) {
             tick.let {
                 val offset = if (onHls) player.currentLiveOffset.takeIf { it != androidx.media3.common.C.TIME_UNSET } ?: 0L else 0L
                 InfoBar(channel, symbols, Modifier.align(Alignment.BottomCenter), behindMs = if (offset > 15_000) offset else 0L) {
@@ -487,6 +495,19 @@ fun PlayerScreen(
                 }
             }
         }
+        if (miniOpen && channels.isNotEmpty()) {
+            MiniGuide(
+                channels = channels,
+                currentChannelId = channelId,
+                symbols = symbols,
+                onWatch = {
+                    miniOpen = false
+                    if (it != channelId) onChannelChange(it)
+                },
+                onClose = { miniOpen = false },
+                modifier = Modifier.align(Alignment.BottomCenter),
+            )
+        }
         busy?.let { status ->
             TunersBusy(status, channel, onWatch = { onChannelChange(it) }, onCancel = onExit, modifier = Modifier.align(Alignment.Center))
         }
@@ -541,7 +562,7 @@ private fun InfoBar(
             }
         }
         actions()
-        Text("▲▼ change channel · 0–9 type a number · ← 10 s back · → 30 s ahead · OK controls · Back leave", color = Jc.Muted, fontSize = 13.sp)
+        Text("▲ / CH change channel · ▼ mini guide · 0–9 type a number · ← 10 s back · → 30 s ahead · OK controls · Back leave", color = Jc.Muted, fontSize = 13.sp)
     }
 }
 

@@ -763,7 +763,7 @@ class LiveTvRepository {
             ?.toUuid()
     }
 
-    suspend fun tuners(channelId: UUID): TunerStatus? = plugin(HttpMethod.GET, "/JellyDvrSchedule/Tuners", mapOf("channelId" to channelId.toString()))
+    suspend fun tuners(channelId: UUID?): TunerStatus? = plugin(HttpMethod.GET, "/JellyDvrSchedule/Tuners", if (channelId == null) emptyMap() else mapOf("channelId" to channelId.toString()))
 }
 
 /** Jellyfin ids come without dashes; UUID.fromString needs them. */

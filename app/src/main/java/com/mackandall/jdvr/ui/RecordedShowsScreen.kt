@@ -58,6 +58,8 @@ private fun local(iso: String?): LocalDateTime? = iso?.let { runCatching { Local
 fun RecordedShowsScreen(
     entry: FocusRequester,
     onPlay: (UUID) -> Unit,
+    openShowId: String? = null,
+    onShowOpened: () -> Unit = {},
 ) {
     var cards by remember { mutableStateOf<List<LiveTvRepository.RecordingCard>?>(null) }
     var loaded by remember { mutableStateOf(false) }
@@ -66,6 +68,9 @@ fun RecordedShowsScreen(
     LaunchedEffect(Unit) {
         cards = Jdvr.liveTv.recordedShows()
         loaded = true
+        // Asked to open a show (from Home): straight to its episodes.
+        openShowId?.let { id -> cards?.firstOrNull { it.id == id }?.let { openShow = it } }
+        onShowOpened()
     }
 
     val show = openShow
