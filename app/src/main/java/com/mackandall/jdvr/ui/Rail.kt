@@ -17,6 +17,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -40,14 +44,19 @@ fun Rail(
     libraries: List<com.mackandall.jdvr.data.LiveTvRepository.Library> = emptyList(),
     selectedLibrary: java.util.UUID? = null,
     onSelectLibrary: (com.mackandall.jdvr.data.LiveTvRepository.Library) -> Unit = {},
+    onDismiss: () -> Unit = {},
 ) {
     val current = remember { FocusRequester() }
+    var hadFocus by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { runCatching { current.requestFocus() } }
     Box(Modifier.fillMaxSize().background(Color(0x99000000))) {
         Column(
             modifier =
                 Modifier
-                    .width(220.dp)
+                    .onFocusChanged {
+                        if (hadFocus && !it.hasFocus) onDismiss()
+                        hadFocus = it.hasFocus
+                    }.width(220.dp)
                     .fillMaxHeight()
                     .background(Jc.Rail)
                     .padding(horizontal = 14.dp, vertical = 24.dp),

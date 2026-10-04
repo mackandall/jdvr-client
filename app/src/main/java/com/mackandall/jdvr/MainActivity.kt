@@ -139,10 +139,9 @@ fun AppRoot() {
             .fillMaxSize()
             .background(Jc.Ink)
             .onKeyEvent { e ->
-                // Left that nothing on the screen used: at the left edge, so open the rail.
-                // Not in the guide: there Left scrolls back through programmes, and reaching "now"
-                // kept popping the rail open; Back opens it there.
-                if (!railOpen && playingChannel == null && playingRecording == null && screen != Screen.Guide &&
+                // Left that nothing on the screen used: at the left edge (in the guide: at "now",
+                // nothing earlier to scroll to), so open the rail.
+                if (!railOpen && playingChannel == null && playingRecording == null &&
                     e.type == KeyEventType.KeyDown && e.key == Key.DirectionLeft
                 ) {
                     if (!focusManager.moveFocus(FocusDirection.Left)) railOpen = true
@@ -155,8 +154,14 @@ fun AppRoot() {
         // Registered before the screens so their own Back (close a panel, leave a show) wins.
         // Always composed, only enabled/disabled: dropping it while a player is up and adding it back
         // afterwards made it the newest handler, so it beat a screen's own (leave a show's episodes).
+        // Back, as in Wholphin: from a section to where it was opened from (else Home), from Home
+        // to the menu, and from the menu on Home out of the app.
         BackHandler(enabled = !railOpen && playingChannel == null && playingRecording == null) {
-            if (backStack.isNotEmpty()) screen = backStack.removeAt(backStack.lastIndex) else railOpen = true
+            when {
+                backStack.isNotEmpty() -> screen = backStack.removeAt(backStack.lastIndex)
+                screen != Screen.Home -> screen = Screen.Home
+                else -> railOpen = true
+            }
         }
         Box(Modifier.fillMaxSize().onFocusChanged { screenHasFocus = it.hasFocus }) {
             when (screen) {
@@ -184,8 +189,19 @@ fun AppRoot() {
             }
         }
         if (railOpen) {
-            BackHandler { railOpen = false }
+            val activity = androidx.compose.ui.platform.LocalContext.current as? android.app.Activity
+            BackHandler {
+                railOpen = false
+                if (screen != Screen.Home) {
+                    backStack.clear()
+                    screen = Screen.Home
+                } else {
+                    activity?.finish()
+                }
+            }
             Rail(
+                // Focus moved off the rail (Right into the screen): it's done, put it away.
+                onDismiss = { railOpen = false },
                 selected = screen,
                 onSelect = {
                     backStack.clear()
