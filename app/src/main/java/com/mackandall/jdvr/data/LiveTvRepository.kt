@@ -716,6 +716,19 @@ class LiveTvRepository {
     /** "Forget this episode": the history no longer counts it as recorded or watched (admins). */
     suspend fun forgetProgram(programId: UUID) = plugin<kotlinx.serialization.json.JsonObject>(HttpMethod.DELETE, "/EpisodeHistory/Program/${programId.toString().replace("-", "")}/History")
 
+    @Serializable
+    data class Forgot(
+        @SerialName("Forgotten") val forgotten: Int = 0,
+        @SerialName("KeptInLibrary") val keptInLibrary: Int = 0,
+    )
+
+    /**
+     * "Forget this episode" from a recording: deletes it (a copy in the library would count it as
+     * recorded again) and what the history remembers, so it records again (admins).
+     */
+    suspend fun forgetRecording(itemId: UUID): Forgot? =
+        plugin(HttpMethod.DELETE, "/EpisodeHistory/Item/${itemId.toString().replace("-", "")}/History", mapOf("deleteRecording" to true))
+
     // ---- Comskip: commercial badges, scan, audio fix -------------------------------------------
 
     @Serializable

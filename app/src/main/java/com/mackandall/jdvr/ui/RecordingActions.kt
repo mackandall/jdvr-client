@@ -32,12 +32,14 @@ fun RecordingActions(
     var reload by remember { mutableIntStateOf(0) }
     var armedDelete by remember(itemId) { mutableStateOf(false) }
     var armedUnfav by remember(itemId) { mutableStateOf(false) }
+    var armedForget by remember(itemId) { mutableStateOf(false) }
     LaunchedEffect(itemId, reload) { fav = runCatching { Jdvr.liveTv.favouriteForItem(itemId) }.getOrNull() }
-    LaunchedEffect(armedDelete, armedUnfav) {
-        if (armedDelete || armedUnfav) {
+    LaunchedEffect(armedDelete, armedUnfav, armedForget) {
+        if (armedDelete || armedUnfav || armedForget) {
             delay(4000)
             armedDelete = false
             armedUnfav = false
+            armedForget = false
         }
     }
 
@@ -72,6 +74,25 @@ fun RecordingActions(
     if (tools) Button("Fix audio format") {
         onNote("Fixing the audio format: this can take a minute…")
         scope.launch { onNote(runCatching { Jdvr.liveTv.fixAudioFormat(itemId)?.message }.getOrNull() ?: "Couldn't fix it (administrators only).") }
+    }
+    // Episode History's "Forget this episode": delete it and forget it, so it records again.
+    if (tools) {
+        Button(if (armedForget) "Press again: delete and forget" else "Forget this episode") {
+            if (!armedForget) {
+                armedForget = true
+            } else {
+                armedForget = false
+                scope.launch {
+                    val r = runCatching { Jdvr.liveTv.forgetRecording(itemId) }.getOrNull()
+                    if (r == null) {
+                        onNote("Couldn't forget it (administrators only, needs Episode History).")
+                    } else {
+                        onNote("Deleted and forgotten: it will be recorded again" + if (r.keptInLibrary > 0) " (${r.keptInLibrary} other copy still in the library counts as recorded)" else "")
+                        onDeleted()
+                    }
+                }
+            }
+        }
     }
     Button(if (armedDelete) "Press again to delete" else "Delete recording", leading = { Dot(Jc.Recording) }) {
         if (!armedDelete) {
