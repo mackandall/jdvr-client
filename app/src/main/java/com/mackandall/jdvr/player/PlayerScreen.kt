@@ -31,6 +31,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.nativeKeyCode
 import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.platform.LocalContext
@@ -52,6 +53,7 @@ import com.mackandall.jdvr.data.Channel
 import com.mackandall.jdvr.data.Jdvr
 import com.mackandall.jdvr.data.LivePlayback
 import com.mackandall.jdvr.data.LiveTvRepository
+import com.mackandall.jdvr.data.toUuid
 import com.mackandall.jdvr.ui.Button
 import com.mackandall.jdvr.ui.Jc
 import com.mackandall.jdvr.ui.Marks
@@ -70,6 +72,9 @@ import java.time.ZoneId
 import java.util.UUID
 import org.jellyfin.sdk.model.serializer.toUUIDOrNull
 
+/** This visit's buffer: the one recording now (an older, finished one is the wrong place to land). */
+private fun List<LiveTvRepository.Buffer>.currentBuffer() = lastOrNull { it.recording && it.itemId != null }
+
 /** Sparse-PCR recordings needed an 8 MB TS search window to seek (the Wholphin fix). */
 private const val TS_SEARCH_BYTES = 8 * 1024 * 1024
 
@@ -84,7 +89,16 @@ fun PlayerScreen(
     channelId: UUID,
     onExit: () -> Unit,
     onChannelChange: (UUID) -> Unit,
+    onPlayRecording: (com.mackandall.jdvr.PlayRecording) -> Unit,
 ) {
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    var actionsOpen by remember { mutableStateOf(false) }
+    var note by remember { mutableStateOf<String?>(null) }
+    var buffers by remember { mutableStateOf<List<LiveTvRepository.Buffer>>(emptyList()) }
+    var fromStart by remember { mutableStateOf<UUID?>(null) }
+    val playFocus = remember { FocusRequester() }
+    var lastKeyAt by remember { mutableStateOf(System.currentTimeMillis()) }
+    var pausedAt by remember(channelId) { mutableStateOf<Instant?>(null) }
     val context = LocalContext.current
     val symbols = rememberMarkSymbols()
     var channels by remember { mutableStateOf<List<Channel>>(emptyList()) }
@@ -146,6 +160,7 @@ fun PlayerScreen(
                     playback = p
                     Jdvr.session.lastChannelId = channelId.toString()
                     player.setMediaItem(MediaItem.fromUri(p.url))
+                    player.playWhenReady = true // a new channel plays even if the last was paused
                     player.prepare()
                     Jdvr.liveTv.reportStart(p)
                     while (true) {
@@ -168,6 +183,81 @@ fun PlayerScreen(
             }
         }
     }
+
+    // JellyDVR Live's buffer (from tune-in) and, if the programme is a real recording, the recording.
+    LaunchedEffect(channelId, actionsOpen) {
+        buffers = Jdvr.liveTv.buffers(channelId)
+        fromStart = channels.firstOrNull { it.id == channelId }?.now?.takeIf { it.isRecording }?.let { Jdvr.liveTv.recordingOfProgram(it.id) }
+    }
+    LaunchedEffect(actionsOpen) {
+        if (actionsOpen) {
+            osdUntil = Long.MAX_VALUE
+            delay(50)
+            runCatching { playFocus.requestFocus() }
+        } else {
+            osdUntil = System.currentTimeMillis() + 3000
+            runCatching { focus.requestFocus() }
+        }
+    }
+    // The controls tuck away after 8 s untouched.
+    LaunchedEffect(actionsOpen, lastKeyAt, pausedAt) {
+        if (!actionsOpen || pausedAt != null) return@LaunchedEffect
+        delay(8000)
+        actionsOpen = false
+    }
+    if (actionsOpen) androidx.activity.compose.BackHandler { actionsOpen = false }
+
+    // Live TV is an HLS stream the server keeps writing from tune-in on, so pause, rewind and fast
+    // forward all happen inside it, instantly (as in Wholphin and the web client). JellyDVR Live's
+    // buffer recording is for what this can't do: Keep, Watch from start, another device.
+    fun showOsd() {
+        osdUntil = System.currentTimeMillis() + 5000
+    }
+
+    fun rewind() {
+        player.seekTo((player.currentPosition - 10_000).coerceAtLeast(0))
+        showOsd()
+    }
+
+    fun forward() {
+        // No further than live.
+        val live = player.currentPosition + (player.currentLiveOffset.takeIf { it != androidx.media3.common.C.TIME_UNSET } ?: 0L)
+        player.seekTo(minOf(player.currentPosition + 30_000, live))
+        showOsd()
+    }
+
+    fun toLive() {
+        player.seekToDefaultPosition()
+        player.play()
+        showOsd()
+    }
+
+    // Stop: done with this channel, so its tuner input is freed now rather than after the grace.
+    fun stop() {
+        Jdvr.liveTv.stopBuffering(channelId)
+        onExit()
+    }
+
+    // Back to where you tuned in: the start of the stream.
+    fun backToTuneIn() {
+        player.seekTo(0)
+        showOsd()
+    }
+
+    fun pause() {
+        if (pausedAt != null) return
+        pausedAt = Instant.now()
+        player.pause()
+    }
+
+    fun resume() {
+        if (pausedAt == null) return
+        pausedAt = null
+        player.play()
+        showOsd()
+    }
+
+    fun playPause() = if (pausedAt == null) pause() else resume()
 
     // A typed channel number goes after 2 s without another digit.
     LaunchedEffect(typedAt) {
@@ -197,9 +287,26 @@ fun PlayerScreen(
             .background(Color.Black)
             .focusRequester(focus)
             .focusable()
+            .onPreviewKeyEvent { e ->
+                lastKeyAt = System.currentTimeMillis()
+                if (e.type != KeyEventType.KeyDown || busy != null || error != null) return@onPreviewKeyEvent false
+                // The remote's media keys work whether or not the controls are showing.
+                when (e.key.nativeKeyCode) {
+                    AndroidKeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> playPause()
+                    AndroidKeyEvent.KEYCODE_MEDIA_PAUSE -> pause()
+                    AndroidKeyEvent.KEYCODE_MEDIA_PLAY -> resume()
+                    AndroidKeyEvent.KEYCODE_MEDIA_REWIND -> rewind()
+                    AndroidKeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> forward()
+                    AndroidKeyEvent.KEYCODE_MEDIA_NEXT -> toLive()
+                    AndroidKeyEvent.KEYCODE_MEDIA_PREVIOUS -> backToTuneIn()
+                    AndroidKeyEvent.KEYCODE_MEDIA_STOP -> stop()
+                    else -> return@onPreviewKeyEvent false
+                }
+                true
+            }
             .onKeyEvent { e ->
-                // A dialog (tuners busy, error) has the remote: its buttons, not channel changes.
-                if (e.type != KeyEventType.KeyDown || busy != null || error != null) return@onKeyEvent false
+                // A dialog (tuners busy, error) or the actions row has the remote.
+                if (e.type != KeyEventType.KeyDown || busy != null || error != null || actionsOpen) return@onKeyEvent false
                 when (val code = e.key.nativeKeyCode) {
                     AndroidKeyEvent.KEYCODE_DPAD_UP, AndroidKeyEvent.KEYCODE_CHANNEL_UP -> {
                         step(1)
@@ -209,13 +316,27 @@ fun PlayerScreen(
                         step(-1)
                         true
                     }
-                    AndroidKeyEvent.KEYCODE_DPAD_CENTER, AndroidKeyEvent.KEYCODE_ENTER, AndroidKeyEvent.KEYCODE_INFO -> {
+                    AndroidKeyEvent.KEYCODE_DPAD_CENTER, AndroidKeyEvent.KEYCODE_ENTER -> {
                         if (typed.isNotEmpty()) {
                             channels.firstOrNull { it.number == typed }?.let { onChannelChange(it.id) }
                             typed = ""
+                        } else if (pausedAt != null) {
+                            resume()
                         } else {
-                            osdUntil = System.currentTimeMillis() + 6000
+                            actionsOpen = true
                         }
+                        true
+                    }
+                    AndroidKeyEvent.KEYCODE_INFO -> {
+                        osdUntil = System.currentTimeMillis() + 6000
+                        true
+                    }
+                    AndroidKeyEvent.KEYCODE_DPAD_LEFT -> {
+                        rewind()
+                        true
+                    }
+                    AndroidKeyEvent.KEYCODE_DPAD_RIGHT -> {
+                        forward()
                         true
                     }
                     in AndroidKeyEvent.KEYCODE_0..AndroidKeyEvent.KEYCODE_9 -> {
@@ -233,8 +354,49 @@ fun PlayerScreen(
         )
 
         val channel = channels.firstOrNull { it.id == channelId }
-        if (System.currentTimeMillis() < osdUntil || error != null) {
-            tick.let { InfoBar(channel, symbols, Modifier.align(Alignment.BottomCenter)) }
+        if (System.currentTimeMillis() < osdUntil || error != null || actionsOpen || pausedAt != null) {
+            tick.let {
+                val offset = player.currentLiveOffset.takeIf { it != androidx.media3.common.C.TIME_UNSET } ?: 0L
+                InfoBar(channel, symbols, Modifier.align(Alignment.BottomCenter), behindMs = if (offset > 15_000) offset else 0L) {
+                    if (actionsOpen) {
+                        val b = buffers.currentBuffer()
+                        val behind = (player.currentLiveOffset.takeIf { it != androidx.media3.common.C.TIME_UNSET } ?: 0L) > 15_000 || pausedAt != null
+                        TransportBar(
+                            previous = TransportAction(TransportIcon.Previous) { backToTuneIn() },
+                            rewind = TransportAction(TransportIcon.Rewind) { rewind() },
+                            stop = TransportAction(TransportIcon.Stop) { stop() },
+                            playPause = TransportAction(if (pausedAt == null) TransportIcon.Pause else TransportIcon.Play) { playPause() },
+                            forward = TransportAction(TransportIcon.Forward, behind) { forward() },
+                            // Next = back to live.
+                            next = TransportAction(TransportIcon.Next, behind) { toLive() },
+                            playFocus = playFocus,
+                        ) {
+                            fromStart?.let { rec ->
+                                Button("Watch from start") { onPlayRecording(com.mackandall.jdvr.PlayRecording(rec, startMs = 0L, liveChannelId = channelId)) }
+                            }
+                            if (b != null) {
+                                Button(if (b.kept) "Kept · don't keep" else "Keep this programme") {
+                                    scope.launch {
+                                        Jdvr.liveTv.keepBuffer(b.id, !b.kept)
+                                        buffers = Jdvr.liveTv.buffers(channelId)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        pausedAt?.let { at ->
+            Text(
+                "❚❚  Paused at " + LocalDateTime.ofInstant(at, ZoneId.systemDefault()).time() + "  ·  ▶ or OK to resume",
+                color = Jc.Text,
+                fontSize = 18.sp,
+                modifier = Modifier.align(Alignment.TopStart).padding(28.dp).background(Color(0xCC0D1117), RoundedCornerShape(10.dp)).padding(horizontal = 16.dp, vertical = 10.dp),
+            )
+        }
+        note?.let {
+            Text(it, color = Jc.Text, fontSize = 16.sp, modifier = Modifier.align(Alignment.TopCenter).padding(28.dp).background(Color(0xCC0D1117), RoundedCornerShape(10.dp)).padding(14.dp))
         }
         if (typed.isNotEmpty()) {
             Text(
@@ -268,6 +430,8 @@ private fun InfoBar(
     channel: Channel?,
     symbols: LiveTvRepository.MarkSymbols?,
     modifier: Modifier,
+    behindMs: Long = 0L,
+    actions: @Composable () -> Unit = {},
 ) {
     val now = channel?.now
     val marks = Marks.parse(now?.rawEpisodeTitle, symbols)
@@ -283,6 +447,16 @@ private fun InfoBar(
             )
             Text(now?.name ?: "", color = Jc.Text, fontSize = 26.sp, fontWeight = FontWeight.SemiBold)
             MarkChips(marks)
+            if (behindMs > 0) {
+                val sec = behindMs / 1000
+                Text(
+                    "−" + (if (sec >= 3600) "%d:%02d:%02d".format(sec / 3600, sec / 60 % 60, sec % 60) else "%d:%02d".format(sec / 60, sec % 60)) + " behind live",
+                    color = Jc.Amber,
+                    fontSize = 16.sp,
+                )
+            } else {
+                Text("● LIVE", color = Jc.Recording, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+            }
         }
         val sub = listOfNotNull(now?.seasonEpisode, marks.title).joinToString(" · ")
         if (sub.isNotEmpty()) Text(sub, color = Jc.Text, fontSize = 16.sp)
@@ -298,7 +472,8 @@ private fun InfoBar(
                 if (now.isRecording) Text("● Recording", color = Jc.Recording, fontSize = 14.sp)
             }
         }
-        Text("▲▼ change channel · 0–9 type a number · OK info · Back leave", color = Jc.Muted, fontSize = 13.sp)
+        actions()
+        Text("▲▼ change channel · 0–9 type a number · ← 10 s back · → 30 s ahead · OK controls · Back leave", color = Jc.Muted, fontSize = 13.sp)
     }
 }
 

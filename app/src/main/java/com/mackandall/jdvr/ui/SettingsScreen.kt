@@ -1,0 +1,108 @@
+package com.mackandall.jdvr.ui
+
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.tv.material3.Border
+import androidx.tv.material3.ClickableSurfaceDefaults
+import androidx.tv.material3.Surface
+import androidx.tv.material3.Text
+import com.mackandall.jdvr.BuildConfig
+import com.mackandall.jdvr.data.Jdvr
+import com.mackandall.jdvr.data.Prefs
+
+/**
+ * Settings: things set once for the whole app. Actions that belong to what's on screen (Record,
+ * Keep, Skip…) stay on the screens. OK on a row steps through its choices.
+ */
+@Composable
+fun SettingsScreen(entry: FocusRequester) {
+    val prefs = Jdvr.prefs
+    Column(Modifier.fillMaxSize().padding(start = 28.dp, top = 24.dp, end = 28.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text("Settings", color = Jc.Text, fontSize = 28.sp, fontWeight = FontWeight.SemiBold)
+        Spacer(6)
+        Section("Guide")
+        Choice(
+            label = "Programme details",
+            help = "Beside the guide, or above it so the guide uses the full width.",
+            value = if (prefs.guideInfo == Prefs.TOP) "Above the guide" else "Beside the guide",
+            modifier = Modifier.focusRequester(entry),
+        ) { prefs.changeGuideInfo(if (prefs.guideInfo == Prefs.TOP) Prefs.SIDE else Prefs.TOP) }
+        Section("Recordings")
+        Choice(
+            label = "Commercials",
+            help = "Found by Comskip, also while a programme is still recording.",
+            value = skipLabel(prefs.commercialSkip),
+        ) { prefs.changeCommercialSkip(next(prefs.commercialSkip)) }
+        Choice(
+            label = "Intros, recaps and previews",
+            help = "Found by Intro Skipper.",
+            value = skipLabel(prefs.introSkip),
+        ) { prefs.changeIntroSkip(next(prefs.introSkip)) }
+        Section("About")
+        Text(
+            "JDVR ${BuildConfig.VERSION_NAME} · signed in as ${Jdvr.session.userName ?: "?"} on ${Jdvr.session.serverUrl ?: "?"}",
+            color = Jc.Muted,
+            fontSize = 15.sp,
+        )
+    }
+}
+
+private fun skipLabel(v: String) =
+    when (v) {
+        Prefs.AUTO -> "Skip automatically"
+        Prefs.OFF -> "Don't skip"
+        else -> "Ask (show a Skip button)"
+    }
+
+private fun next(v: String) =
+    when (v) {
+        Prefs.ASK -> Prefs.AUTO
+        Prefs.AUTO -> Prefs.OFF
+        else -> Prefs.ASK
+    }
+
+@Composable
+private fun Section(title: String) {
+    Text(title, color = Jc.Muted, fontSize = 15.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 12.dp))
+}
+
+@Composable
+private fun Choice(
+    label: String,
+    help: String,
+    value: String,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    Surface(
+        onClick = onClick,
+        modifier = modifier.fillMaxWidth(0.8f),
+        shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(10.dp)),
+        colors = ClickableSurfaceDefaults.colors(containerColor = Jc.Panel, focusedContainerColor = Jc.FocusFill, contentColor = Jc.Text, focusedContentColor = Jc.Text),
+        border = ClickableSurfaceDefaults.border(focusedBorder = Border(BorderStroke(2.dp, Jc.Focus))),
+        scale = ClickableSurfaceDefaults.scale(focusedScale = 1.01f),
+    ) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(label, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+                Text(help, color = Jc.Muted, fontSize = 14.sp)
+            }
+            Text(value, color = Jc.Focus, fontSize = 16.sp, modifier = Modifier.width(260.dp))
+        }
+    }
+}

@@ -8,6 +8,7 @@ import org.jellyfin.sdk.api.client.HttpMethod
 import org.jellyfin.sdk.api.client.extensions.imageApi
 import org.jellyfin.sdk.api.client.extensions.liveTvApi
 import org.jellyfin.sdk.api.client.extensions.mediaInfoApi
+import org.jellyfin.sdk.api.client.extensions.mediaSegmentsApi
 import org.jellyfin.sdk.api.client.extensions.playStateApi
 import org.jellyfin.sdk.api.client.extensions.userLibraryApi
 import org.jellyfin.sdk.api.client.extensions.videosApi
@@ -26,6 +27,7 @@ import org.jellyfin.sdk.model.api.RepeatMode
 import org.jellyfin.sdk.model.api.TimerInfoDto
 import org.jellyfin.sdk.model.api.request.GetLiveTvChannelsRequest
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.jellyfin.sdk.model.serializer.toUUIDOrNull
 import timber.log.Timber
@@ -219,8 +221,10 @@ class LiveTvRepository {
                         userId = Jdvr.userId,
                         deviceProfile = Jdvr.deviceProfile,
                         maxStreamingBitrate = 120_000_000,
-                        enableDirectPlay = true,
-                        enableDirectStream = true,
+                        // HLS (a remux: video and audio copied, not re-encoded), as Wholphin gets: the
+                        // server keeps every segment since tune-in, so pause and rewind are instant.
+                        enableDirectPlay = false,
+                        enableDirectStream = false,
                         enableTranscoding = true,
                         allowVideoStreamCopy = true,
                         allowAudioStreamCopy = true,
@@ -231,7 +235,8 @@ class LiveTvRepository {
         val source = response.mediaSources.firstOrNull() ?: error("No stream for this channel")
         val url =
             when {
-                source.supportsDirectPlay || source.supportsDirectStream && source.transcodingUrl == null ->
+                source.transcodingUrl != null -> api.createUrl(source.transcodingUrl!!)
+                source.supportsDirectPlay || source.supportsDirectStream ->
                     api.videosApi.getVideoStreamUrl(
                         itemId = channelId,
                         mediaSourceId = source.id,
@@ -240,16 +245,16 @@ class LiveTvRepository {
                         playSessionId = response.playSessionId,
                         liveStreamId = source.liveStreamId,
                     )
-                source.transcodingUrl != null -> api.createUrl(source.transcodingUrl!!)
                 else -> error("No way to play this channel")
             }
         val method =
             when {
+                source.transcodingUrl != null -> PlayMethod.TRANSCODE
                 source.supportsDirectPlay -> PlayMethod.DIRECT_PLAY
                 source.supportsDirectStream -> PlayMethod.DIRECT_STREAM
                 else -> PlayMethod.TRANSCODE
             }
-        Timber.i("Live %s: %s via %s", channelId, method, url.substringBefore('?'))
+        Timber.i("Live %s: %s via %s", channelId, method, url)
         LivePlayback(channelId, url, source.id, source.liveStreamId, response.playSessionId, method)
     }
 
@@ -263,6 +268,7 @@ class LiveTvRepository {
         val playMethod: PlayMethod,
         val resumeMs: Long,
         val durationMs: Long?,
+        val seriesId: String? = null,
     )
 
     suspend fun startItem(itemId: UUID): ItemPlayback =
@@ -300,6 +306,7 @@ class LiveTvRepository {
                 playMethod = if (source.supportsDirectPlay) PlayMethod.DIRECT_PLAY else if (source.supportsDirectStream) PlayMethod.DIRECT_STREAM else PlayMethod.TRANSCODE,
                 resumeMs = (item.userData?.playbackPositionTicks ?: 0L) / 10_000L,
                 durationMs = item.runTimeTicks?.let { it / 10_000L },
+                seriesId = item.seriesId?.toString()?.replace("-", ""),
             )
         }
 
@@ -588,6 +595,123 @@ class LiveTvRepository {
     )
 
     suspend fun upcoming(): List<Upcoming>? = plugin(HttpMethod.GET, "/JellyDvrSchedule/Upcoming")
+
+    // ---- commercial / intro segments ----------------------------------------------------------
+
+    /** A stretch to skip: "Commercial", "Intro", "Recap", "Preview" or "Outro". */
+    data class Segment(
+        val type: String,
+        val startMs: Long,
+        val endMs: Long,
+    )
+
+    /** Jellyfin's segments for a finished recording (Comskip's breaks, Intro Skipper's intros). */
+    suspend fun segments(itemId: UUID): List<Segment> =
+        io {
+            runCatching {
+                api.mediaSegmentsApi.getItemSegments(itemId).content.items.map {
+                    Segment(
+                        type = it.type.serialName,
+                        startMs = it.startTicks / 10_000L,
+                        endMs = it.endTicks / 10_000L,
+                    )
+                }
+            }.getOrDefault(emptyList())
+        }
+
+    @Serializable
+    private data class LiveSegment(
+        @SerialName("Type") val type: String = "Commercial",
+        @SerialName("StartTicks") val startTicks: Long = 0,
+        @SerialName("EndTicks") val endTicks: Long = 0,
+    )
+
+    @Serializable
+    private data class LiveSegments(
+        @SerialName("InProgress") val inProgress: Boolean = false,
+        @SerialName("Items") val items: List<LiveSegment> = emptyList(),
+    )
+
+    /**
+     * Commercials found so far in a recording still being made (Comskip's live scan); Jellyfin has
+     * none for it until it finishes. First: still in progress.
+     */
+    suspend fun liveSegments(itemId: UUID): Pair<Boolean, List<Segment>> {
+        val r = plugin<LiveSegments>(HttpMethod.GET, "/ComskipSegments/Live/${itemId.toString().replace("-", "")}") ?: return false to emptyList()
+        return r.inProgress to r.items.map { Segment(it.type, it.startTicks / 10_000L, it.endTicks / 10_000L) }
+    }
+
+    // ---- JellyDVR Live buffers ---------------------------------------------------------------
+
+    @Serializable
+    data class Buffer(
+        @SerialName("Id") val id: String,
+        @SerialName("ProgramName") val programName: String? = null,
+        @SerialName("ItemId") val itemId: String? = null,
+        @SerialName("StartedUtc") val startedUtc: String? = null,
+        @SerialName("Recording") val recording: Boolean = false,
+        @SerialName("Kept") val kept: Boolean = false,
+    )
+
+    @Serializable
+    private data class Buffers(
+        @SerialName("Buffers") val buffers: List<Buffer> = emptyList(),
+    )
+
+    /** The channel's buffers, oldest first; the last is the programme on now. */
+    suspend fun buffers(channelId: UUID): List<Buffer> =
+        plugin<Buffers>(HttpMethod.GET, "/JellyDvrLive/Channel/${channelId.toString().replace("-", "")}")?.buffers.orEmpty()
+
+    /** Ask JellyDVR Live to start buffering the channel now (Pause), skipping its surfing delay. */
+    suspend fun startBuffering(channelId: UUID): List<Buffer> =
+        plugin<Buffers>(HttpMethod.POST, "/JellyDvrLive/Channel/${channelId.toString().replace("-", "")}/Start")?.buffers.orEmpty()
+
+    /** The buffer an item is, if it is one (for Keep in the player). */
+    suspend fun bufferOfItem(itemId: UUID): Buffer? = plugin(HttpMethod.GET, "/JellyDvrLive/Item/${itemId.toString().replace("-", "")}")
+
+    suspend fun keepBuffer(
+        bufferId: String,
+        keep: Boolean,
+    ): Buffer? = plugin(if (keep) HttpMethod.POST else HttpMethod.DELETE, "/JellyDvrLive/Keep/$bufferId")
+
+    @Serializable
+    data class Stopped(
+        @SerialName("Stopped") val stopped: Int = 0,
+    )
+
+    /**
+     * Stop pressed: JellyDVR Live stops buffering the channel now, freeing its tuner input (it
+     * leaves kept buffers, real recordings, and channels someone else is watching). Runs on its
+     * own scope so it finishes even as the player closes.
+     */
+    fun stopBuffering(channelId: UUID) {
+        kotlinx.coroutines.MainScope().launch {
+            plugin<Stopped>(HttpMethod.POST, "/JellyDvrLive/Channel/${channelId.toString().replace("-", "")}/Stop")
+        }
+    }
+
+    // ---- Watch from start ----------------------------------------------------------------------
+
+    @Serializable
+    private data class GuideBadge(
+        @SerialName("ProgramId") val programId: String = "",
+        @SerialName("RecordingItemId") val recordingItemId: String? = null,
+    )
+
+    @Serializable
+    private data class GuideBadges(
+        @SerialName("Programs") val programs: List<GuideBadge> = emptyList(),
+    )
+
+    /** The recording of a programme being recorded now, as a library item (Comskip plugin). */
+    suspend fun recordingOfProgram(programId: UUID): UUID? {
+        val key = programId.toString().replace("-", "")
+        return plugin<GuideBadges>(HttpMethod.GET, "/ComskipSegments/Badges/Guide")
+            ?.programs
+            ?.firstOrNull { it.programId.replace("-", "").equals(key, ignoreCase = true) }
+            ?.recordingItemId
+            ?.toUuid()
+    }
 
     suspend fun tuners(channelId: UUID): TunerStatus? = plugin(HttpMethod.GET, "/JellyDvrSchedule/Tuners", mapOf("channelId" to channelId.toString()))
 }

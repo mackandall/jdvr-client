@@ -23,6 +23,8 @@ object Jdvr {
 
     lateinit var session: Session
         private set
+    lateinit var prefs: Prefs
+        private set
     lateinit var jellyfin: Jellyfin
         private set
     lateinit var http: OkHttpClient
@@ -39,6 +41,7 @@ object Jdvr {
     fun init(context: Context) {
         appContext = context.applicationContext
         session = Session(appContext)
+        prefs = Prefs(appContext)
         http = OkHttpClient.Builder().build()
         val factory = OkHttpFactory(http)
         jellyfin =

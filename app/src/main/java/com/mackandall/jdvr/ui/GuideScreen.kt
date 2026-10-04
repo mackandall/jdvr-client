@@ -76,7 +76,9 @@ private fun floorToHalfHour(t: LocalDateTime): LocalDateTime = t.truncatedTo(Chr
 fun GuideScreen(
     entry: FocusRequester,
     onPlay: (UUID) -> Unit,
+    onPlayRecording: (com.mackandall.jdvr.PlayRecording) -> Unit,
 ) {
+    val infoOnTop = Jdvr.prefs.guideInfo == com.mackandall.jdvr.data.Prefs.TOP
     var channels by remember { mutableStateOf<List<Channel>?>(null) }
     var windowStart by remember { mutableStateOf(floorToHalfHour(LocalDateTime.now())) }
     var programs by remember { mutableStateOf<Map<UUID, List<Program>>>(emptyMap()) }
@@ -125,6 +127,27 @@ fun GuideScreen(
         }
     }
 
+    @Composable
+    fun Actions(p: Program) {
+        BackHandler { selected = null }
+        ProgramPanel(
+            program = p,
+            channel = channels?.firstOrNull { it.id == p.channelId },
+            symbols = symbols,
+            onWatch = {
+                selected = null
+                onPlay(p.channelId)
+            },
+            onWatchFromStart = { itemId ->
+                selected = null
+                onPlayRecording(com.mackandall.jdvr.PlayRecording(itemId, startMs = 0L))
+            },
+            onChanged = { reload++ },
+            onClose = { selected = null },
+            modifier = Modifier,
+        )
+    }
+
     // Moves the window; false when it can't (already at now), so Left can open the rail instead.
     fun shift(
         minutes: Long,
@@ -138,8 +161,17 @@ fun GuideScreen(
         return true
     }
 
+    Box(Modifier.fillMaxSize()) {
+    Column(Modifier.fillMaxSize()) {
+    // "Above the guide" (Settings): the details on a band at the top, the grid at full width.
+    if (infoOnTop) {
+        Box(Modifier.fillMaxWidth().height(170.dp).background(Jc.Panel)) {
+            focused?.let { TopInfo(it, channels?.firstOrNull { c -> c.id == it.channelId }, symbols) }
+                ?: Text("Move through the guide to see a programme here; OK for what you can do with it.", color = Jc.Muted, fontSize = 15.sp, modifier = Modifier.padding(22.dp))
+        }
+    }
     Row(Modifier.fillMaxSize()) {
-        Column(Modifier.weight(0.74f).fillMaxHeight().padding(start = 20.dp, top = 20.dp)) {
+        Column(Modifier.weight(if (infoOnTop) 1f else 0.74f).fillMaxHeight().padding(start = 20.dp, top = if (infoOnTop) 8.dp else 20.dp)) {
             Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 Text("Guide", color = Jc.Text, fontSize = 28.sp, fontWeight = FontWeight.SemiBold)
                 Text(windowStart.day(), color = Jc.Muted, fontSize = 16.sp, modifier = Modifier.padding(bottom = 4.dp))
@@ -181,28 +213,55 @@ fun GuideScreen(
                 }
             }
         }
-        // The right quarter: the programme the cursor is on, or its actions after OK.
-        Box(Modifier.weight(0.26f).fillMaxHeight().background(Jc.Panel)) {
-            val p = selected
-            if (p == null) {
-                focused?.let { InfoPanel(it, channels?.firstOrNull { c -> c.id == it.channelId }, symbols) }
-                    ?: Text("Move through the guide to see a programme here; OK for what you can do with it.", color = Jc.Muted, fontSize = 15.sp, modifier = Modifier.padding(22.dp))
-            } else {
-                BackHandler { selected = null }
-                ProgramPanel(
-                    program = p,
-                    channel = channels?.firstOrNull { it.id == p.channelId },
-                    symbols = symbols,
-                    onWatch = {
-                        selected = null
-                        onPlay(p.channelId)
-                    },
-                    onChanged = { reload++ },
-                    onClose = { selected = null },
-                    modifier = Modifier,
-                )
+        // Side layout: the right quarter shows the programme the cursor is on, or its actions after OK.
+        if (!infoOnTop) {
+            Box(Modifier.weight(0.26f).fillMaxHeight().background(Jc.Panel)) {
+                val p = selected
+                if (p == null) {
+                    focused?.let { InfoPanel(it, channels?.firstOrNull { c -> c.id == it.channelId }, symbols) }
+                        ?: Text("Move through the guide to see a programme here; OK for what you can do with it.", color = Jc.Muted, fontSize = 15.sp, modifier = Modifier.padding(22.dp))
+                } else {
+                    Actions(p)
+                }
             }
         }
+    }
+    }
+    // Top layout: the actions open as a panel over the right of the grid.
+    if (infoOnTop) {
+        selected?.let { p ->
+            Box(Modifier.align(Alignment.CenterEnd).width(380.dp).fillMaxHeight().background(Jc.Panel)) { Actions(p) }
+        }
+    }
+    }
+}
+
+/** The details band above the guide ("Above the guide" in Settings). */
+@Composable
+private fun TopInfo(
+    p: Program,
+    channel: Channel?,
+    symbols: LiveTvRepository.MarkSymbols?,
+) {
+    val marks = Marks.parse(p.rawEpisodeTitle, symbols)
+    Row(Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 16.dp), horizontalArrangement = Arrangement.spacedBy(28.dp)) {
+        Column(Modifier.weight(0.45f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(p.name, color = Jc.Text, fontSize = 24.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            val episode = listOfNotNull(p.seasonEpisode, marks.title).joinToString(" · ")
+            if (episode.isNotEmpty()) Text(episode, color = Jc.Text, fontSize = 17.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(
+                "${p.start.day()} · ${p.start.time()} – ${p.end.time()}" + (channel?.let { " · ${it.number} ${it.name}" } ?: ""),
+                color = Jc.Muted,
+                fontSize = 15.sp,
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                if (p.isRecording) Chip(if (p.seriesTimerId != null) "● series recording" else "● recording", Jc.Recording)
+                if (p.isRepeat) Chip("repeat", Jc.Muted)
+                if (p.isMovie) Chip("movie", Jc.Muted)
+                MarkChips(marks)
+            }
+        }
+        Text(p.overview ?: "", color = Jc.Muted, fontSize = 15.sp, maxLines = 5, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(0.55f))
     }
 }
 
@@ -394,11 +453,17 @@ private fun ProgramPanel(
     channel: Channel?,
     symbols: LiveTvRepository.MarkSymbols?,
     onWatch: () -> Unit,
+    onWatchFromStart: (UUID) -> Unit,
     onChanged: () -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var p by remember(program.id) { mutableStateOf(program) }
+    // Being recorded now: the recording, to watch from the start (with commercial skipping).
+    var recordingItem by remember(program.id) { mutableStateOf<UUID?>(null) }
+    LaunchedEffect(program.id) {
+        if (program.isRecording && program.isOn()) recordingItem = Jdvr.liveTv.recordingOfProgram(program.id)
+    }
     var schedule by remember(program.id) { mutableStateOf<LiveTvRepository.ScheduleState?>(null) }
     var note by remember(program.id) { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
@@ -457,6 +522,7 @@ private fun ProgramPanel(
         }
         Spacer(4)
         if (p.isOn()) Button("Watch live", modifier = Modifier.fillMaxWidth().focusRequester(first), onClick = onWatch)
+        recordingItem?.let { id -> Button("Watch from start", modifier = Modifier.fillMaxWidth(), leading = { Text("⏮", color = Jc.Text) }) { onWatchFromStart(id) } }
         val recordModifier = if (p.isOn()) Modifier.fillMaxWidth() else Modifier.fillMaxWidth().focusRequester(first)
         if (p.isRecording) {
             Button("Don't record this", modifier = recordModifier, leading = { Dot(Jc.Recording) }) {

@@ -48,10 +48,14 @@ fun Rail(
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Text("JDVR", color = Jc.Focus, fontWeight = FontWeight.Bold, fontSize = 18.sp, modifier = Modifier.padding(start = 10.dp, bottom = 14.dp))
-            Screen.entries.forEach { s ->
+            Screen.entries.filter { it != Screen.Settings }.forEach { s ->
                 RailItem(s.label, s == selected, if (s == selected) Modifier.focusRequester(current) else Modifier) { onSelect(s) }
             }
             Spacer(Modifier.weight(1f))
+            // App-wide preferences sit apart from the content sections, at the bottom.
+            RailItem(Screen.Settings.label, selected == Screen.Settings, if (selected == Screen.Settings) Modifier.focusRequester(current) else Modifier) {
+                onSelect(Screen.Settings)
+            }
             RailItem("Sign out", false, Modifier, onSignOut)
         }
     }

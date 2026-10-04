@@ -35,6 +35,7 @@ import com.mackandall.jdvr.ui.Rail
 import com.mackandall.jdvr.ui.RecordedShowsScreen
 import com.mackandall.jdvr.ui.ScheduledScreen
 import com.mackandall.jdvr.ui.SeriesScreen
+import com.mackandall.jdvr.ui.SettingsScreen
 import kotlinx.coroutines.delay
 import java.util.UUID
 
@@ -47,7 +48,17 @@ enum class Screen(
     RecordedShows("Recorded Shows"),
     Scheduled("Scheduled"),
     Series("Series"),
+    Settings("Settings"),
 }
+
+/** A recording to play: from where, and (for a live buffer) the channel to go back to. */
+data class PlayRecording(
+    val itemId: UUID,
+    val startMs: Long? = null,
+    val liveChannelId: UUID? = null,
+    // Paused from live TV: open the buffer paused.
+    val paused: Boolean = false,
+)
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -66,7 +77,7 @@ fun AppRoot() {
     var screen by remember { mutableStateOf(Screen.Guide) }
     var railOpen by remember { mutableStateOf(false) }
     var playingChannel by remember { mutableStateOf<UUID?>(null) }
-    var playingRecording by remember { mutableStateOf<UUID?>(null) }
+    var playingRecording by remember { mutableStateOf<PlayRecording?>(null) }
     // Where focus goes on the current screen when the rail closes (each screen attaches it).
     val entry = remember(screen) { FocusRequester() }
     var screenHasFocus by remember { mutableStateOf(false) }
@@ -110,11 +121,12 @@ fun AppRoot() {
         }
         Box(Modifier.fillMaxSize().onFocusChanged { screenHasFocus = it.hasFocus }) {
             when (screen) {
-                Screen.Guide -> GuideScreen(entry = entry, onPlay = { playingChannel = it })
+                Screen.Guide -> GuideScreen(entry = entry, onPlay = { playingChannel = it }, onPlayRecording = { playingRecording = it })
                 Screen.LiveTv -> ChannelsScreen(entry = entry, onPlay = { playingChannel = it })
-                Screen.RecordedShows -> RecordedShowsScreen(entry = entry, onPlay = { playingRecording = it })
+                Screen.RecordedShows -> RecordedShowsScreen(entry = entry, onPlay = { playingRecording = PlayRecording(it) })
                 Screen.Scheduled -> ScheduledScreen(entry = entry)
                 Screen.Series -> SeriesScreen(entry = entry)
+                Screen.Settings -> SettingsScreen(entry = entry)
             }
         }
         if (railOpen) {
@@ -138,11 +150,27 @@ fun AppRoot() {
                 channelId = channelId,
                 onExit = { playingChannel = null },
                 onChannelChange = { playingChannel = it },
+                // Rewind into the buffer, or watch the recording from the start.
+                onPlayRecording = {
+                    playingChannel = null
+                    playingRecording = it
+                },
             )
         }
-        playingRecording?.let { itemId ->
+        playingRecording?.let { rec ->
             BackHandler { playingRecording = null }
-            RecordingPlayerScreen(itemId = itemId, onExit = { playingRecording = null })
+            // A new recording (next episode, another buffer) starts a fresh player.
+            androidx.compose.runtime.key(rec) {
+            RecordingPlayerScreen(
+                recording = rec,
+                onExit = { playingRecording = null },
+                onPlayRecording = { playingRecording = it },
+                onBackToLive = { channelId ->
+                    playingRecording = null
+                    playingChannel = channelId
+                },
+            )
+            }
         }
     }
 }
