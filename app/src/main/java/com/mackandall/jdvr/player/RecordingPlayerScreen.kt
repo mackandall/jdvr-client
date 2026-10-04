@@ -128,7 +128,7 @@ fun RecordingPlayerScreen(
         remember {
             val extractors = DefaultExtractorsFactory().setTsExtractorTimestampSearchBytes(8 * 1024 * 1024)
             ExoPlayer
-                .Builder(context)
+                .Builder(context, renderersFactory(context))
                 .setMediaSourceFactory(DefaultMediaSourceFactory(OkHttpDataSource.Factory(Jdvr.http), extractors))
                 .setSeekBackIncrementMs(10_000)
                 .setSeekForwardIncrementMs(30_000)

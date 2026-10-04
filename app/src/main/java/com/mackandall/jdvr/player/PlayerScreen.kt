@@ -131,7 +131,7 @@ fun PlayerScreen(
         remember {
             val extractors = DefaultExtractorsFactory().setTsExtractorTimestampSearchBytes(TS_SEARCH_BYTES)
             ExoPlayer
-                .Builder(context)
+                .Builder(context, renderersFactory(context))
                 .setMediaSourceFactory(DefaultMediaSourceFactory(OkHttpDataSource.Factory(Jdvr.http), extractors))
                 .build()
                 .apply {
