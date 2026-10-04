@@ -1,0 +1,193 @@
+package com.mackandall.jdvr.ui
+
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.tv.material3.Border
+import androidx.tv.material3.ClickableSurfaceDefaults
+import androidx.tv.material3.Surface
+import androidx.tv.material3.Text
+import coil3.compose.AsyncImage
+import com.mackandall.jdvr.PlayRecording
+import com.mackandall.jdvr.data.Jdvr
+import com.mackandall.jdvr.data.LiveTvRepository
+import kotlinx.coroutines.launch
+import java.time.format.DateTimeFormatter
+import java.util.UUID
+
+private val DateFormat = DateTimeFormatter.ofPattern("MMM d, yyyy")
+
+private fun length(min: Long) = if (min >= 60) "${min / 60} h ${min % 60} min" else "$min min"
+
+/**
+ * A movie, episode or recording, over its backdrop: title, ratings, genres, description, Play /
+ * Resume / Mark watched, what's in the file (video, audio, subtitles, size, where it's stored) and
+ * the credits with photos. [actions] adds buttons after the standard ones (Recorded Shows' own).
+ */
+@Composable
+fun DetailsPage(
+    itemId: UUID,
+    refresh: Int,
+    onPlay: (PlayRecording) -> Unit,
+    actions: @Composable RowScope.(LiveTvRepository.ItemDetails) -> Unit = {},
+) {
+    var d by remember { mutableStateOf<LiveTvRepository.ItemDetails?>(null) }
+    var error by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+    val play = remember { FocusRequester() }
+    LaunchedEffect(itemId, refresh) {
+        runCatching { Jdvr.liveTv.details(itemId) }.onSuccess { d = it }.onFailure { error = it.message }
+    }
+    LaunchedEffect(d != null) { if (d != null) runCatching { play.requestFocus() } }
+
+    val det = d
+    Box(Modifier.fillMaxSize().background(Jc.Ink)) {
+        if (det == null) {
+            Text(error?.let { "Couldn't load this: $it" } ?: "Loading…", color = Jc.Muted, fontSize = 16.sp, modifier = Modifier.padding(36.dp))
+            return@Box
+        }
+        val item = det.item
+        det.backdropOf?.let {
+            AsyncImage(model = Jdvr.liveTv.backdropUrl(it), contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+        }
+        // Darker on the left, where the text is; the picture shows through on the right.
+        Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(0f to Jc.Ink.copy(alpha = 0.97f), 0.55f to Jc.Ink.copy(alpha = 0.86f), 1f to Jc.Ink.copy(alpha = 0.35f))))
+        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0.6f to Jc.Ink.copy(alpha = 0f), 1f to Jc.Ink.copy(alpha = 0.9f))))
+
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(start = 36.dp, top = 28.dp, end = 36.dp, bottom = 28.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+                AsyncImage(
+                    model = Jdvr.liveTv.imageUrl(item.id, 480),
+                    contentDescription = item.name,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.width(150.dp).aspectRatio(2f / 3f).clip(RoundedCornerShape(10.dp)).background(Jc.Panel2),
+                )
+                Column(Modifier.fillMaxWidth(0.72f), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                    if (item.seriesName != null && item.type == "Episode") {
+                        Text(listOfNotNull(item.seriesName, item.seasonEpisode).joinToString(" · "), color = Jc.Muted, fontSize = 16.sp)
+                    }
+                    Text(item.name, color = Jc.Text, fontSize = 30.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        (det.premiere?.format(DateFormat) ?: item.year?.toString())?.let { Text(it, color = Jc.Text, fontSize = 15.sp) }
+                        item.runtimeMin?.let { Text(length(it), color = Jc.Text, fontSize = 15.sp) }
+                        item.officialRating?.let { Text(it, color = Jc.Text, fontSize = 13.sp, modifier = Modifier.background(Jc.Panel2, RoundedCornerShape(4.dp)).padding(horizontal = 6.dp, vertical = 1.dp)) }
+                        det.communityRating?.let { Text("★ %.1f".format(it), color = Jc.Gold, fontSize = 15.sp) }
+                        det.criticRating?.let { Text("${it.toInt()}% critics", color = Jc.Text, fontSize = 15.sp) }
+                        if (item.played) Chip("watched", Jc.Green)
+                    }
+                    if (det.genres.isNotEmpty()) Text(det.genres.joinToString(" · "), color = Jc.Muted, fontSize = 14.sp)
+                    det.tagline?.let { Text(it, color = Jc.Text, fontSize = 15.sp, fontStyle = FontStyle.Italic) }
+                    item.overview?.let { Text(it, color = Jc.Text, fontSize = 15.sp, maxLines = 5, overflow = TextOverflow.Ellipsis) }
+                    Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        val resume = item.resumeMs > 0 && !item.played
+                        Button(if (resume) "Resume from ${length(item.resumeMs / 60_000)}" else "Play", primary = true, modifier = Modifier.focusRequester(play)) { onPlay(PlayRecording(item.id)) }
+                        if (resume) Button("Play from start") { onPlay(PlayRecording(item.id, startMs = 0L)) }
+                        Button(if (item.played) "Mark unwatched" else "Mark watched") {
+                            scope.launch {
+                                runCatching { Jdvr.liveTv.setPlayed(item.id, !item.played) }
+                                runCatching { d = Jdvr.liveTv.details(item.id) }
+                            }
+                        }
+                        actions(det)
+                    }
+                }
+            }
+
+            // What's in the file.
+            Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                det.video?.let { Info("Video", it) }
+                if (det.audio.isNotEmpty()) Info("Audio", det.audio.first() + if (det.audio.size > 1) "  +${det.audio.size - 1}" else "")
+                if (det.subtitles.isNotEmpty()) Info("Subtitles", det.subtitles.take(2).joinToString(", ") + if (det.subtitles.size > 2) "  +${det.subtitles.size - 2}" else "")
+                det.file?.let { Info("File", it) }
+                det.location?.let { Info("Stored", it) }
+            }
+
+            val credits =
+                listOfNotNull(
+                    det.directors.takeIf { it.isNotEmpty() }?.let { "Directed by " + it.joinToString(", ") { p -> p.name } },
+                    det.writers.takeIf { it.isNotEmpty() }?.let { "Written by " + it.take(3).joinToString(", ") { p -> p.name } },
+                    det.studios.takeIf { it.isNotEmpty() }?.let { it.take(2).joinToString(", ") },
+                )
+            if (credits.isNotEmpty()) Text(credits.joinToString("  ·  "), color = Jc.Muted, fontSize = 14.sp)
+
+            if (det.cast.isNotEmpty()) {
+                Text("Cast", color = Jc.Text, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 4.dp))
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    items(det.cast.take(30), key = { it.id.toString() + it.role }) { p -> CastCard(p) }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun Info(
+    label: String,
+    value: String,
+) {
+    Column(Modifier.background(Jc.Panel.copy(alpha = 0.85f), RoundedCornerShape(8.dp)).padding(horizontal = 10.dp, vertical = 6.dp)) {
+        Text(label.uppercase(), color = Jc.Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+        Text(value, color = Jc.Text, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+/** One cast member; focusable only so the row can be scrolled with the remote. */
+@Composable
+private fun CastCard(p: LiveTvRepository.Person) {
+    Surface(
+        onClick = {},
+        modifier = Modifier.width(96.dp),
+        shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(10.dp)),
+        colors = ClickableSurfaceDefaults.colors(containerColor = Jc.Ink.copy(alpha = 0f), focusedContainerColor = Jc.FocusFill, contentColor = Jc.Text, focusedContentColor = Jc.Text),
+        border = ClickableSurfaceDefaults.border(focusedBorder = Border(BorderStroke(2.dp, Jc.Focus))),
+        scale = ClickableSurfaceDefaults.scale(focusedScale = 1.04f),
+    ) {
+        Column(Modifier.padding(6.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Box(Modifier.size(72.dp).clip(CircleShape).background(Jc.Panel2), contentAlignment = Alignment.Center) {
+                if (p.hasImage) {
+                    AsyncImage(model = Jdvr.liveTv.personImageUrl(p.id), contentDescription = p.name, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+                } else {
+                    Text(p.name.split(' ').mapNotNull { it.firstOrNull()?.toString() }.take(2).joinToString(""), color = Jc.Muted, fontSize = 20.sp)
+                }
+            }
+            Text(p.name, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            p.role?.let { Text(it, color = Jc.Muted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+        }
+    }
+}

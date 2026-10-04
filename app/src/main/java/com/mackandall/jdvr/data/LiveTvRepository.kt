@@ -538,6 +538,78 @@ class LiveTvRepository {
             api.tvShowsApi.getEpisodes(seriesId = seriesId, userId = Jdvr.userId, seasonId = seasonId, fields = listOf(ItemFields.OVERVIEW), enableUserData = true).content.items.map { toLibItem(it) }
         }
 
+    /** A person in the credits, with their photo if Jellyfin has one. */
+    data class Person(
+        val id: UUID,
+        val name: String,
+        val role: String?,
+        val kind: String,
+        val hasImage: Boolean,
+    )
+
+    /** Everything a details page shows: art, credits, ratings and what's in the file. */
+    data class ItemDetails(
+        val item: LibItem,
+        val tagline: String?,
+        val genres: List<String>,
+        val studios: List<String>,
+        val communityRating: Float?,
+        val criticRating: Float?,
+        val premiere: java.time.LocalDate?,
+        val backdropOf: UUID?,
+        val people: List<Person>,
+        val video: String?,
+        val audio: List<String>,
+        val subtitles: List<String>,
+        val file: String?,
+        // Where the file is: the live recordings folder, or the share it's on.
+        val location: String?,
+    ) {
+        val directors get() = people.filter { it.kind == "Director" }
+        val writers get() = people.filter { it.kind == "Writer" }
+        val cast get() = people.filter { it.kind == "Actor" || it.kind == "GuestStar" }
+    }
+
+    suspend fun details(id: UUID): ItemDetails =
+        io {
+            val d = api.userLibraryApi.getItem(id, Jdvr.userId).content
+            val source = d.mediaSources?.firstOrNull()
+            val streams = source?.mediaStreams ?: d.mediaStreams.orEmpty()
+            val video = streams.firstOrNull { it.type == org.jellyfin.sdk.model.api.MediaStreamType.VIDEO }
+            val size = source?.size?.let { b -> if (b >= 1_000_000_000L) "%.1f GB".format(b / 1e9) else "${b / 1_000_000} MB" }
+            ItemDetails(
+                item = toLibItem(d),
+                tagline = d.taglines?.firstOrNull(),
+                genres = d.genres.orEmpty(),
+                studios = d.studios?.mapNotNull { it.name }.orEmpty(),
+                communityRating = d.communityRating,
+                criticRating = d.criticRating,
+                premiere = d.premiereDate?.toLocalDate(),
+                // The item's own backdrop, else its show's.
+                backdropOf = if (!d.backdropImageTags.isNullOrEmpty()) d.id else d.parentBackdropItemId,
+                people = d.people.orEmpty().map { Person(it.id, it.name ?: "", it.role?.takeIf { r -> r.isNotBlank() }, it.type.serialName, it.primaryImageTag != null) },
+                video =
+                    video?.let { v ->
+                        listOfNotNull(v.displayTitle ?: v.codec?.uppercase(), v.realFrameRate?.let { "%.2f fps".format(it).replace(".00", "") }).joinToString(" · ")
+                    },
+                audio = streams.filter { it.type == org.jellyfin.sdk.model.api.MediaStreamType.AUDIO }.mapNotNull { it.displayTitle ?: it.codec },
+                subtitles = streams.filter { it.type == org.jellyfin.sdk.model.api.MediaStreamType.SUBTITLE }.mapNotNull { it.displayTitle ?: it.language },
+                file = listOfNotNull(source?.container?.uppercase(), size, source?.bitrate?.let { "${it / 1_000_000} Mbps" }).joinToString(" · ").ifEmpty { null },
+                location =
+                    source?.path?.let { path ->
+                        when {
+                            path.startsWith("/mnt/Internal/JellyFinRecordings") -> "Live recordings folder"
+                            path.startsWith("/mnt/") -> path.removePrefix("/mnt/").substringBefore('/')
+                            else -> null
+                        }
+                    },
+            )
+        }
+
+    fun backdropUrl(itemId: UUID): String = api.imageApi.getItemImageUrl(itemId, ImageType.BACKDROP, maxWidth = 1920)
+
+    fun personImageUrl(personId: UUID): String = api.imageApi.getItemImageUrl(personId, ImageType.PRIMARY, maxHeight = 240)
+
     suspend fun libItem(id: UUID): LibItem = io { toLibItem(api.userLibraryApi.getItem(id, Jdvr.userId).content) }
 
     suspend fun setPlayed(

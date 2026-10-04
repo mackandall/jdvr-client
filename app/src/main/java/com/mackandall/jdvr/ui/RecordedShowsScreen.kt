@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -62,7 +63,11 @@ fun RecordedShowsScreen(
     openShowId: String? = null,
     onShowOpened: () -> Unit = {},
     onLeave: () -> Unit = {},
+    refresh: Int = 0,
+    onPlayItem: (com.mackandall.jdvr.PlayRecording) -> Unit = { onPlay(it.itemId) },
 ) {
+    // A movie or one-off recording's details page (from the grid).
+    var details by remember { mutableStateOf<UUID?>(null) }
     // Opened on a show from elsewhere (Home): Back from it goes back there, not to the grid.
     val cameForShow = remember { openShowId != null }
     var cards by remember { mutableStateOf<List<LiveTvRepository.RecordingCard>?>(null) }
@@ -79,10 +84,15 @@ fun RecordedShowsScreen(
         onShowOpened()
     }
 
+    details?.let { id ->
+        BackHandler { details = null }
+        DetailsPage(id, refresh, onPlay = onPlayItem)
+        return
+    }
     val show = openShow
     if (show != null) {
         BackHandler { if (cameForShow) onLeave() else openShow = null }
-        ShowEpisodes(show, entry, filter, onPlay)
+        ShowEpisodes(show, entry, filter, refresh, onPlay, onPlayItem)
         return
     }
 
@@ -132,7 +142,7 @@ fun RecordedShowsScreen(
                 ) {
                     itemsIndexed(list, key = { _, c -> c.id }) { i, c ->
                         RecordingCardView(c, if (i == 0) Modifier.focusRequester(entry) else Modifier) {
-                            if (c.type == "Series") openShow = c else c.id.toUuid()?.let(onPlay)
+                            if (c.type == "Series") openShow = c else details = c.id.toUuid()
                         }
                     }
                 }
@@ -193,8 +203,16 @@ private fun ShowEpisodes(
     show: LiveTvRepository.RecordingCard,
     entry: FocusRequester,
     filter: String,
+    refresh: Int,
     onPlay: (UUID) -> Unit,
+    onPlayItem: (com.mackandall.jdvr.PlayRecording) -> Unit,
 ) {
+    var info by remember { mutableStateOf<UUID?>(null) }
+    info?.let { id ->
+        BackHandler { info = null }
+        DetailsPage(id, refresh, onPlay = onPlayItem)
+        return
+    }
     var episodes by remember { mutableStateOf<List<LiveTvRepository.EpisodeRecording>?>(null) }
     var loaded by remember { mutableStateOf(false) }
     val first = remember { FocusRequester() }
@@ -215,9 +233,10 @@ private fun ShowEpisodes(
             else ->
                 LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp), contentPadding = PaddingValues(bottom = 40.dp)) {
                     itemsIndexed(list, key = { _, e -> e.id }) { i, e ->
+                        Row(Modifier.fillMaxWidth().height(60.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                         Surface(
                             onClick = { e.id.toUuid()?.let(onPlay) },
-                            modifier = (if (i == 0) Modifier.focusRequester(first).focusRequester(entry) else Modifier).fillMaxWidth().height(60.dp),
+                            modifier = (if (i == 0) Modifier.focusRequester(first).focusRequester(entry) else Modifier).weight(1f).fillMaxHeight(),
                             shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(10.dp)),
                             colors = ClickableSurfaceDefaults.colors(containerColor = Jc.Panel, focusedContainerColor = Jc.FocusFill, contentColor = Jc.Text, focusedContentColor = Jc.Text),
                             border = ClickableSurfaceDefaults.border(focusedBorder = Border(BorderStroke(2.dp, Jc.Focus))),
@@ -230,6 +249,8 @@ private fun ShowEpisodes(
                                 if (e.partial) Badge("Partial${e.minutes?.let { " · $it min" } ?: ""}", Jc.Amber, dark = true)
                                 if (e.played) Chip("watched", Jc.Green)
                             }
+                        }
+                        Button("Info") { info = e.id.toUuid() }
                         }
                     }
                 }

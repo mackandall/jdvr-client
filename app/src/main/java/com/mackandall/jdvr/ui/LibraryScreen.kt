@@ -81,7 +81,7 @@ fun LibraryScreen(
     when {
         m != null -> {
             BackHandler { movie = null }
-            MovieDetails(m, refresh, onPlay)
+            DetailsPage(m.id, refresh, onPlay)
         }
         s != null -> {
             BackHandler { show = null }
@@ -200,45 +200,6 @@ private fun Tag(
     color: androidx.compose.ui.graphics.Color,
 ) = Text(text, color = Jc.Text, fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.background(color.copy(alpha = 0.92f), RoundedCornerShape(5.dp)).padding(horizontal = 6.dp, vertical = 1.dp))
 
-/** A movie (or any single video): details, Resume / Play from start, Mark watched. */
-@Composable
-private fun MovieDetails(
-    start: LiveTvRepository.LibItem,
-    refresh: Int,
-    onPlay: (PlayRecording) -> Unit,
-) {
-    var item by remember { mutableStateOf(start) }
-    val scope = rememberCoroutineScope()
-    val play = remember { FocusRequester() }
-    LaunchedEffect(refresh) { runCatching { item = Jdvr.liveTv.libItem(start.id) } }
-    LaunchedEffect(Unit) { runCatching { play.requestFocus() } }
-
-    Row(Modifier.fillMaxSize().padding(start = 40.dp, top = 32.dp, end = 40.dp), horizontalArrangement = Arrangement.spacedBy(28.dp)) {
-        AsyncImage(model = Jdvr.liveTv.imageUrl(item.id, 600), contentDescription = item.name, contentScale = ContentScale.Crop, modifier = Modifier.width(220.dp).aspectRatio(2f / 3f).background(Jc.Panel2, RoundedCornerShape(12.dp)))
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text(item.name, color = Jc.Text, fontSize = 30.sp, fontWeight = FontWeight.SemiBold)
-            Text(
-                listOfNotNull(item.year?.toString(), item.runtimeMin?.let { "${it} min" }, item.officialRating, if (item.played) "watched" else null).joinToString(" · "),
-                color = Jc.Muted,
-                fontSize = 16.sp,
-            )
-            item.overview?.let { Text(it, color = Jc.Text, fontSize = 16.sp, maxLines = 7, overflow = TextOverflow.Ellipsis) }
-            Spacer(6)
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                val resume = item.resumeMs > 0 && !item.played
-                Button(if (resume) "Resume from ${clockOf(item.resumeMs)}" else "Play", primary = true, modifier = Modifier.focusRequester(play)) { onPlay(PlayRecording(item.id)) }
-                if (resume) Button("Play from start") { onPlay(PlayRecording(item.id, startMs = 0L)) }
-                Button(if (item.played) "Mark unwatched" else "Mark watched") {
-                    scope.launch {
-                        runCatching { Jdvr.liveTv.setPlayed(item.id, !item.played) }
-                        runCatching { item = Jdvr.liveTv.libItem(item.id) }
-                    }
-                }
-            }
-        }
-    }
-}
-
 /** A show: its seasons across the top, the chosen season's episodes below. */
 @Composable
 private fun ShowPage(
@@ -250,8 +211,18 @@ private fun ShowPage(
     var season by remember { mutableStateOf<LiveTvRepository.LibItem?>(null) }
     var episodes by remember { mutableStateOf<List<LiveTvRepository.LibItem>?>(null) }
     var reload by remember { mutableIntStateOf(0) }
+    var info by remember { mutableStateOf<LiveTvRepository.ItemDetails?>(null) }
+    var episodeInfo by remember { mutableStateOf<UUID?>(null) }
     val scope = rememberCoroutineScope()
     val firstEpisode = remember { FocusRequester() }
+    LaunchedEffect(show.id) { info = runCatching { Jdvr.liveTv.details(show.id) }.getOrNull() }
+
+    // An episode's own details page.
+    episodeInfo?.let { id ->
+        BackHandler { episodeInfo = null }
+        DetailsPage(id, refresh, onPlay)
+        return
+    }
 
     LaunchedEffect(show.id) {
         val list = runCatching { Jdvr.liveTv.seasons(show.id) }.getOrDefault(emptyList())
@@ -264,12 +235,21 @@ private fun ShowPage(
     }
     LaunchedEffect(episodes != null && reload == 0) { if (!episodes.isNullOrEmpty()) runCatching { firstEpisode.requestFocus() } }
 
+    Box(Modifier.fillMaxSize()) {
+    info?.backdropOf?.let {
+        AsyncImage(model = Jdvr.liveTv.backdropUrl(it), contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+        Box(Modifier.fillMaxSize().background(Jc.Ink.copy(alpha = 0.86f)))
+    }
     Column(Modifier.fillMaxSize().padding(start = 28.dp, top = 20.dp, end = 28.dp)) {
         Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(show.name, color = Jc.Text, fontSize = 26.sp, fontWeight = FontWeight.SemiBold)
-            show.year?.let { Text("$it", color = Jc.Muted, fontSize = 15.sp) }
-            Text("Back for the library", color = Jc.Muted, fontSize = 13.sp)
+            Text(
+                listOfNotNull(show.year?.toString(), show.officialRating, info?.communityRating?.let { "★ %.1f".format(it) }, info?.genres?.take(3)?.joinToString(" · ")?.ifEmpty { null }).joinToString("  ·  "),
+                color = Jc.Muted,
+                fontSize = 14.sp,
+            )
         }
+        show.overview?.let { Text(it, color = Jc.Text, fontSize = 13.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.fillMaxWidth(0.8f).padding(top = 4.dp)) }
         Spacer(10)
         val list = seasons
         if (list != null && list.size > 1) {
@@ -308,6 +288,7 @@ private fun ShowPage(
                                     if (e.played) Chip("watched", Jc.Green)
                                 }
                             }
+                            Button("Info", modifier = Modifier.align(Alignment.CenterVertically)) { episodeInfo = e.id }
                             Button(if (e.played) "Unwatch" else "Watched", modifier = Modifier.align(Alignment.CenterVertically)) {
                                 scope.launch {
                                     runCatching { Jdvr.liveTv.setPlayed(e.id, !e.played) }
@@ -318,5 +299,6 @@ private fun ShowPage(
                     }
                 }
         }
+    }
     }
 }
