@@ -651,8 +651,9 @@ class LiveTvRepository {
     )
 
     /** What the DVR recorded, newest first, from the recordings folders ("current"). */
-    suspend fun recordedShows(): List<RecordingCard>? =
-        plugin<RecordingCards>(HttpMethod.GET, "/EpisodeHistory/Recordings", mapOf("filter" to "current", "limit" to 200))?.cards
+    /** Episode History's recordings: "current" (live recordings folder), "archived", or "all". */
+    suspend fun recordedShows(filter: String = "current"): List<RecordingCard>? =
+        plugin<RecordingCards>(HttpMethod.GET, "/EpisodeHistory/Recordings", mapOf("filter" to filter, "limit" to 200))?.cards
 
     @Serializable
     data class EpisodeRecording(
@@ -673,8 +674,17 @@ class LiveTvRepository {
     )
 
     /** A show's recordings, newest first (archived ones left out: recordings folder only for now). */
-    suspend fun showRecordings(seriesId: String): List<EpisodeRecording>? =
-        plugin<EpisodeRecordings>(HttpMethod.GET, "/EpisodeHistory/Recordings/Series/$seriesId")?.recordings?.filterNot { it.archived }
+    suspend fun showRecordings(
+        seriesId: String,
+        filter: String = "current",
+    ): List<EpisodeRecording>? =
+        plugin<EpisodeRecordings>(HttpMethod.GET, "/EpisodeHistory/Recordings/Series/$seriesId")?.recordings?.filter {
+            when (filter) {
+                "archived" -> it.archived
+                "all" -> true
+                else -> !it.archived
+            }
+        }
 
     fun imageUrl(
         itemId: String,

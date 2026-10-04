@@ -209,7 +209,7 @@ fun RecordingPlayerScreen(
             return@LaunchedEffect
         }
         val series = playback?.seriesId ?: return@LaunchedEffect
-        val all = runCatching { Jdvr.liveTv.showRecordings(series) }.getOrNull().orEmpty()
+        val all = runCatching { Jdvr.liveTv.showRecordings(series, Jdvr.prefs.recordingsFilter) }.getOrNull().orEmpty()
         val ordered =
             if (all.all { it.season != null && it.episode != null }) {
                 all.sortedWith(compareBy({ it.season }, { it.episode }))

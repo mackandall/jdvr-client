@@ -90,13 +90,31 @@ fun AppRoot() {
         screen = s
     }
     var railOpen by remember { mutableStateOf(false) }
+    // The server's video libraries, each its own menu entry (minus the ones hidden in Settings);
+    // re-read whenever the app comes back to the front, so new libraries appear by themselves.
+    var libraries by remember { mutableStateOf<List<com.mackandall.jdvr.data.LiveTvRepository.Library>>(emptyList()) }
+    var libraryId by remember { mutableStateOf<UUID?>(null) }
+    var librariesLoad by remember { mutableIntStateOf(0) }
+    val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
+    androidx.compose.runtime.DisposableEffect(lifecycle) {
+        val o = androidx.lifecycle.LifecycleEventObserver { _, e -> if (e == androidx.lifecycle.Lifecycle.Event.ON_RESUME) librariesLoad++ }
+        lifecycle.addObserver(o)
+        onDispose { lifecycle.removeObserver(o) }
+    }
+    LaunchedEffect(signedIn, librariesLoad) {
+        if (signedIn) runCatching { Jdvr.liveTv.libraries() }.getOrNull()?.let { libraries = it }
+    }
+    val shownLibraries = libraries.filter { it.id.toString() !in Jdvr.prefs.hiddenLibraries }
+    val currentLibrary = shownLibraries.firstOrNull { it.id == libraryId }
+    // A library hidden or removed while open: back to Home.
+    LaunchedEffect(screen, currentLibrary, libraries) { if (screen == Screen.Library && libraries.isNotEmpty() && currentLibrary == null) screen = Screen.Home }
     var playingChannel by remember { mutableStateOf<UUID?>(null) }
     var playingRecording by remember { mutableStateOf<PlayRecording?>(null) }
     // Bumped when a recording or video stops, so screens re-read watched marks and resume points.
     var played by remember { mutableIntStateOf(0) }
     LaunchedEffect(playingRecording == null) { if (playingRecording == null) played++ }
     // Where focus goes on the current screen when the rail closes (each screen attaches it).
-    val entry = remember(screen) { FocusRequester() }
+    val entry = remember(screen, libraryId) { FocusRequester() }
     var screenHasFocus by remember { mutableStateOf(false) }
     val focusManager = LocalFocusManager.current
 
@@ -107,7 +125,7 @@ fun AppRoot() {
 
     // Hand focus to the screen once the rail is closed. Its items may still be loading, and a
     // request before they exist does nothing, so keep asking until focus is really in the screen.
-    LaunchedEffect(screen, railOpen, playingChannel, playingRecording) {
+    LaunchedEffect(screen, libraryId, railOpen, playingChannel, playingRecording) {
         if (railOpen || playingChannel != null || playingRecording != null) return@LaunchedEffect
         repeat(150) {
             if (screenHasFocus) return@LaunchedEffect
@@ -156,10 +174,13 @@ fun AppRoot() {
                 Screen.Guide -> GuideScreen(entry = entry, onPlay = { playingChannel = it }, onPlayRecording = { playingRecording = it })
                 Screen.LiveTv -> ChannelsScreen(entry = entry, onPlay = { playingChannel = it })
                 Screen.RecordedShows -> RecordedShowsScreen(entry = entry, onPlay = { playingRecording = PlayRecording(it) }, openShowId = openShow, onShowOpened = { openShow = null }, onLeave = { if (backStack.isNotEmpty()) screen = backStack.removeAt(backStack.lastIndex) })
-                Screen.Library -> LibraryScreen(entry = entry, refresh = played, onPlay = { playingRecording = it })
+                Screen.Library ->
+                    currentLibrary?.let { lib ->
+                        androidx.compose.runtime.key(lib.id) { LibraryScreen(library = lib, entry = entry, refresh = played, onPlay = { playingRecording = it }) }
+                    }
                 Screen.Scheduled -> ScheduledScreen(entry = entry)
                 Screen.Series -> SeriesScreen(entry = entry)
-                Screen.Settings -> SettingsScreen(entry = entry)
+                Screen.Settings -> SettingsScreen(entry = entry, libraries = libraries)
             }
         }
         if (railOpen) {
@@ -169,6 +190,14 @@ fun AppRoot() {
                 onSelect = {
                     backStack.clear()
                     screen = it
+                    railOpen = false
+                },
+                libraries = shownLibraries,
+                selectedLibrary = libraryId,
+                onSelectLibrary = {
+                    backStack.clear()
+                    libraryId = it.id
+                    screen = Screen.Library
                     railOpen = false
                 },
                 onSignOut = {

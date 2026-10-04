@@ -42,6 +42,7 @@ import androidx.tv.material3.Text
 import coil3.compose.AsyncImage
 import com.mackandall.jdvr.data.Jdvr
 import com.mackandall.jdvr.data.LiveTvRepository
+import com.mackandall.jdvr.data.Prefs
 import com.mackandall.jdvr.data.toUuid
 import java.time.Instant
 import java.time.LocalDateTime
@@ -68,8 +69,10 @@ fun RecordedShowsScreen(
     var loaded by remember { mutableStateOf(false) }
     var openShow by remember { mutableStateOf<LiveTvRepository.RecordingCard?>(null) }
 
-    LaunchedEffect(Unit) {
-        cards = Jdvr.liveTv.recordedShows()
+    val filter = Jdvr.prefs.recordingsFilter
+    LaunchedEffect(filter) {
+        loaded = false
+        cards = Jdvr.liveTv.recordedShows(filter)
         loaded = true
         // Asked to open a show (from Home): straight to its episodes.
         openShowId?.let { id -> cards?.firstOrNull { it.id == id }?.let { openShow = it } }
@@ -79,19 +82,47 @@ fun RecordedShowsScreen(
     val show = openShow
     if (show != null) {
         BackHandler { if (cameForShow) onLeave() else openShow = null }
-        ShowEpisodes(show, entry, onPlay)
+        ShowEpisodes(show, entry, filter, onPlay)
         return
     }
 
     Column(Modifier.fillMaxSize().padding(start = 28.dp, top = 24.dp, end = 28.dp)) {
-        Text("Recorded Shows", color = Jc.Text, fontSize = 28.sp, fontWeight = FontWeight.SemiBold)
-        Text("Recordings folder · newest first", color = Jc.Muted, fontSize = 15.sp)
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            Column(Modifier.weight(1f)) {
+                Text("Recorded Shows", color = Jc.Text, fontSize = 28.sp, fontWeight = FontWeight.SemiBold)
+                Text(
+                    when (filter) {
+                        Prefs.ARCHIVED -> "Moved to the archive · newest first"
+                        Prefs.ALL -> "Recordings folder and archive · newest first"
+                        else -> "Recordings folder · newest first"
+                    },
+                    color = Jc.Muted,
+                    fontSize = 15.sp,
+                )
+            }
+            // Live folder → Archive → Both.
+            Button(
+                when (filter) {
+                    Prefs.ARCHIVED -> "Showing: Archive"
+                    Prefs.ALL -> "Showing: Both"
+                    else -> "Showing: Live folder"
+                },
+            ) {
+                Jdvr.prefs.changeRecordingsFilter(
+                    when (filter) {
+                        Prefs.CURRENT -> Prefs.ARCHIVED
+                        Prefs.ARCHIVED -> Prefs.ALL
+                        else -> Prefs.CURRENT
+                    },
+                )
+            }
+        }
         Spacer(14)
         val list = cards
         when {
             !loaded -> Text("Loading…", color = Jc.Muted, fontSize = 16.sp)
             list == null -> Text("Couldn't load Recorded Shows (the Episode History plugin answers this).", color = Jc.Amber, fontSize = 16.sp)
-            list.isEmpty() -> Text("Nothing recorded yet.", color = Jc.Muted, fontSize = 16.sp)
+            list.isEmpty() -> Text(if (filter == Prefs.ARCHIVED) "Nothing has been moved to the archive." else "Nothing recorded yet.", color = Jc.Muted, fontSize = 16.sp)
             else ->
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(5),
@@ -161,13 +192,14 @@ private fun Badge(
 private fun ShowEpisodes(
     show: LiveTvRepository.RecordingCard,
     entry: FocusRequester,
+    filter: String,
     onPlay: (UUID) -> Unit,
 ) {
     var episodes by remember { mutableStateOf<List<LiveTvRepository.EpisodeRecording>?>(null) }
     var loaded by remember { mutableStateOf(false) }
     val first = remember { FocusRequester() }
     LaunchedEffect(show.id) {
-        episodes = Jdvr.liveTv.showRecordings(show.id)
+        episodes = Jdvr.liveTv.showRecordings(show.id, filter)
         loaded = true
     }
     LaunchedEffect(episodes) { if (!episodes.isNullOrEmpty()) runCatching { first.requestFocus() } }
@@ -179,7 +211,7 @@ private fun ShowEpisodes(
         val list = episodes
         when {
             !loaded -> Text("Loading…", color = Jc.Muted, fontSize = 16.sp)
-            list.isNullOrEmpty() -> Text("No recordings of this show in the recordings folder.", color = Jc.Muted, fontSize = 16.sp)
+            list.isNullOrEmpty() -> Text("No recordings of this show here.", color = Jc.Muted, fontSize = 16.sp)
             else ->
                 LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp), contentPadding = PaddingValues(bottom = 40.dp)) {
                     itemsIndexed(list, key = { _, e -> e.id }) { i, e ->
@@ -194,6 +226,7 @@ private fun ShowEpisodes(
                             Row(Modifier.fillMaxSize().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                                 Text(local(e.recordedUtc)?.let { "${it.day()} ${it.time()}" } ?: "", color = Jc.Muted, fontSize = 15.sp, modifier = Modifier.width(150.dp))
                                 Text(e.name, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                                if (e.archived && filter == Prefs.ALL) Badge("Archive", Jc.Panel2)
                                 if (e.partial) Badge("Partial${e.minutes?.let { " · $it min" } ?: ""}", Jc.Amber, dark = true)
                                 if (e.played) Chip("watched", Jc.Green)
                             }

@@ -26,6 +26,24 @@ class Prefs(
     var introSkip by mutableStateOf(p.getString("introSkip", ASK) ?: ASK)
         private set
 
+    /** Libraries kept out of the menu (by id); new ones show up. */
+    var hiddenLibraries by mutableStateOf(p.getStringSet("hiddenLibraries", emptySet())?.toSet() ?: emptySet())
+        private set
+
+    /** Recorded Shows: "current" (the live recordings folder), "archived", or "all". */
+    var recordingsFilter by mutableStateOf(p.getString("recordingsFilter", CURRENT) ?: CURRENT)
+        private set
+
+    fun toggleLibrary(id: String) {
+        hiddenLibraries = if (id in hiddenLibraries) hiddenLibraries - id else hiddenLibraries + id
+        p.edit().putStringSet("hiddenLibraries", hiddenLibraries).apply()
+    }
+
+    fun changeRecordingsFilter(v: String) {
+        recordingsFilter = v
+        p.edit().putString("recordingsFilter", v).apply()
+    }
+
     fun changeGuideInfo(v: String) {
         guideInfo = v
         p.edit().putString("guideInfo", v).apply()
@@ -47,5 +65,8 @@ class Prefs(
         const val ASK = "ask"
         const val AUTO = "auto"
         const val OFF = "off"
+        const val CURRENT = "current"
+        const val ARCHIVED = "archived"
+        const val ALL = "all"
     }
 }

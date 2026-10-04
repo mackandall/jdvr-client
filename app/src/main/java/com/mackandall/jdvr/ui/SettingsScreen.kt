@@ -1,6 +1,8 @@
 package com.mackandall.jdvr.ui
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -30,9 +32,15 @@ import com.mackandall.jdvr.data.Prefs
  * Keep, Skip…) stay on the screens. OK on a row steps through its choices.
  */
 @Composable
-fun SettingsScreen(entry: FocusRequester) {
+fun SettingsScreen(
+    entry: FocusRequester,
+    libraries: List<com.mackandall.jdvr.data.LiveTvRepository.Library> = emptyList(),
+) {
     val prefs = Jdvr.prefs
-    Column(Modifier.fillMaxSize().padding(start = 28.dp, top = 24.dp, end = 28.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    Column(
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(start = 28.dp, top = 24.dp, end = 28.dp, bottom = 32.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
         Text("Settings", color = Jc.Text, fontSize = 28.sp, fontWeight = FontWeight.SemiBold)
         Spacer(6)
         Section("Guide")
@@ -53,6 +61,17 @@ fun SettingsScreen(entry: FocusRequester) {
             help = "Found by Intro Skipper.",
             value = skipLabel(prefs.introSkip),
         ) { prefs.changeIntroSkip(next(prefs.introSkip)) }
+        if (libraries.isNotEmpty()) {
+            Section("Libraries in the menu")
+            libraries.forEach { l ->
+                val hidden = l.id.toString() in prefs.hiddenLibraries
+                Choice(
+                    label = l.name,
+                    help = "A Jellyfin library. New libraries appear in the menu by themselves.",
+                    value = if (hidden) "Hidden" else "Shown in the menu",
+                ) { prefs.toggleLibrary(l.id.toString()) }
+            }
+        }
         Section("About")
         Text(
             "JDVR ${BuildConfig.VERSION_NAME} · signed in as ${Jdvr.session.userName ?: "?"} on ${Jdvr.session.serverUrl ?: "?"}",

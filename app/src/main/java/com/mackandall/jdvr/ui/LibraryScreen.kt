@@ -59,28 +59,23 @@ private fun clockOf(ms: Long): String {
 }
 
 /**
- * Jellyfin's libraries (Recorded Movies, Movies Archive, TV Archive …): a library's movies and
- * shows as posters (A–Z or newest first), a show's seasons and episodes, a movie's details with
+ * One of Jellyfin's libraries (Recorded Movies, Movies Archive, TV Archive …; each has its own menu
+ * entry): its movies and shows as posters (A–Z or newest first), a show's seasons and episodes, a movie's details with
  * Resume / Play from start / Mark watched. Read and play only: nothing here changes the files.
  * [refresh] changes when a player closes, so watched marks and resume points update.
  */
 @Composable
 fun LibraryScreen(
+    library: LiveTvRepository.Library,
     entry: FocusRequester,
     refresh: Int,
     onPlay: (PlayRecording) -> Unit,
 ) {
-    var libraries by remember { mutableStateOf<List<LiveTvRepository.Library>?>(null) }
-    var library by remember { mutableStateOf<LiveTvRepository.Library?>(null) }
     var show by remember { mutableStateOf<LiveTvRepository.LibItem?>(null) }
     var movie by remember { mutableStateOf<LiveTvRepository.LibItem?>(null) }
     // What was opened, to put focus back on it after Back.
-    var lastLibrary by remember { mutableStateOf<UUID?>(null) }
     var lastItem by remember { mutableStateOf<UUID?>(null) }
 
-    LaunchedEffect(Unit) { libraries = runCatching { Jdvr.liveTv.libraries() }.getOrDefault(emptyList()) }
-
-    val lib = library
     val m = movie
     val s = show
     when {
@@ -92,67 +87,18 @@ fun LibraryScreen(
             BackHandler { show = null }
             ShowPage(s, refresh, onPlay)
         }
-        lib != null -> {
-            BackHandler { library = null }
-            LibraryGrid(lib, lastItem, refresh) {
+        else ->
+            LibraryGrid(library, entry, lastItem, refresh) {
                 lastItem = it.id
                 if (it.type == "Series") show = it else movie = it
             }
-        }
-        else -> LibraryList(libraries, entry, lastLibrary) {
-            lastLibrary = it.id
-            lastItem = null
-            library = it
-        }
-    }
-}
-
-@Composable
-private fun LibraryList(
-    libraries: List<LiveTvRepository.Library>?,
-    entry: FocusRequester,
-    restore: UUID?,
-    onOpen: (LiveTvRepository.Library) -> Unit,
-) {
-    Column(Modifier.fillMaxSize().padding(start = 28.dp, top = 24.dp, end = 28.dp)) {
-        Text("Library", color = Jc.Text, fontSize = 28.sp, fontWeight = FontWeight.SemiBold)
-        Text("Your Jellyfin libraries · play only, nothing is changed", color = Jc.Muted, fontSize = 15.sp)
-        Spacer(18)
-        when {
-            libraries == null -> Text("Loading…", color = Jc.Muted, fontSize = 16.sp)
-            libraries.isEmpty() -> Text("No video libraries.", color = Jc.Muted, fontSize = 16.sp)
-            else ->
-                LazyVerticalGrid(columns = GridCells.Fixed(4), horizontalArrangement = Arrangement.spacedBy(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                    itemsIndexed(libraries, key = { _, l -> l.id }) { i, l ->
-                        val back = remember { FocusRequester() }
-                        LaunchedEffect(Unit) { if (l.id == restore) runCatching { back.requestFocus() } }
-                        Surface(
-                            onClick = { onOpen(l) },
-                            modifier = (if (i == 0) Modifier.focusRequester(entry) else Modifier).focusRequester(back).fillMaxWidth().aspectRatio(16f / 9f),
-                            shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(12.dp)),
-                            colors = ClickableSurfaceDefaults.colors(containerColor = Jc.Panel, focusedContainerColor = Jc.FocusFill, contentColor = Jc.Text, focusedContentColor = Jc.Text),
-                            border = ClickableSurfaceDefaults.border(focusedBorder = Border(BorderStroke(3.dp, Jc.Focus))),
-                            scale = ClickableSurfaceDefaults.scale(focusedScale = 1.04f),
-                        ) {
-                            Box(Modifier.fillMaxSize()) {
-                                AsyncImage(model = Jdvr.liveTv.imageUrl(l.id, 300), contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
-                                Text(
-                                    l.name,
-                                    fontSize = 18.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.align(Alignment.BottomStart).padding(10.dp).background(Jc.Ink.copy(alpha = 0.8f), RoundedCornerShape(6.dp)).padding(horizontal = 8.dp, vertical = 3.dp),
-                                )
-                            }
-                        }
-                    }
-                }
-        }
     }
 }
 
 @Composable
 private fun LibraryGrid(
     library: LiveTvRepository.Library,
+    entry: FocusRequester,
     restore: UUID?,
     refresh: Int,
     onOpen: (LiveTvRepository.LibItem) -> Unit,
@@ -205,7 +151,7 @@ private fun LibraryGrid(
                         if (i >= items.size - 14) LaunchedEffect(items.size) { loadMore() }
                         val back = remember { FocusRequester() }
                         LaunchedEffect(Unit) { if (it.id == restore) runCatching { back.requestFocus() } }
-                        Poster(it, (if (i == 0) Modifier.focusRequester(first) else Modifier).focusRequester(back)) { onOpen(it) }
+                        Poster(it, (if (i == 0) Modifier.focusRequester(first).focusRequester(entry) else Modifier).focusRequester(back)) { onOpen(it) }
                     }
                 }
         }
