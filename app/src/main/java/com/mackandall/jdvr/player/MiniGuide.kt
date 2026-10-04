@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -93,6 +94,10 @@ fun MiniGuide(
     // A programme's full panel (the guide's: record, series, favourites, watched…).
     var detail by remember { mutableStateOf<Program?>(null) }
     var typed by remember { mutableStateOf("") }
+    // Recent channels (not this one), most recent first; ◀ at "now" goes up to them.
+    val recent = remember { Jdvr.session.recentChannels.mapNotNull { id -> channels.firstOrNull { it.id.toString() == id } }.filter { it.id != currentChannelId }.take(6) }
+    var inRecent by remember { mutableStateOf(false) }
+    var recentIndex by remember { mutableIntStateOf(0) }
     var typedAt by remember { mutableStateOf(0L) }
 
     LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
@@ -150,6 +155,7 @@ fun MiniGuide(
     }
 
     val sel = selected()
+    if (inRecent) androidx.activity.compose.BackHandler { inRecent = false }
     // The panel closed: the band has the remote again.
     LaunchedEffect(detail) { if (detail == null) runCatching { focus.requestFocus() } }
     Box(modifier) {
@@ -162,6 +168,17 @@ fun MiniGuide(
             .focusable()
             .onKeyEvent { e ->
                 if (e.type != KeyEventType.KeyDown) return@onKeyEvent false
+                if (inRecent) {
+                    when (e.key.nativeKeyCode) {
+                        AndroidKeyEvent.KEYCODE_DPAD_LEFT -> recentIndex = (recentIndex - 1).coerceAtLeast(0)
+                        AndroidKeyEvent.KEYCODE_DPAD_RIGHT -> recentIndex = (recentIndex + 1).coerceAtMost(recent.lastIndex)
+                        AndroidKeyEvent.KEYCODE_DPAD_DOWN -> inRecent = false
+                        AndroidKeyEvent.KEYCODE_DPAD_CENTER, AndroidKeyEvent.KEYCODE_ENTER -> recent.getOrNull(recentIndex)?.let { onWatch(it.id) }
+                        AndroidKeyEvent.KEYCODE_DPAD_UP -> {}
+                        else -> return@onKeyEvent false
+                    }
+                    return@onKeyEvent true
+                }
                 when (e.key.nativeKeyCode) {
                     AndroidKeyEvent.KEYCODE_DPAD_UP -> move(-1)
                     AndroidKeyEvent.KEYCODE_DPAD_DOWN -> move(1)
@@ -193,6 +210,10 @@ fun MiniGuide(
                         if (prev != null) {
                             at = if (prev.start.isBefore(LocalDateTime.now())) LocalDateTime.now() else prev.start
                             follow(prev)
+                        } else if (recent.isNotEmpty()) {
+                            // At "now": up to the recent channels.
+                            inRecent = true
+                            recentIndex = 0
                         }
                     }
                     AndroidKeyEvent.KEYCODE_DPAD_CENTER, AndroidKeyEvent.KEYCODE_ENTER -> {
@@ -205,6 +226,27 @@ fun MiniGuide(
             }.padding(horizontal = 24.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(5.dp),
     ) {
+        // Recent channels: ◀ at "now" comes up here; OK tunes, ▼ or Back goes back down.
+        if (recent.isNotEmpty()) {
+            Row(Modifier.height(30.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("Recent", color = if (inRecent) Jc.Text else Jc.Muted, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.width(60.dp))
+                recent.forEachIndexed { i, ch ->
+                    val on = inRecent && i == recentIndex
+                    Row(
+                        Modifier
+                            .background(if (on) Jc.FocusFill else Jc.Panel.copy(alpha = 0.9f), RoundedCornerShape(7.dp))
+                            .then(if (on) Modifier.border(2.dp, Jc.Focus, RoundedCornerShape(7.dp)) else Modifier)
+                            .padding(horizontal = 9.dp, vertical = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(ch.number, color = Jc.Muted, fontSize = 12.sp)
+                        Text(ch.name, color = Jc.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                        ch.now?.let { Text(it.name, color = Jc.Muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 120.dp)) }
+                    }
+                }
+            }
+        }
         // The selected programme.
         Row(Modifier.height(28.dp), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             val marks = Marks.parse(sel?.rawEpisodeTitle, symbols)
@@ -220,7 +262,7 @@ fun MiniGuide(
             )
             if (sel != null && recording(sel)) Text("● Recording", color = Jc.Recording, fontSize = 13.sp)
             Text(
-                note ?: (if (typed.isNotEmpty()) "Channel $typed…" else if (sel != null && sel.start.isBefore(LocalDateTime.now())) "OK watch · Info options · ⏩ +2 h · Back close" else "OK options · ⏩⏪ 2 h · Back close"),
+                note ?: (if (typed.isNotEmpty()) "Channel $typed…" else if (sel != null && sel.start.isBefore(LocalDateTime.now())) "OK watch · ◀ recent · Info options · Back close" else "OK options · ⏩⏪ 2 h · Back close"),
                 color = if (note != null) Jc.Text else Jc.Muted,
                 fontSize = 13.sp,
             )

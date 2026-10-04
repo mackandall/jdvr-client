@@ -180,6 +180,7 @@ fun PlayerScreen(
                     current = p
                     playback = p
                     Jdvr.session.lastChannelId = channelId.toString()
+                    Jdvr.session.pushRecentChannel(channelId.toString())
                     player.setMediaItem(MediaItem.fromUri(p.url))
                     player.playWhenReady = true // a new channel plays even if the last was paused
                     player.prepare()

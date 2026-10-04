@@ -29,5 +29,14 @@ class Session(
         get() = prefs.getString("lastChannelId", null)
         set(v) = prefs.edit().putString("lastChannelId", v).apply()
 
+    /** Live channels watched, most recent first (the mini guide's Recent strip). */
+    val recentChannels: List<String>
+        get() = prefs.getString("recentChannels", "")!!.split(',').filter { it.isNotBlank() }
+
+    fun pushRecentChannel(id: String) {
+        val list = (listOf(id) + recentChannels.filter { it != id }).take(8)
+        prefs.edit().putString("recentChannels", list.joinToString(",")).apply()
+    }
+
     fun clear() = prefs.edit().clear().apply()
 }
