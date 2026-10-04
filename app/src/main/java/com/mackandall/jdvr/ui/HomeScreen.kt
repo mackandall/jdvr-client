@@ -114,9 +114,9 @@ fun HomeScreen(
     androidx.compose.runtime.CompositionLocalProvider(LocalSeeThrough provides (w != null)) {
     Box(Modifier.fillMaxSize()) {
     if (w != null) {
-        WeatherBackdrop(w.sky, w.isDay)
+        WeatherPicture(w.sky, w.isDay)
         // A light shade so text stays readable on bright skies.
-        Box(Modifier.fillMaxSize().background(Jc.Ink.copy(alpha = 0.25f)))
+        Box(Modifier.fillMaxSize().background(Jc.Ink.copy(alpha = 0.35f)))
     }
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(start = 28.dp, top = 18.dp, end = 28.dp, bottom = 24.dp),

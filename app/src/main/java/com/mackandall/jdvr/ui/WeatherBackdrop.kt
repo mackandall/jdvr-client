@@ -23,11 +23,46 @@ import kotlin.random.Random
  * the conditions and time of day, the sun or moon and stars, clouds, and gently falling rain or
  * snow, or flashes for a storm.
  */
+/**
+ * SageTV style: a picture for the conditions and time of day, shipped with the app (Wikimedia
+ * Commons, public domain / CC0; assets/weather/CREDITS.txt), with rain, snow or lightning drawn
+ * falling over it. Clear days alternate between two pictures by the hour.
+ */
+@Composable
+fun WeatherPicture(
+    sky: Sky,
+    isDay: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val name =
+        when (sky) {
+            Sky.Clear -> if (isDay) (if (java.time.LocalTime.now().hour % 2 == 0) "clear-day-1" else "clear-day-2") else "clear-night"
+            Sky.PartlyCloudy -> if (isDay) "partly-day" else "cloudy-night"
+            Sky.Cloudy -> if (isDay) "cloudy-day" else "cloudy-night"
+            Sky.Fog -> if (isDay) "fog-day" else "fog-night"
+            Sky.Rain -> if (isDay) "rain-day" else "rain-night"
+            Sky.Snow -> if (isDay) "snow-day" else "snow-night"
+            Sky.Storm -> "storm"
+        }
+    androidx.compose.foundation.layout.Box(modifier.fillMaxSize()) {
+        coil3.compose.AsyncImage(
+            model = "file:///android_asset/weather/$name.jpg",
+            contentDescription = null,
+            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+            modifier = Modifier.fillMaxSize(),
+        )
+        // Falling rain / snow and storm flashes over the picture.
+        if (sky == Sky.Rain || sky == Sky.Snow || sky == Sky.Storm) WeatherBackdrop(sky, isDay, overlayOnly = true)
+    }
+}
+
 @Composable
 fun WeatherBackdrop(
     sky: Sky,
     isDay: Boolean,
     modifier: Modifier = Modifier,
+    // Only the falling rain / snow and flashes (over a picture), no sky, sun or clouds.
+    overlayOnly: Boolean = false,
 ) {
     val falling = sky == Sky.Rain || sky == Sky.Snow || sky == Sky.Storm
     val t =
@@ -52,9 +87,10 @@ fun WeatherBackdrop(
             isDay -> { top = Color(0xFF2F78C4); bottom = Color(0xFF9CCBF0) }
             else -> { top = Color(0xFF070B1A); bottom = Color(0xFF1C2A4A) }
         }
-        drawRect(Brush.verticalGradient(listOf(top, bottom)))
         val w = size.width
         val h = size.height
+        if (!overlayOnly) {
+        drawRect(Brush.verticalGradient(listOf(top, bottom)))
 
         // Stars on a clear-ish night.
         if (!isDay && (sky == Sky.Clear || sky == Sky.PartlyCloudy)) {
@@ -96,6 +132,7 @@ fun WeatherBackdrop(
         // Fog bands.
         if (sky == Sky.Fog) {
             repeat(5) { i -> drawRect(Color.White.copy(alpha = 0.12f), topLeft = Offset(0f, h * (0.3f + 0.12f * i)), size = androidx.compose.ui.geometry.Size(w, h * 0.06f)) }
+        }
         }
         // Rain and storm: falling streaks; snow: drifting flakes.
         if (sky == Sky.Rain || sky == Sky.Storm) {

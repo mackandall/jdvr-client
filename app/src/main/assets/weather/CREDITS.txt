@@ -1,0 +1,14 @@
+Weather backgrounds: Wikimedia Commons, public domain / CC0 (no attribution required; listed for reference).
+clear-day-1.jpg  Sky Forest Clouds.jpg  (CC0; Unknown authorUnknown author)  https://commons.wikimedia.org/wiki/File:Sky_Forest_Clouds.jpg
+clear-day-2.jpg  Sky Clouds Sea.jpg  (CC0; Unknown authorUnknown author)  https://commons.wikimedia.org/wiki/File:Sky_Clouds_Sea.jpg
+clear-night.jpg  Atmosphere Sky Clouds.jpg  (CC0; Unknown authorUnknown author)  https://commons.wikimedia.org/wiki/File:Atmosphere_Sky_Clouds.jpg
+partly-day.jpg  Clouds in the sky landscape.jpg  (CC0; Aammell)  https://commons.wikimedia.org/wiki/File:Clouds_in_the_sky_landscape.jpg
+cloudy-day.jpg  Overcast or Cloudy Sky 01.jpg  (CC0; PagesAndPathsPH)  https://commons.wikimedia.org/wiki/File:Overcast_or_Cloudy_Sky_01.jpg
+cloudy-night.jpg  Moon on cloudy sky, Maastricht (Unsplash).jpg  (CC0; Jeroen Andel addictures)  https://commons.wikimedia.org/wiki/File:Moon_on_cloudy_sky,_Maastricht_(Unsplash).jpg
+fog-day.jpg  Early morning fog.jpg  (Public domain; Allan Zieser)  https://commons.wikimedia.org/wiki/File:Early_morning_fog.jpg
+fog-night.jpg  Iowa windmill in the early morning fog.jpg  (Public domain; Allan Zieser)  https://commons.wikimedia.org/wiki/File:Iowa_windmill_in_the_early_morning_fog.jpg
+rain-day.jpg  RaindropsOnWindow.jpg  (CC0; Raysonho @ Open Grid Scheduler / Grid Engine)  https://commons.wikimedia.org/wiki/File:RaindropsOnWindow.jpg
+rain-night.jpg  Porsche 911 on a rainy evening (Unsplash).jpg  (CC0; Gabriel Gurrola gabrielgurrola)  https://commons.wikimedia.org/wiki/File:Porsche_911_on_a_rainy_evening_(Unsplash).jpg
+snow-day.jpg  Canada winter landscape.jpg  (CC0; AnonymousUnknown author)  https://commons.wikimedia.org/wiki/File:Canada_winter_landscape.jpg
+snow-night.jpg  Bike on a snowy street in Quebec City at night.jpg  (CC0; Wilfredor)  https://commons.wikimedia.org/wiki/File:Bike_on_a_snowy_street_in_Quebec_City_at_night.jpg
+storm.jpg  Lightning NOAA.jpg  (Public domain; C. Clark)  https://commons.wikimedia.org/wiki/File:Lightning_NOAA.jpg
