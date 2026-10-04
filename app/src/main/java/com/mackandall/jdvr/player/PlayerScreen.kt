@@ -402,6 +402,8 @@ fun PlayerScreen(
             .onPreviewKeyEvent { e ->
                 lastKeyAt = System.currentTimeMillis()
                 if (e.type != KeyEventType.KeyDown || busy != null || error != null) return@onPreviewKeyEvent false
+                // The mini guide uses ⏩ ⏪ to jump two hours.
+                if (miniOpen && e.key.nativeKeyCode in setOf(AndroidKeyEvent.KEYCODE_MEDIA_FAST_FORWARD, AndroidKeyEvent.KEYCODE_MEDIA_REWIND)) return@onPreviewKeyEvent false
                 // The remote's media keys work whether or not the controls are showing.
                 when (e.key.nativeKeyCode) {
                     AndroidKeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> playPause()
@@ -550,8 +552,12 @@ fun PlayerScreen(
                     if (it != channelId) onChannelChange(it)
                 },
                 onClose = { miniOpen = false },
-                modifier = Modifier.align(Alignment.BottomCenter),
+                modifier = Modifier.fillMaxSize(),
                 buffers = bufferIds,
+                onPlayRecording = {
+                    miniOpen = false
+                    onPlayRecording(it)
+                },
             )
         }
         busy?.let { status ->

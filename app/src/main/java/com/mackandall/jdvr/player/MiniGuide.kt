@@ -61,8 +61,9 @@ private fun floorHalfHour(t: LocalDateTime): LocalDateTime = t.withSecond(0).wit
 
 /**
  * The mini guide: a see-through band over the bottom of live TV (the picture keeps playing full
- * size), four channel rows of a 90-minute timeline. ▲▼ channels, ◀▶ programmes (the window moves
- * along), OK watches what's on now or records / cancels a later one, Back closes.
+ * size), four channel rows of a 90-minute timeline. ▲▼ channels (CH± a page, digits jump to a
+ * number), ◀▶ programmes (the window moves along; ⏩ ⏪ two hours), OK watches what's on now or opens
+ * a later one's panel (Info / Menu: any programme's), with the guide's options. Back closes.
  */
 @Composable
 fun MiniGuide(
@@ -74,6 +75,7 @@ fun MiniGuide(
     modifier: Modifier = Modifier,
     // Guide programmes that are only a live TV buffer: not shown as recordings.
     buffers: Set<String> = emptySet(),
+    onPlayRecording: (com.mackandall.jdvr.PlayRecording) -> Unit = {},
 ) {
     fun recording(p: Program) = p.isRecording && p.id.toString().replace("-", "").lowercase() !in buffers
     val focus = remember { FocusRequester() }
@@ -85,20 +87,45 @@ fun MiniGuide(
     var at by remember { mutableStateOf(LocalDateTime.now()) }
     var note by remember { mutableStateOf<String?>(null) }
     var reload by remember { mutableIntStateOf(0) }
-    // Programmes by channel, fetched a slice of channels at a time.
+    // Programmes by channel, fetched a slice of channels at a time, and how far ahead each is.
     val programs = remember { mutableStateMapOf<UUID, List<Program>>() }
+    val fetchedTo = remember { mutableMapOf<UUID, LocalDateTime>() }
+    // A programme's full panel (the guide's: record, series, favourites, watched…).
+    var detail by remember { mutableStateOf<Program?>(null) }
+    var typed by remember { mutableStateOf("") }
+    var typedAt by remember { mutableStateOf(0L) }
 
     LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
 
     // Fetch the visible rows (and a few either side) for the next few hours.
     LaunchedEffect(top, windowStart, reload) {
-        val want = channels.subList((top - 4).coerceAtLeast(0), (top + ROWS + 4).coerceAtMost(channels.size)).map { it.id }.filter { reload > 0 || it !in programs }
+        val need = windowStart.plusMinutes(WINDOW_MIN)
+        val want =
+            channels.subList((top - 4).coerceAtLeast(0), (top + ROWS + 4).coerceAtMost(channels.size)).map { it.id }
+                .filter { reload > 0 || fetchedTo[it]?.isBefore(need) != false }
         if (want.isEmpty()) return@LaunchedEffect
         val to = windowStart.plusHours(4)
         runCatching { Jdvr.liveTv.programs(want, earliest, to) }.getOrNull()?.let { list ->
             val byChannel = list.groupBy { it.channelId }
-            want.forEach { programs[it] = byChannel[it].orEmpty() }
+            want.forEach {
+                programs[it] = byChannel[it].orEmpty()
+                fetchedTo[it] = to
+            }
         }
+    }
+
+    // Digits typed: after a pause, jump to that channel number.
+    LaunchedEffect(typedAt) {
+        if (typed.isEmpty()) return@LaunchedEffect
+        delay(1500)
+        val i = channels.indexOfFirst { it.number == typed }
+        if (i >= 0) {
+            row = i
+            top = (i - 1).coerceIn(0, (channels.size - ROWS).coerceAtLeast(0))
+        } else {
+            note = "No channel $typed"
+        }
+        typed = ""
     }
 
     fun rowPrograms(i: Int) = channels.getOrNull(i)?.let { programs[it.id] }.orEmpty()
@@ -123,8 +150,12 @@ fun MiniGuide(
     }
 
     val sel = selected()
+    // The panel closed: the band has the remote again.
+    LaunchedEffect(detail) { if (detail == null) runCatching { focus.requestFocus() } }
+    Box(modifier) {
     Column(
-        modifier
+        Modifier
+            .align(Alignment.BottomCenter)
             .fillMaxWidth()
             .background(Color(0xDC0D1117))
             .focusRequester(focus)
@@ -132,8 +163,24 @@ fun MiniGuide(
             .onKeyEvent { e ->
                 if (e.type != KeyEventType.KeyDown) return@onKeyEvent false
                 when (e.key.nativeKeyCode) {
-                    AndroidKeyEvent.KEYCODE_DPAD_UP, AndroidKeyEvent.KEYCODE_CHANNEL_UP -> move(-1)
-                    AndroidKeyEvent.KEYCODE_DPAD_DOWN, AndroidKeyEvent.KEYCODE_CHANNEL_DOWN -> move(1)
+                    AndroidKeyEvent.KEYCODE_DPAD_UP -> move(-1)
+                    AndroidKeyEvent.KEYCODE_DPAD_DOWN -> move(1)
+                    AndroidKeyEvent.KEYCODE_CHANNEL_UP, AndroidKeyEvent.KEYCODE_PAGE_UP -> move(-ROWS)
+                    AndroidKeyEvent.KEYCODE_CHANNEL_DOWN, AndroidKeyEvent.KEYCODE_PAGE_DOWN -> move(ROWS)
+                    // Two hours ahead / back (not before now).
+                    AndroidKeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> {
+                        windowStart = windowStart.plusHours(2)
+                        at = windowStart
+                    }
+                    AndroidKeyEvent.KEYCODE_MEDIA_REWIND -> {
+                        windowStart = windowStart.minusHours(2).let { if (it.isBefore(earliest)) earliest else it }
+                        at = if (windowStart == earliest) LocalDateTime.now() else windowStart
+                    }
+                    AndroidKeyEvent.KEYCODE_INFO, AndroidKeyEvent.KEYCODE_MENU -> detail = sel
+                    in AndroidKeyEvent.KEYCODE_0..AndroidKeyEvent.KEYCODE_9 -> {
+                        typed = (typed + (e.key.nativeKeyCode - AndroidKeyEvent.KEYCODE_0)).takeLast(4)
+                        typedAt = System.currentTimeMillis()
+                    }
                     AndroidKeyEvent.KEYCODE_DPAD_RIGHT -> {
                         val next = sel?.let { s -> rowPrograms(row).firstOrNull { !it.start.isBefore(s.end) } }
                         if (next != null) {
@@ -150,26 +197,7 @@ fun MiniGuide(
                     }
                     AndroidKeyEvent.KEYCODE_DPAD_CENTER, AndroidKeyEvent.KEYCODE_ENTER -> {
                         val p = sel ?: return@onKeyEvent true
-                        if (p.start.isBefore(LocalDateTime.now())) {
-                            onWatch(p.channelId)
-                        } else {
-                            scope.launch {
-                                note =
-                                    runCatching {
-                                        val timer = p.timerId
-                                        if (timer != null) {
-                                            Jdvr.liveTv.cancelRecording(timer)
-                                            "Won't record ${p.name}"
-                                        } else {
-                                            Jdvr.liveTv.record(p.id, series = false)
-                                            "Will record ${p.name} at ${p.start.time()}"
-                                        }
-                                    }.getOrElse { "Didn't work: ${it.message}" }
-                                reload++
-                                delay(3000)
-                                note = null
-                            }
-                        }
+                        if (p.start.isBefore(LocalDateTime.now())) onWatch(p.channelId) else detail = p
                     }
                     else -> return@onKeyEvent false
                 }
@@ -192,7 +220,7 @@ fun MiniGuide(
             )
             if (sel != null && recording(sel)) Text("● Recording", color = Jc.Recording, fontSize = 13.sp)
             Text(
-                note ?: if (sel != null && sel.start.isBefore(LocalDateTime.now())) "OK watch · Back close" else "OK ${if (sel?.isRecording == true) "don't record" else "record"} · Back close",
+                note ?: (if (typed.isNotEmpty()) "Channel $typed…" else if (sel != null && sel.start.isBefore(LocalDateTime.now())) "OK watch · Info options · ⏩ +2 h · Back close" else "OK options · ⏩⏪ 2 h · Back close"),
                 color = if (note != null) Jc.Text else Jc.Muted,
                 fontSize = 13.sp,
             )
@@ -243,5 +271,30 @@ fun MiniGuide(
                 }
             }
         }
+    }
+    // The guide's programme panel, on the right over the picture.
+    detail?.let { p ->
+        androidx.activity.compose.BackHandler { detail = null }
+        com.mackandall.jdvr.ui.ProgramPanel(
+            program = p,
+            channel = channels.firstOrNull { it.id == p.channelId },
+            symbols = symbols,
+            onWatch = {
+                detail = null
+                onWatch(p.channelId)
+            },
+            onWatchFromStart = { id ->
+                detail = null
+                onPlayRecording(com.mackandall.jdvr.PlayRecording(id, startMs = 0L))
+            },
+            onPlayItem = {
+                detail = null
+                onPlayRecording(it)
+            },
+            onChanged = { reload++ },
+            onClose = { detail = null },
+            modifier = Modifier.align(Alignment.CenterEnd).width(380.dp),
+        )
+    }
     }
 }

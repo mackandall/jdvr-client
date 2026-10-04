@@ -152,9 +152,16 @@ fun GuideScreen(
         }
     }
 
+    // Closing the panel: focus goes back to the programme it was opened on (else it lands on
+    // whatever comes first in the grid, channels away).
+    fun closePanel() {
+        selected?.let { p -> pendingFocus = p.channelId to (if (p.start.isBefore(windowStart)) windowStart else p.start) }
+        selected = null
+    }
+
     @Composable
     fun Actions(p: Program) {
-        BackHandler { selected = null }
+        BackHandler { closePanel() }
         ProgramPanel(
             program = p,
             channel = channels?.firstOrNull { it.id == p.channelId },
@@ -172,7 +179,7 @@ fun GuideScreen(
                 onPlayRecording(com.mackandall.jdvr.PlayRecording(itemId, startMs = 0L))
             },
             onChanged = { reload++ },
-            onClose = { selected = null },
+            onClose = { closePanel() },
             modifier = Modifier,
         )
     }
@@ -234,7 +241,9 @@ fun GuideScreen(
                                     onFocusTaken = { pendingFocus = null },
                                     onSelect = { selected = it },
                                     onFocused = { focused = it },
-                                    entry = if (ch == list.first()) entry else null,
+                                    // The way back in (after the rail or a player): the programme last on, else the top-left.
+                                    entry = if (ch.id == (focused?.channelId?.takeIf { id -> list.any { it.id == id } } ?: list.first().id)) entry else null,
+                                    entryProgram = focused?.id,
                                     onShift = { minutes -> shift(minutes, ch.id) },
                                 )
                             }
@@ -375,6 +384,7 @@ private fun GuideRow(
     onSelect: (Program) -> Unit,
     onFocused: (Program) -> Unit,
     entry: FocusRequester?,
+    entryProgram: UUID? = null,
     onShift: (Long) -> Boolean,
 ) {
     val windowEnd = windowStart.plusMinutes(WINDOW_MINUTES)
@@ -411,7 +421,7 @@ private fun GuideRow(
                 onFocusTaken = onFocusTaken,
                 onClick = { onSelect(p) },
                 onFocused = { onFocused(p) },
-                entry = if (i == 0) entry else null,
+                entry = if (p.id == entryProgram || (i == 0 && visible.none { it.id == entryProgram })) entry else null,
                 onEdgeRight = if (i == visible.lastIndex) ({ onShift(STEP_MINUTES) }) else null,
                 onEdgeLeft = if (i == 0) ({ onShift(-STEP_MINUTES) }) else null,
             )
@@ -491,7 +501,7 @@ private fun ProgramCell(
 
 /** The selected programme: details and what can be done with it. */
 @Composable
-private fun ProgramPanel(
+internal fun ProgramPanel(
     program: Program,
     channel: Channel?,
     symbols: LiveTvRepository.MarkSymbols?,
