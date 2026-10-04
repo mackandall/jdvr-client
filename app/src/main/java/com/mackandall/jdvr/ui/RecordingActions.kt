@@ -100,9 +100,9 @@ fun RecordingActions(
         } else {
             armedDelete = false
             scope.launch {
-                runCatching { Jdvr.liveTv.deleteItem(itemId) }
+                runCatching { Jdvr.liveTv.deleteRecording(itemId) }
                     .onSuccess {
-                        onNote("Recording deleted")
+                        onNote(if (it.deleted > 1) "Partial recording deleted, with its ${it.deleted - 1} other partial piece${if (it.deleted > 2) "s" else ""}" else "Recording deleted")
                         onDeleted()
                     }.onFailure { onNote("Couldn't delete it: ${it.message}") }
             }

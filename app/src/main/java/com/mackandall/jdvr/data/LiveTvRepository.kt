@@ -721,6 +721,22 @@ class LiveTvRepository {
     /** Deletes a recording: its file and the files beside it (Jellyfin's own delete). */
     suspend fun deleteItem(itemId: UUID) = io { api.libraryApi.deleteItem(itemId) }
 
+    @Serializable
+    data class DeletedRecording(
+        @SerialName("Partial") val partial: Boolean = false,
+        @SerialName("Deleted") val deleted: Int = 0,
+    )
+
+    /**
+     * Deletes a recording through Episode History: a partial one takes the episode's other
+     * partial versions with it (the pieces of an interrupted recording), so it records again;
+     * a full one goes alone. Without that endpoint, Jellyfin's own delete. Returns how many
+     * files went.
+     */
+    suspend fun deleteRecording(itemId: UUID): DeletedRecording =
+        plugin<DeletedRecording>(HttpMethod.DELETE, "/EpisodeHistory/Item/${itemId.toString().replace("-", "")}/Recording")
+            ?: deleteItem(itemId).let { DeletedRecording(deleted = 1) }
+
     // ---- Episode History on a guide programme --------------------------------------------------
 
     @Serializable

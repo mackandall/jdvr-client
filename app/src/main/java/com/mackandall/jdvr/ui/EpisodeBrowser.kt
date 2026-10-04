@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
@@ -12,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -191,23 +193,27 @@ private fun ListView(
                     if (list.any { it.season != list.first().season } && (i == 0 || list[i - 1].season != e.season)) {
                         Text(seasonTitle(e.season), color = Jc.Muted, fontSize = 14.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = if (i == 0) 0.dp else 8.dp, bottom = 2.dp))
                     }
-                    Row(Modifier.fillMaxWidth().height(54.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Row(Modifier.fillMaxWidth().heightIn(min = 64.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                         Surface(
                             onClick = { onPlay(e) },
                             modifier =
                                 (if (i == 0) Modifier.focusRequester(first).let { m -> entry?.let { m.focusRequester(it) } ?: m } else Modifier)
                                     .weight(1f)
-                                    .fillMaxHeight()
+                                    .heightIn(min = 64.dp)
                                     .onFocusChanged { if (it.isFocused) focusedId = e.id },
                             shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(10.dp)),
                             colors = ClickableSurfaceDefaults.colors(containerColor = Jc.Panel.copy(alpha = 0.92f), focusedContainerColor = Jc.FocusFill, contentColor = Jc.Text, focusedContentColor = Jc.Text),
                             border = ClickableSurfaceDefaults.border(focusedBorder = Border(BorderStroke(2.dp, Jc.Focus))),
                             scale = ClickableSurfaceDefaults.scale(focusedScale = 1.01f),
                         ) {
-                            Row(Modifier.fillMaxSize().padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Row(Modifier.fillMaxWidth().heightIn(min = 64.dp).padding(horizontal = 14.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                                 Text(e.seasonEpisode ?: e.recordedAt?.day() ?: "", color = Jc.Muted, fontSize = 14.sp, modifier = Modifier.width(78.dp))
-                                Text(e.name, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                                Badges(e)
+                                // Badges under the title, so they never squeeze it away; more than fit go on
+                                // another line and the row grows.
+                                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                                    Text(e.shortName(), fontSize = 16.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    BadgeLine(e)
+                                }
                             }
                         }
                         Button("Info") { onInfo(e) }
@@ -243,10 +249,21 @@ private fun EpisodePane(
             color = Jc.Muted,
             fontSize = 13.sp,
         )
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) { Badges(e) }
+        BadgeLine(e)
         (e.overview ?: more?.overview)?.let { Text(it, color = Jc.Text, fontSize = 13.sp, maxLines = 7, overflow = TextOverflow.Ellipsis) }
     }
 }
+
+/** The name without a leading "S3:E1 - " when the row already shows the season and episode. */
+private fun EpisodeEntry.shortName(): String {
+    val se = seasonEpisode ?: return name
+    return name.removePrefix("$se - ").ifBlank { name }
+}
+
+/** An episode's badges, wrapping onto more lines when they don't fit (so any mix of them lays out). */
+@Composable
+private fun BadgeLine(e: EpisodeEntry) =
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) { Badges(e) }
 
 @Composable
 private fun Badges(e: EpisodeEntry) {
@@ -267,6 +284,8 @@ private fun Tag(
     color = if (dark) Color(0xFF1A1206) else Jc.Text,
     fontSize = 11.sp,
     fontWeight = FontWeight.Bold,
+    maxLines = 1,
+    softWrap = false,
     modifier = Modifier.background(color.copy(alpha = 0.92f), RoundedCornerShape(5.dp)).padding(horizontal = 6.dp, vertical = 2.dp),
 )
 
@@ -350,8 +369,8 @@ private fun TilesView(
                     d?.item?.officialRating?.let { Text(it, color = Jc.Text, fontSize = 12.sp, modifier = Modifier.background(Jc.Panel2, RoundedCornerShape(4.dp)).padding(horizontal = 5.dp)) }
                     d?.communityRating?.let { Text("★ %.1f".format(it), color = Jc.Gold, fontSize = 13.sp) }
                     focused.recordedAt?.let { Text("Recorded ${it.day()} ${it.time()}", color = Jc.Muted, fontSize = 13.sp) }
-                    Badges(focused)
                 }
+                BadgeLine(focused)
                 d?.let { listOfNotNull(it.video, it.audio.firstOrNull(), it.subtitles.firstOrNull()).joinToString(" · ").ifEmpty { null } }?.let {
                     Text(it, color = Jc.Muted, fontSize = 12.sp, maxLines = 1)
                 }

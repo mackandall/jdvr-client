@@ -177,6 +177,8 @@ fun Chip(
         text,
         color = color,
         fontSize = 12.sp,
+        maxLines = 1,
+        softWrap = false,
         modifier =
             Modifier
                 .background(color.copy(alpha = 0.15f), RoundedCornerShape(6.dp))
