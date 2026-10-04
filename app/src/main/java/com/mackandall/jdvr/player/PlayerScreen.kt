@@ -134,7 +134,10 @@ fun PlayerScreen(
                 .Builder(context)
                 .setMediaSourceFactory(DefaultMediaSourceFactory(OkHttpDataSource.Factory(Jdvr.http), extractors))
                 .build()
-                .apply { playWhenReady = true }
+                .apply {
+                    playWhenReady = true
+                    applySubtitlePreference(this)
+                }
         }
 
     DisposableEffect(Unit) {
@@ -538,6 +541,7 @@ fun PlayerScreen(
                                 actionsOpen = false
                                 infoOpen = true
                             }
+                            TrackButtons(player)
                             fromStart?.let { rec ->
                                 Button("Watch from start") { onPlayRecording(com.mackandall.jdvr.PlayRecording(rec, startMs = 0L, liveChannelId = channelId)) }
                             }

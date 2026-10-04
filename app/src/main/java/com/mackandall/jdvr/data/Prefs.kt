@@ -43,6 +43,15 @@ class Prefs(
         p.edit().putString("episodeView", v).apply()
     }
 
+    /** Subtitles and closed captions when something starts: "off", or "on" when there are any. */
+    var subtitles by mutableStateOf(p.getString("subtitles", OFF) ?: OFF)
+        private set
+
+    fun changeSubtitles(v: String) {
+        subtitles = v
+        p.edit().putString("subtitles", v).apply()
+    }
+
     fun toggleLibrary(id: String) {
         hiddenLibraries = if (id in hiddenLibraries) hiddenLibraries - id else hiddenLibraries + id
         p.edit().putStringSet("hiddenLibraries", hiddenLibraries).apply()
@@ -74,6 +83,7 @@ class Prefs(
         const val ASK = "ask"
         const val AUTO = "auto"
         const val OFF = "off"
+        const val ON = "on"
         const val CURRENT = "current"
         const val ARCHIVED = "archived"
         const val ALL = "all"

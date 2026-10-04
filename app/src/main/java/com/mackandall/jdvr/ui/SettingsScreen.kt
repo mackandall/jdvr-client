@@ -72,6 +72,12 @@ fun SettingsScreen(
                 ) { prefs.toggleLibrary(l.id.toString()) }
             }
         }
+        Section("Playback")
+        Choice(
+            label = "Subtitles",
+            help = "Closed captions or subtitles when something starts, if it has any. The player's Subtitles button switches them any time.",
+            value = if (prefs.subtitles == Prefs.ON) "On when available" else "Off",
+        ) { prefs.changeSubtitles(if (prefs.subtitles == Prefs.ON) Prefs.OFF else Prefs.ON) }
         Section("About")
         Text(
             "JDVR ${BuildConfig.VERSION_NAME} · signed in as ${Jdvr.session.userName ?: "?"} on ${Jdvr.session.serverUrl ?: "?"}",

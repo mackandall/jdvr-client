@@ -133,7 +133,10 @@ fun RecordingPlayerScreen(
                 .setSeekBackIncrementMs(10_000)
                 .setSeekForwardIncrementMs(30_000)
                 .build()
-                .apply { playWhenReady = !recording.paused }
+                .apply {
+                    playWhenReady = !recording.paused
+                    applySubtitlePreference(this)
+                }
         }
 
     DisposableEffect(Unit) {
@@ -153,7 +156,20 @@ fun RecordingPlayerScreen(
                     current = p
                     playback = p
                     val start = recording.startMs ?: p.resumeMs
-                    player.setMediaItem(MediaItem.fromUri(p.url), start.coerceAtLeast(0))
+                    // Subtitle files Jellyfin keeps beside the video come along as extra tracks.
+                    val item =
+                        MediaItem.Builder()
+                            .setUri(p.url)
+                            .setSubtitleConfigurations(
+                                p.subtitles.map { st ->
+                                    MediaItem.SubtitleConfiguration.Builder(android.net.Uri.parse(st.url))
+                                        .setMimeType(st.mimeType)
+                                        .setLanguage(st.language)
+                                        .setLabel(st.label)
+                                        .build()
+                                },
+                            ).build()
+                    player.setMediaItem(item, start.coerceAtLeast(0))
                     player.prepare()
                     Jdvr.liveTv.reportItem(p, start, paused = recording.paused, event = "start")
                     while (true) {
@@ -407,6 +423,7 @@ fun RecordingPlayerScreen(
                         // ● on a live TV buffer keeps it as a recording (or lets it go again).
                         record = TransportAction(TransportIcon.Record, enabled = buffer != null, active = buffer?.kept == true) { toggleKeep() },
                     ) {
+                        TrackButtons(player)
                         if (live != null) Button("Back to live") { onBackToLive(live) }
                     }
                 } else {

@@ -324,6 +324,15 @@ class LiveTvRepository {
         val resumeMs: Long,
         val durationMs: Long?,
         val seriesId: String? = null,
+        // Subtitle files Jellyfin serves beside the video (.srt, .vtt, .ass…).
+        val subtitles: List<ExternalSubtitle> = emptyList(),
+    )
+
+    data class ExternalSubtitle(
+        val url: String,
+        val mimeType: String,
+        val language: String?,
+        val label: String?,
     )
 
     suspend fun startItem(itemId: UUID): ItemPlayback =
@@ -362,6 +371,23 @@ class LiveTvRepository {
                 resumeMs = (item.userData?.playbackPositionTicks ?: 0L) / 10_000L,
                 durationMs = item.runTimeTicks?.let { it / 10_000L },
                 seriesId = item.seriesId?.toString()?.replace("-", ""),
+                subtitles =
+                    source.mediaStreams.orEmpty()
+                        .filter { it.type == org.jellyfin.sdk.model.api.MediaStreamType.SUBTITLE && it.deliveryMethod == org.jellyfin.sdk.model.api.SubtitleDeliveryMethod.EXTERNAL && it.deliveryUrl != null }
+                        .map { st ->
+                            ExternalSubtitle(
+                                url = api.createUrl(st.deliveryUrl!!),
+                                mimeType =
+                                    when (st.codec?.lowercase()) {
+                                        "vtt", "webvtt" -> "text/vtt"
+                                        "ass", "ssa" -> "text/x-ssa"
+                                        "ttml" -> "application/ttml+xml"
+                                        else -> "application/x-subrip"
+                                    },
+                                language = st.language,
+                                label = st.displayTitle,
+                            )
+                        },
             )
         }
 
