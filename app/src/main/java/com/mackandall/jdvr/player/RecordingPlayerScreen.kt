@@ -64,7 +64,6 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import timber.log.Timber
 
 private fun clock(ms: Long): String {
@@ -173,7 +172,8 @@ fun RecordingPlayerScreen(
             val position = player.currentPosition
             player.removeListener(listener)
             player.release()
-            current?.let { p -> runBlocking { runCatching { Jdvr.liveTv.reportItem(p, position, paused = true, event = "stop") } } }
+            // Reported in the background, so leaving the player never waits on the server.
+            current?.let { p -> MainScope().launch { runCatching { Jdvr.liveTv.reportItem(p, position, paused = true, event = "stop") } } }
         }
     }
 

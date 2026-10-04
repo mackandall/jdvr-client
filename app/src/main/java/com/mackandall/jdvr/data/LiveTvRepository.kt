@@ -27,6 +27,7 @@ import org.jellyfin.sdk.model.api.RepeatMode
 import org.jellyfin.sdk.model.api.TimerInfoDto
 import org.jellyfin.sdk.model.api.request.GetLiveTvChannelsRequest
 import kotlinx.coroutines.Dispatchers
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.jellyfin.sdk.model.serializer.toUUIDOrNull
@@ -74,6 +75,9 @@ data class LivePlayback(
     val liveStreamId: String?,
     val playSessionId: String?,
     val playMethod: PlayMethod,
+    // The same live stream as HLS (a remux the server keeps from tune-in on): where pause and
+    // rewind go, so they're instant. Null if the server wouldn't give one.
+    val hlsUrl: String? = null,
 )
 
 class LiveTvRepository {
@@ -221,10 +225,8 @@ class LiveTvRepository {
                         userId = Jdvr.userId,
                         deviceProfile = Jdvr.deviceProfile,
                         maxStreamingBitrate = 120_000_000,
-                        // HLS (a remux: video and audio copied, not re-encoded), as Wholphin gets: the
-                        // server keeps every segment since tune-in, so pause and rewind are instant.
-                        enableDirectPlay = false,
-                        enableDirectStream = false,
+                        enableDirectPlay = true,
+                        enableDirectStream = true,
                         enableTranscoding = true,
                         allowVideoStreamCopy = true,
                         allowAudioStreamCopy = true,
@@ -235,8 +237,7 @@ class LiveTvRepository {
         val source = response.mediaSources.firstOrNull() ?: error("No stream for this channel")
         val url =
             when {
-                source.transcodingUrl != null -> api.createUrl(source.transcodingUrl!!)
-                source.supportsDirectPlay || source.supportsDirectStream ->
+                source.supportsDirectPlay || source.supportsDirectStream && source.transcodingUrl == null ->
                     api.videosApi.getVideoStreamUrl(
                         itemId = channelId,
                         mediaSourceId = source.id,
@@ -245,18 +246,67 @@ class LiveTvRepository {
                         playSessionId = response.playSessionId,
                         liveStreamId = source.liveStreamId,
                     )
+                source.transcodingUrl != null -> api.createUrl(source.transcodingUrl!!)
                 else -> error("No way to play this channel")
             }
         val method =
             when {
-                source.transcodingUrl != null -> PlayMethod.TRANSCODE
                 source.supportsDirectPlay -> PlayMethod.DIRECT_PLAY
                 source.supportsDirectStream -> PlayMethod.DIRECT_STREAM
                 else -> PlayMethod.TRANSCODE
             }
-        Timber.i("Live %s: %s via %s", channelId, method, url)
-        LivePlayback(channelId, url, source.id, source.liveStreamId, response.playSessionId, method)
+        val hls = if (method == PlayMethod.TRANSCODE) null else runCatching { hlsOf(channelId, source.id, source.liveStreamId, response.playSessionId) }.onFailure { Timber.w(it, "No HLS for %s", channelId) }.getOrNull()
+        Timber.i("Live %s: %s via %s; HLS %s", channelId, method, url.substringBefore('?'), if (hls != null) "ready" else "none")
+        LivePlayback(channelId, url, source.id, source.liveStreamId, response.playSessionId, method, hls ?: url.takeIf { method == PlayMethod.TRANSCODE })
     }
+
+    /**
+     * The open live stream again, as HLS (video and audio copied). It carries the direct play's
+     * session id, so its progress reports keep the remux alive and its stop report ends it.
+     */
+    private suspend fun hlsOf(
+        channelId: UUID,
+        mediaSourceId: String?,
+        liveStreamId: String?,
+        playSessionId: String?,
+    ): String? {
+        if (liveStreamId == null || playSessionId == null) return null
+        val response =
+            run {
+                api.mediaInfoApi
+                    .getPostedPlaybackInfo(
+                        channelId,
+                        PlaybackInfoDto(
+                            userId = Jdvr.userId,
+                            deviceProfile = Jdvr.deviceProfile,
+                            maxStreamingBitrate = 120_000_000,
+                            enableDirectPlay = false,
+                            enableDirectStream = false,
+                            enableTranscoding = true,
+                            allowVideoStreamCopy = true,
+                            allowAudioStreamCopy = true,
+                            mediaSourceId = mediaSourceId,
+                            liveStreamId = liveStreamId,
+                            autoOpenLiveStream = false,
+                        ),
+                    ).content
+            }
+        val path = response.mediaSources.firstOrNull()?.transcodingUrl ?: return null
+        return api.createUrl(path.replace(Regex("(?i)PlaySessionId=[^&]*"), "PlaySessionId=$playSessionId"))
+    }
+
+    /** Request the HLS playlist once, so the server starts the remux now (from tune-in). */
+    suspend fun warmHls(url: String) =
+        io {
+            runCatching {
+                // The server answers the variant playlist only once the first segments exist (~10 s).
+                val http = Jdvr.http.newBuilder().readTimeout(45, java.util.concurrent.TimeUnit.SECONDS).build()
+                val master = http.newCall(okhttp3.Request.Builder().url(url).build()).execute().use { it.body.string() }
+                val variant = master.lineSequence().map { it.trim() }.firstOrNull { it.isNotEmpty() && !it.startsWith("#") } ?: return@runCatching
+                val variantUrl = url.toHttpUrl().resolve(variant) ?: return@runCatching
+                http.newCall(okhttp3.Request.Builder().url(variantUrl).build()).execute().close()
+            }.onFailure { Timber.w(it, "Couldn't start HLS") }
+        }
 
     /** A recording (library item): how to play it, and where the user left off. */
     data class ItemPlayback(

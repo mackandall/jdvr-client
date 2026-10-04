@@ -63,7 +63,6 @@ import com.mackandall.jdvr.ui.time
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import timber.log.Timber
 import java.time.Duration
 import java.time.Instant
@@ -99,6 +98,12 @@ fun PlayerScreen(
     val playFocus = remember { FocusRequester() }
     var lastKeyAt by remember { mutableStateOf(System.currentTimeMillis()) }
     var pausedAt by remember(channelId) { mutableStateOf<Instant?>(null) }
+    // Hybrid: the channel starts as direct play (quick to tune) while the server starts an HLS copy
+    // of the same stream; pause and rewind move over to the HLS copy, where they're instant.
+    var onHls by remember(channelId) { mutableStateOf(false) }
+    var directStartedAt by remember(channelId) { mutableStateOf(0L) }
+    var hlsStartedAt by remember(channelId) { mutableStateOf<Long?>(null) }
+    var swapJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
     val context = LocalContext.current
     val symbols = rememberMarkSymbols()
     var channels by remember { mutableStateOf<List<Channel>>(emptyList()) }
@@ -162,6 +167,14 @@ fun PlayerScreen(
                     player.setMediaItem(MediaItem.fromUri(p.url))
                     player.playWhenReady = true // a new channel plays even if the last was paused
                     player.prepare()
+                    directStartedAt = android.os.SystemClock.elapsedRealtime()
+                    onHls = p.hlsUrl == p.url
+                    p.hlsUrl?.takeIf { !onHls }?.let { hls ->
+                        launch {
+                            hlsStartedAt = android.os.SystemClock.elapsedRealtime()
+                            Jdvr.liveTv.warmHls(hls)
+                        }
+                    }
                     Jdvr.liveTv.reportStart(p)
                     while (true) {
                         delay(10_000)
@@ -178,8 +191,9 @@ fun PlayerScreen(
             job.cancel()
             player.stop()
             current?.let { p ->
-                // Closing the live stream frees the tuner: done even as the screen goes away.
-                runBlocking { runCatching { Jdvr.liveTv.reportStopped(p) } }
+                // Closing the live stream frees the tuner: finished in the background even as the
+                // screen goes away (waiting for it here froze the screen for ~2 s).
+                kotlinx.coroutines.MainScope().launch { runCatching { Jdvr.liveTv.reportStopped(p) } }
             }
         }
     }
@@ -207,28 +221,64 @@ fun PlayerScreen(
     }
     if (actionsOpen) androidx.activity.compose.BackHandler { actionsOpen = false }
 
-    // Live TV is an HLS stream the server keeps writing from tune-in on, so pause, rewind and fast
-    // forward all happen inside it, instantly (as in Wholphin and the web client). JellyDVR Live's
-    // buffer recording is for what this can't do: Keep, Watch from start, another device.
     fun showOsd() {
         osdUntil = System.currentTimeMillis() + 5000
     }
 
+    // Where a moment of the direct stream is in the HLS copy: both began at the live stream's edge
+    // (or its start, for a fresh tune), the HLS copy this much later.
+    fun hlsPositionOf(directMs: Long): Long = (directMs - ((hlsStartedAt ?: directStartedAt) - directStartedAt)).coerceAtLeast(0)
+
+    val canHls = playback?.hlsUrl != null && hlsStartedAt != null
+
+    fun switchToHls(
+        positionMs: Long,
+        play: Boolean,
+    ) {
+        val url = playback?.hlsUrl ?: return
+        player.setMediaItem(MediaItem.fromUri(url), positionMs)
+        player.playWhenReady = play
+        player.prepare()
+        onHls = true
+    }
+
     fun rewind() {
-        player.seekTo((player.currentPosition - 10_000).coerceAtLeast(0))
+        when {
+            onHls -> player.seekTo((player.currentPosition - 10_000).coerceAtLeast(0))
+            canHls -> switchToHls(hlsPositionOf(player.currentPosition - 10_000), play = pausedAt == null)
+            else -> {
+                scope.launch {
+                    note = "Rewind isn't available on this channel."
+                    delay(3000)
+                    note = null
+                }
+            }
+        }
         showOsd()
     }
 
     fun forward() {
+        if (!onHls) return
         // No further than live.
         val live = player.currentPosition + (player.currentLiveOffset.takeIf { it != androidx.media3.common.C.TIME_UNSET } ?: 0L)
         player.seekTo(minOf(player.currentPosition + 30_000, live))
         showOsd()
     }
 
+    // Back to live: the direct stream again (truly live, not the HLS copy's few seconds behind).
     fun toLive() {
-        player.seekToDefaultPosition()
-        player.play()
+        val p = playback ?: return
+        if (onHls && p.hlsUrl != p.url) {
+            player.setMediaItem(MediaItem.fromUri(p.url))
+            player.playWhenReady = true
+            player.prepare()
+            directStartedAt = android.os.SystemClock.elapsedRealtime()
+            onHls = false
+        } else {
+            player.seekToDefaultPosition()
+            player.play()
+        }
+        pausedAt = null
         showOsd()
     }
 
@@ -238,21 +288,33 @@ fun PlayerScreen(
         onExit()
     }
 
-    // Back to where you tuned in: the start of the stream.
+    // Back to where you tuned in: the start of the HLS copy.
     fun backToTuneIn() {
-        player.seekTo(0)
+        if (onHls) player.seekTo(0) else if (canHls) switchToHls(0, play = pausedAt == null)
         showOsd()
     }
 
+    // Pause freezes the direct stream at once; once the HLS copy has caught up to that frame (it
+    // runs ~10 s behind), it takes over, still paused, so Play is instant however long the pause.
     fun pause() {
         if (pausedAt != null) return
         pausedAt = Instant.now()
         player.pause()
+        if (!onHls && canHls) {
+            val at = player.currentPosition
+            swapJob?.cancel()
+            swapJob =
+                scope.launch {
+                    delay(12_000)
+                    if (pausedAt != null && !onHls) switchToHls(hlsPositionOf(at), play = false)
+                }
+        }
     }
 
     fun resume() {
         if (pausedAt == null) return
         pausedAt = null
+        swapJob?.cancel()
         player.play()
         showOsd()
     }
@@ -349,18 +411,24 @@ fun PlayerScreen(
             },
     ) {
         AndroidView(
-            factory = { ctx -> PlayerView(ctx).apply { useController = false; this.player = player } },
+            factory = { ctx -> PlayerView(ctx).apply {
+                    useController = false
+                    // Switching to the HLS copy keeps the last frame up instead of flashing black.
+                    setShutterBackgroundColor(android.graphics.Color.TRANSPARENT)
+                    setKeepContentOnPlayerReset(true)
+                    this.player = player
+                } },
             modifier = Modifier.fillMaxSize(),
         )
 
         val channel = channels.firstOrNull { it.id == channelId }
         if (System.currentTimeMillis() < osdUntil || error != null || actionsOpen || pausedAt != null) {
             tick.let {
-                val offset = player.currentLiveOffset.takeIf { it != androidx.media3.common.C.TIME_UNSET } ?: 0L
+                val offset = if (onHls) player.currentLiveOffset.takeIf { it != androidx.media3.common.C.TIME_UNSET } ?: 0L else 0L
                 InfoBar(channel, symbols, Modifier.align(Alignment.BottomCenter), behindMs = if (offset > 15_000) offset else 0L) {
                     if (actionsOpen) {
                         val b = buffers.currentBuffer()
-                        val behind = (player.currentLiveOffset.takeIf { it != androidx.media3.common.C.TIME_UNSET } ?: 0L) > 15_000 || pausedAt != null
+                        val behind = onHls
                         TransportBar(
                             previous = TransportAction(TransportIcon.Previous) { backToTuneIn() },
                             rewind = TransportAction(TransportIcon.Rewind) { rewind() },
