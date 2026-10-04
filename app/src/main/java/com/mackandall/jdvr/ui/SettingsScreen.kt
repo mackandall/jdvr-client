@@ -58,6 +58,11 @@ fun SettingsScreen(
             value = if (prefs.guideInfo == Prefs.TOP) "Above the guide" else "Beside the guide",
             modifier = Modifier.focusRequester(entry),
         ) { prefs.changeGuideInfo(if (prefs.guideInfo == Prefs.TOP) Prefs.SIDE else Prefs.TOP) }
+        Choice(
+            label = "Background art",
+            help = "Rest on a programme and its picture fades in behind the guide, which turns see-through. Off keeps the plain dark guide.",
+            value = if (prefs.guideArtSeconds == 0) "Off" else "After ${prefs.guideArtSeconds} s",
+        ) { prefs.changeGuideArtSeconds(if (prefs.guideArtSeconds >= 5) 0 else if (prefs.guideArtSeconds == 0) 2 else prefs.guideArtSeconds + 1) }
         Section("Recordings")
         Choice(
             label = "Commercials",

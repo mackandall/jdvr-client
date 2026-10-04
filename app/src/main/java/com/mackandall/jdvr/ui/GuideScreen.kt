@@ -30,6 +30,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -229,12 +230,26 @@ fun GuideScreen(
         return true
     }
 
+    // Background art: the programme the cursor has rested on for the set time (Settings).
+    val artSeconds = Jdvr.prefs.guideArtSeconds
+    var art by remember { mutableStateOf<Program?>(null) }
+    LaunchedEffect(focused?.id, artSeconds) {
+        if (artSeconds <= 0) {
+            art = null
+        } else {
+            val p = focused ?: return@LaunchedEffect
+            kotlinx.coroutines.delay(artSeconds * 1000L)
+            art = p
+        }
+    }
+
     androidx.compose.runtime.CompositionLocalProvider(LocalGuideExtras provides extras, LocalCellFocus provides cellFocus) {
     Box(Modifier.fillMaxSize()) {
+    GuideArt(art)
     Column(Modifier.fillMaxSize()) {
     // "Above the guide" (Settings): the details on a band at the top, the grid at full width.
     if (infoOnTop) {
-        Box(Modifier.fillMaxWidth().height(170.dp).background(Jc.Panel)) {
+        Box(Modifier.fillMaxWidth().height(170.dp).background(guidePanel())) {
             focused?.let { TopInfo(it, channels?.firstOrNull { c -> c.id == it.channelId }, symbols) }
                 ?: Text("Move through the guide to see a programme here; OK for what you can do with it.", color = Jc.Muted, fontSize = 15.sp, modifier = Modifier.padding(22.dp))
         }
@@ -287,7 +302,7 @@ fun GuideScreen(
         }
         // Side layout: the right quarter shows the programme the cursor is on, or its actions after OK.
         if (!infoOnTop) {
-            Box(Modifier.weight(0.26f).fillMaxHeight().background(Jc.Panel)) {
+            Box(Modifier.weight(0.26f).fillMaxHeight().background(guidePanel(0.6f))) {
                 val p = selected
                 if (p == null) {
                     focused?.let { InfoPanel(it, channels?.firstOrNull { c -> c.id == it.channelId }, symbols) }
@@ -306,6 +321,41 @@ fun GuideScreen(
         }
     }
     }
+    }
+}
+
+/** The guide's panels: see-through when background art is on (Settings), so the picture shows. */
+@Composable
+private fun guidePanel(alpha: Float = 0.78f): Color = if (Jdvr.prefs.guideArtSeconds > 0) Jc.Panel.copy(alpha = alpha) else Jc.Panel
+
+/**
+ * Behind the guide: the rested-on programme's picture, faded in, darkened where the grid is.
+ * A landscape still fills the screen; a portrait poster stands full height on the right.
+ */
+@Composable
+private fun GuideArt(program: Program?) {
+    androidx.compose.animation.Crossfade(targetState = program?.id, animationSpec = androidx.compose.animation.core.tween(700), label = "guide art") { id ->
+        if (id == null) return@Crossfade
+        var portrait by remember(id) { mutableStateOf<Boolean?>(null) }
+        Box(Modifier.fillMaxSize()) {
+            AsyncImage(
+                model = Jdvr.liveTv.imageUrl(id, 1080),
+                contentDescription = null,
+                contentScale = if (portrait == true) androidx.compose.ui.layout.ContentScale.FillHeight else androidx.compose.ui.layout.ContentScale.Crop,
+                alignment = Alignment.CenterEnd,
+                onSuccess = { portrait = it.result.image.height > it.result.image.width },
+                modifier = Modifier.fillMaxSize().alpha(if (portrait == null) 0f else 1f),
+            )
+            Box(
+                Modifier.fillMaxSize().background(
+                    androidx.compose.ui.graphics.Brush.horizontalGradient(
+                        0f to Jc.Ink.copy(alpha = 0.9f),
+                        0.6f to Jc.Ink.copy(alpha = 0.78f),
+                        1f to Jc.Ink.copy(alpha = 0.45f),
+                    ),
+                ),
+            )
+        }
     }
 }
 
@@ -513,7 +563,7 @@ private fun ProgramCell(
         shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(8.dp)),
         colors =
             ClickableSurfaceDefaults.colors(
-                containerColor = if (extras.realRecording(program)) Jc.Recording.copy(alpha = 0.14f) else Jc.Panel,
+                containerColor = if (extras.realRecording(program)) Jc.Recording.copy(alpha = 0.14f) else guidePanel(),
                 focusedContainerColor = Jc.FocusFill,
                 contentColor = Jc.Text,
                 focusedContentColor = Jc.Text,

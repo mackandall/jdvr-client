@@ -52,6 +52,15 @@ class Prefs(
         p.edit().putString("subtitles", v).apply()
     }
 
+    /** The guide's background: the picture of the programme the cursor rests on, after this many seconds (0: off). */
+    var guideArtSeconds by mutableStateOf(p.getInt("guideArtSeconds", 3))
+        private set
+
+    fun changeGuideArtSeconds(v: Int) {
+        guideArtSeconds = v
+        p.edit().putInt("guideArtSeconds", v).apply()
+    }
+
     /** The box at the top of a recording or archive item while it plays (with the info bar). */
     var infoBoxTop by mutableStateOf(p.getBoolean("infoBoxTop", true))
         private set
