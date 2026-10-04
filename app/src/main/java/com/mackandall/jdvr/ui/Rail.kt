@@ -48,7 +48,15 @@ fun Rail(
 ) {
     val current = remember { FocusRequester() }
     var hadFocus by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) { runCatching { current.requestFocus() } }
+    // Keep asking until the rail really has focus: a screen still settling (a grid loading,
+    // restoring its focus) can take it back, and then the rail would never notice focus leaving.
+    LaunchedEffect(Unit) {
+        repeat(30) {
+            if (hadFocus) return@LaunchedEffect
+            runCatching { current.requestFocus() }
+            kotlinx.coroutines.delay(50)
+        }
+    }
     Box(Modifier.fillMaxSize().background(Color(0x99000000))) {
         Column(
             modifier =

@@ -22,6 +22,7 @@ import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalFocusManager
 import com.mackandall.jdvr.data.Jdvr
@@ -138,7 +139,17 @@ fun AppRoot() {
         Modifier
             .fillMaxSize()
             .background(Jc.Ink)
-            .onKeyEvent { e ->
+            .onPreviewKeyEvent { e ->
+                // Right with the rail open: into the screen, and the rail goes away (whether or not
+                // focus was in the rail).
+                if (railOpen && e.type == KeyEventType.KeyDown && e.key == Key.DirectionRight) {
+                    focusManager.moveFocus(FocusDirection.Right)
+                    railOpen = false
+                    true
+                } else {
+                    false
+                }
+            }.onKeyEvent { e ->
                 // Left that nothing on the screen used: at the left edge (in the guide: at "now",
                 // nothing earlier to scroll to), so open the rail.
                 if (!railOpen && playingChannel == null && playingRecording == null &&
