@@ -70,6 +70,7 @@ fun RecordedShowsScreen(
 ) {
     // A movie or one-off recording's details page (from the grid).
     var details by remember { mutableStateOf<UUID?>(null) }
+    var reloadCards by remember { mutableStateOf(0) }
     // Opened on a show from elsewhere (Home): Back from it goes back there, not to the grid.
     val cameForShow = remember { openShowId != null }
     var cards by remember { mutableStateOf<List<LiveTvRepository.RecordingCard>?>(null) }
@@ -77,7 +78,7 @@ fun RecordedShowsScreen(
     var openShow by remember { mutableStateOf<LiveTvRepository.RecordingCard?>(null) }
 
     val filter = Jdvr.prefs.recordingsFilter
-    LaunchedEffect(filter) {
+    LaunchedEffect(filter, reloadCards) {
         loaded = false
         cards = Jdvr.liveTv.recordedShows(filter)
         loaded = true
@@ -88,7 +89,12 @@ fun RecordedShowsScreen(
 
     details?.let { id ->
         BackHandler { details = null }
-        DetailsPage(id, refresh, onPlay = onPlayItem)
+        DetailsPage(id, refresh, onPlay = onPlayItem, actions = { det, say ->
+            RecordingActions(det.item.id, say) {
+                details = null
+                reloadCards++
+            }
+        })
         return
     }
     val show = openShow
@@ -233,7 +239,12 @@ private fun ShowEpisodes(
     }
     info?.let { id ->
         BackHandler { info = null }
-        DetailsPage(id, refresh, onPlay = onPlayItem)
+        DetailsPage(id, refresh, onPlay = onPlayItem, actions = { det, say ->
+            RecordingActions(det.item.id, say) {
+                info = null
+                reload++
+            }
+        })
         return
     }
     EpisodeBrowser(
@@ -251,6 +262,7 @@ private fun ShowEpisodes(
                 reload++
             }
         },
+        actions = { e, say -> RecordingActions(e.id, say) { reload++ } },
         emptyText = "No recordings of this show here.",
     )
 }

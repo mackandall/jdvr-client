@@ -27,6 +27,7 @@ import org.jellyfin.sdk.model.api.RepeatMode
 import org.jellyfin.sdk.model.api.TimerInfoDto
 import org.jellyfin.sdk.model.api.request.GetLiveTvChannelsRequest
 import kotlinx.coroutines.Dispatchers
+import org.jellyfin.sdk.api.client.extensions.libraryApi
 import org.jellyfin.sdk.api.client.extensions.tvShowsApi
 import org.jellyfin.sdk.api.client.extensions.itemsApi
 import org.jellyfin.sdk.api.client.extensions.userViewsApi
@@ -674,6 +675,25 @@ class LiveTvRepository {
     data class Message(
         @SerialName("Message") val message: String = "",
     )
+
+    @Serializable
+    data class FavouriteRef(
+        @SerialName("Id") val id: String = "",
+        @SerialName("Title") val title: String = "",
+    )
+
+    @Serializable
+    data class FavouriteFor(
+        @SerialName("Title") val title: String = "",
+        @SerialName("IsMovie") val isMovie: Boolean = false,
+        @SerialName("Favourite") val favourite: FavouriteRef? = null,
+    )
+
+    /** Which show a recording stands for, and the Recording Favourite covering it (if any). */
+    suspend fun favouriteForItem(itemId: UUID): FavouriteFor? = plugin(HttpMethod.GET, "/JellyDvrSchedule/Favourites/ForItem/$itemId")
+
+    /** Deletes a recording: its file and the files beside it (Jellyfin's own delete). */
+    suspend fun deleteItem(itemId: UUID) = io { api.libraryApi.deleteItem(itemId) }
 
     suspend fun recordInstead(programId: UUID): Message? = plugin(HttpMethod.POST, "/JellyDvrSchedule/RecordInstead/$programId")
 

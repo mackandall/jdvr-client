@@ -65,9 +65,16 @@ fun DetailsPage(
     itemId: UUID,
     refresh: Int,
     onPlay: (PlayRecording) -> Unit,
-    actions: @Composable RowScope.(LiveTvRepository.ItemDetails) -> Unit = {},
+    actions: @Composable RowScope.(LiveTvRepository.ItemDetails, (String) -> Unit) -> Unit = { _, _ -> },
 ) {
     var d by remember { mutableStateOf<LiveTvRepository.ItemDetails?>(null) }
+    var note by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(note) {
+        if (note != null) {
+            kotlinx.coroutines.delay(4000)
+            note = null
+        }
+    }
     var error by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     val play = remember { FocusRequester() }
@@ -114,7 +121,9 @@ fun DetailsPage(
                     if (det.genres.isNotEmpty()) Text(det.genres.joinToString(" · "), color = Jc.Muted, fontSize = 14.sp)
                     det.tagline?.let { Text(it, color = Jc.Text, fontSize = 15.sp, fontStyle = FontStyle.Italic) }
                     item.overview?.let { Text(it, color = Jc.Text, fontSize = 15.sp, maxLines = 5, overflow = TextOverflow.Ellipsis) }
-                    Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    // Wraps onto a second line when a recording's actions make it long.
+                    @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+                    androidx.compose.foundation.layout.FlowRow(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         val resume = item.resumeMs > 0 && !item.played
                         Button(if (resume) "Resume from ${length(item.resumeMs / 60_000)}" else "Play", primary = true, modifier = Modifier.focusRequester(play)) { onPlay(PlayRecording(item.id)) }
                         if (resume) Button("Play from start") { onPlay(PlayRecording(item.id, startMs = 0L)) }
@@ -124,8 +133,9 @@ fun DetailsPage(
                                 runCatching { d = Jdvr.liveTv.details(item.id) }
                             }
                         }
-                        actions(det)
+                        actions(det) { note = it }
                     }
+                    note?.let { Text(it, color = Jc.Focus, fontSize = 14.sp) }
                 }
             }
 

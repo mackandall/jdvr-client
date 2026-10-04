@@ -101,6 +101,8 @@ fun EpisodeBrowser(
     onToggleWatched: ((EpisodeEntry) -> Unit)? = null,
     emptyText: String = "No episodes.",
     onPlayFromStart: (EpisodeEntry) -> Unit = onPlay,
+    // More buttons for the focused episode in the tiles view (Recorded Shows: favourite, delete).
+    actions: (@Composable androidx.compose.foundation.layout.RowScope.(EpisodeEntry, (String) -> Unit) -> Unit)? = null,
 ) {
     val tiles = Jdvr.prefs.episodeView == Prefs.TILES
     var backdrop by remember { mutableStateOf<UUID?>(null) }
@@ -124,7 +126,7 @@ fun EpisodeBrowser(
                 Text(if (list == null) "Loading…" else emptyText, color = Jc.Muted, fontSize = 16.sp)
             }
         } else if (tiles) {
-            TilesView(seriesId, backdrop, title, subtitle, list, entry, { e, fromStart -> if (fromStart) onPlayFromStart(e) else onPlay(e) }, onInfo, onToggleWatched)
+            TilesView(seriesId, backdrop, title, subtitle, list, entry, { e, fromStart -> if (fromStart) onPlayFromStart(e) else onPlay(e) }, onInfo, onToggleWatched, actions)
         } else {
             ListView(title, subtitle, list, entry, onPlay, onInfo, onToggleWatched)
         }
@@ -277,7 +279,15 @@ private fun TilesView(
     onPlay: (EpisodeEntry, Boolean) -> Unit,
     onInfo: (EpisodeEntry) -> Unit,
     onToggleWatched: ((EpisodeEntry) -> Unit)?,
+    actions: (@Composable androidx.compose.foundation.layout.RowScope.(EpisodeEntry, (String) -> Unit) -> Unit)?,
 ) {
+    var note by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(note) {
+        if (note != null) {
+            kotlinx.coroutines.delay(4000)
+            note = null
+        }
+    }
     val bySeason = list.groupBy { it.season }
     val seasons = bySeason.keys.toList()
     var season by remember { mutableStateOf(seasons.firstOrNull { s -> bySeason[s].orEmpty().any { !it.played } } ?: seasons.first()) }
@@ -357,8 +367,9 @@ private fun TilesView(
                 }
             }
 
-            // The focused episode's buttons.
-            Row(Modifier.padding(horizontal = 36.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            // The focused episode's buttons (wrapping when there are many).
+            @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+            androidx.compose.foundation.layout.FlowRow(Modifier.padding(horizontal = 36.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 // Recordings' lists carry no resume point: the details have it.
                 val resumeMs = focused.resumeMs.takeIf { it > 0 } ?: d?.item?.resumeMs ?: 0L
                 val resume = resumeMs > 0 && !focused.played
@@ -366,7 +377,9 @@ private fun TilesView(
                 if (resume) Button("Play from start") { onPlay(focused, true) }
                 onToggleWatched?.let { t -> Button(if (focused.played) "Mark unwatched" else "Mark watched") { t(focused) } }
                 Button("Details") { onInfo(focused) }
+                actions?.invoke(this, focused) { note = it }
             }
+            note?.let { Text(it, color = Jc.Focus, fontSize = 14.sp, modifier = Modifier.padding(horizontal = 36.dp)) }
 
             // Who's in it.
             d?.let { det ->
