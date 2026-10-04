@@ -209,14 +209,16 @@ fun RecordingPlayerScreen(
             return@LaunchedEffect
         }
         val series = playback?.seriesId ?: return@LaunchedEffect
-        val all = Jdvr.liveTv.showRecordings(series).orEmpty()
+        val all = runCatching { Jdvr.liveTv.showRecordings(series) }.getOrNull().orEmpty()
         val ordered =
             if (all.all { it.season != null && it.episode != null }) {
                 all.sortedWith(compareBy({ it.season }, { it.episode }))
             } else {
                 all.sortedBy { it.recordedUtc ?: "" }
             }
-        val ids = ordered.mapNotNull { it.id.toUuid() }
+        var ids = ordered.mapNotNull { it.id.toUuid() }
+        // Not a live-folder recording (a library or archive episode): the show's own episode order.
+        if (itemId !in ids) ids = series.toUuid()?.let { runCatching { Jdvr.liveTv.episodes(it, null) }.getOrNull() }?.map { it.id }.orEmpty()
         val i = ids.indexOf(itemId)
         if (i >= 0) {
             previous = ids.getOrNull(i - 1)?.let { PlayRecording(it) }

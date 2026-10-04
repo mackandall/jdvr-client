@@ -27,6 +27,10 @@ import org.jellyfin.sdk.model.api.RepeatMode
 import org.jellyfin.sdk.model.api.TimerInfoDto
 import org.jellyfin.sdk.model.api.request.GetLiveTvChannelsRequest
 import kotlinx.coroutines.Dispatchers
+import org.jellyfin.sdk.api.client.extensions.tvShowsApi
+import org.jellyfin.sdk.api.client.extensions.itemsApi
+import org.jellyfin.sdk.api.client.extensions.userViewsApi
+import org.jellyfin.sdk.model.api.BaseItemKind
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -441,6 +445,106 @@ class LiveTvRepository {
                 liveStreamId = p.liveStreamId,
             ),
         )
+    }
+
+    // ---- Jellyfin libraries (movies, shows, archives) ------------------------------------------
+
+    data class Library(
+        val id: UUID,
+        val name: String,
+        val kind: String?,
+    )
+
+    /** One library item: a movie, show, season or episode, with the user's watched / resume state. */
+    data class LibItem(
+        val id: UUID,
+        val name: String,
+        val type: String,
+        val year: Int?,
+        val overview: String?,
+        val runtimeMin: Long?,
+        val played: Boolean,
+        val resumeMs: Long,
+        val unplayed: Int?,
+        val season: Int?,
+        val episode: Int?,
+        val seriesId: UUID?,
+        val seriesName: String?,
+        val officialRating: String?,
+    ) {
+        val seasonEpisode: String? get() = if (season != null && episode != null) "S$season:E$episode" else null
+    }
+
+    private fun toLibItem(d: BaseItemDto) =
+        LibItem(
+            id = d.id,
+            name = d.name ?: "",
+            type = d.type.serialName,
+            year = d.productionYear,
+            overview = d.overview,
+            runtimeMin = d.runTimeTicks?.let { it / 600_000_000L },
+            played = d.userData?.played == true,
+            resumeMs = (d.userData?.playbackPositionTicks ?: 0L) / 10_000L,
+            unplayed = d.userData?.unplayedItemCount,
+            season = d.parentIndexNumber,
+            episode = d.indexNumber,
+            seriesId = d.seriesId,
+            seriesName = d.seriesName,
+            officialRating = d.officialRating,
+        )
+
+    /** The user's libraries that hold videos (Live TV and playlists left out). */
+    suspend fun libraries(): List<Library> =
+        io {
+            api.userViewsApi.getUserViews(userId = Jdvr.userId).content.items
+                .filter { it.collectionType?.serialName !in setOf("livetv", "playlists", "music", "books", "photos") }
+                .map { Library(it.id, it.name ?: "", it.collectionType?.serialName) }
+        }
+
+    /** A library's movies and shows, a page at a time: by name, or newest first. */
+    suspend fun libraryItems(
+        libraryId: UUID,
+        newestFirst: Boolean,
+        start: Int,
+        count: Int,
+    ): Pair<List<LibItem>, Int> =
+        io {
+            val r =
+                api.itemsApi.getItems(
+                    userId = Jdvr.userId,
+                    parentId = libraryId,
+                    recursive = true,
+                    includeItemTypes = listOf(BaseItemKind.MOVIE, BaseItemKind.SERIES, BaseItemKind.VIDEO),
+                    sortBy = if (newestFirst) listOf(ItemSortBy.DATE_CREATED, ItemSortBy.SORT_NAME) else listOf(ItemSortBy.SORT_NAME),
+                    sortOrder = if (newestFirst) listOf(org.jellyfin.sdk.model.api.SortOrder.DESCENDING, org.jellyfin.sdk.model.api.SortOrder.ASCENDING) else listOf(org.jellyfin.sdk.model.api.SortOrder.ASCENDING),
+                    startIndex = start,
+                    limit = count,
+                    fields = listOf(ItemFields.OVERVIEW),
+                    enableUserData = true,
+                    enableTotalRecordCount = true,
+                ).content
+            r.items.map { toLibItem(it) } to (r.totalRecordCount ?: r.items.size)
+        }
+
+    suspend fun seasons(seriesId: UUID): List<LibItem> =
+        io { api.tvShowsApi.getSeasons(seriesId = seriesId, userId = Jdvr.userId, enableUserData = true).content.items.map { toLibItem(it) } }
+
+    /** A show's episodes, in order (one season, or all of them). */
+    suspend fun episodes(
+        seriesId: UUID,
+        seasonId: UUID?,
+    ): List<LibItem> =
+        io {
+            api.tvShowsApi.getEpisodes(seriesId = seriesId, userId = Jdvr.userId, seasonId = seasonId, fields = listOf(ItemFields.OVERVIEW), enableUserData = true).content.items.map { toLibItem(it) }
+        }
+
+    suspend fun libItem(id: UUID): LibItem = io { toLibItem(api.userLibraryApi.getItem(id, Jdvr.userId).content) }
+
+    suspend fun setPlayed(
+        id: UUID,
+        played: Boolean,
+    ) = io {
+        if (played) api.playStateApi.markPlayedItem(itemId = id, userId = Jdvr.userId) else api.playStateApi.markUnplayedItem(itemId = id, userId = Jdvr.userId)
     }
 
     // ---- our plugins (every call degrades quietly when a plugin is missing) ------------------

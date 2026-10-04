@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -29,6 +30,7 @@ import com.mackandall.jdvr.player.RecordingPlayerScreen
 import com.mackandall.jdvr.ui.ChannelsScreen
 import com.mackandall.jdvr.ui.GuideScreen
 import com.mackandall.jdvr.ui.HomeScreen
+import com.mackandall.jdvr.ui.LibraryScreen
 import com.mackandall.jdvr.ui.Jc
 import com.mackandall.jdvr.ui.JdvrTheme
 import com.mackandall.jdvr.ui.LoginScreen
@@ -48,6 +50,7 @@ enum class Screen(
     Guide("Guide"),
     LiveTv("Live TV"),
     RecordedShows("Recorded Shows"),
+    Library("Library"),
     Scheduled("Scheduled"),
     Series("Series"),
     Settings("Settings"),
@@ -89,6 +92,9 @@ fun AppRoot() {
     var railOpen by remember { mutableStateOf(false) }
     var playingChannel by remember { mutableStateOf<UUID?>(null) }
     var playingRecording by remember { mutableStateOf<PlayRecording?>(null) }
+    // Bumped when a recording or video stops, so screens re-read watched marks and resume points.
+    var played by remember { mutableIntStateOf(0) }
+    LaunchedEffect(playingRecording == null) { if (playingRecording == null) played++ }
     // Where focus goes on the current screen when the rail closes (each screen attaches it).
     val entry = remember(screen) { FocusRequester() }
     var screenHasFocus by remember { mutableStateOf(false) }
@@ -148,6 +154,7 @@ fun AppRoot() {
                 Screen.Guide -> GuideScreen(entry = entry, onPlay = { playingChannel = it }, onPlayRecording = { playingRecording = it })
                 Screen.LiveTv -> ChannelsScreen(entry = entry, onPlay = { playingChannel = it })
                 Screen.RecordedShows -> RecordedShowsScreen(entry = entry, onPlay = { playingRecording = PlayRecording(it) }, openShowId = openShow, onShowOpened = { openShow = null }, onLeave = { if (backStack.isNotEmpty()) screen = backStack.removeAt(backStack.lastIndex) })
+                Screen.Library -> LibraryScreen(entry = entry, refresh = played, onPlay = { playingRecording = it })
                 Screen.Scheduled -> ScheduledScreen(entry = entry)
                 Screen.Series -> SeriesScreen(entry = entry)
                 Screen.Settings -> SettingsScreen(entry = entry)
