@@ -60,7 +60,10 @@ fun RecordedShowsScreen(
     onPlay: (UUID) -> Unit,
     openShowId: String? = null,
     onShowOpened: () -> Unit = {},
+    onLeave: () -> Unit = {},
 ) {
+    // Opened on a show from elsewhere (Home): Back from it goes back there, not to the grid.
+    val cameForShow = remember { openShowId != null }
     var cards by remember { mutableStateOf<List<LiveTvRepository.RecordingCard>?>(null) }
     var loaded by remember { mutableStateOf(false) }
     var openShow by remember { mutableStateOf<LiveTvRepository.RecordingCard?>(null) }
@@ -75,7 +78,7 @@ fun RecordedShowsScreen(
 
     val show = openShow
     if (show != null) {
-        BackHandler { openShow = null }
+        BackHandler { if (cameForShow) onLeave() else openShow = null }
         ShowEpisodes(show, entry, onPlay)
         return
     }

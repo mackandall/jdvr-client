@@ -157,24 +157,38 @@ fun HomeScreen(
             }
         }
 
-        // Tonight's schedule.
+        // Tonight's schedule: chips of one size; any opens Scheduled.
         val tonight =
-            upcoming.filter { !it.recordingNow && it.programId?.plainId() !in bufferIds }.filter { u -> localOf(u.start)?.let { Duration.between(now, it).toHours() < 8 } == true }.take(5)
+            upcoming.filter { !it.recordingNow && it.programId?.plainId() !in bufferIds }.filter { u -> localOf(u.start)?.let { Duration.between(now, it).toHours() < 8 } == true }.take(4)
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("Tonight", color = Jc.Text, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(end = 4.dp))
             if (tonight.isEmpty()) Text("Nothing more scheduled.", color = Jc.Muted, fontSize = 14.sp)
             tonight.forEach { u ->
-                Text(
-                    "${localOf(u.start)?.time() ?: ""}  ${u.name}" + (u.channelName?.let { " · $it" } ?: ""),
-                    color = Jc.Text,
-                    fontSize = 13.sp,
-                    maxLines = 1,
-                    modifier = Modifier.background(Jc.Panel, RoundedCornerShape(50)).padding(horizontal = 11.dp, vertical = 6.dp),
-                )
+                HomeChip("${localOf(u.start)?.time() ?: ""}  ${u.name}" + (u.channelName?.let { " · $it" } ?: ""), Modifier.weight(1f, fill = false)) {
+                    onOpenScreen(com.mackandall.jdvr.Screen.Scheduled)
+                }
             }
-            Box(Modifier.weight(1f))
-            Button("Scheduled ›") { onOpenScreen(com.mackandall.jdvr.Screen.Scheduled) }
+            Box(Modifier.weight(0.01f))
+            HomeChip("All scheduled ›") { onOpenScreen(com.mackandall.jdvr.Screen.Scheduled) }
         }
+    }
+}
+
+@Composable
+private fun HomeChip(
+    text: String,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    Surface(
+        onClick = onClick,
+        modifier = modifier,
+        shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(50)),
+        colors = ClickableSurfaceDefaults.colors(containerColor = Jc.Panel, focusedContainerColor = Jc.FocusFill, contentColor = Jc.Text, focusedContentColor = Jc.Text),
+        border = ClickableSurfaceDefaults.border(focusedBorder = Border(BorderStroke(2.dp, Jc.Focus))),
+        scale = ClickableSurfaceDefaults.scale(focusedScale = 1.03f),
+    ) {
+        Text(text, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp))
     }
 }
 

@@ -79,6 +79,13 @@ fun AppRoot() {
     var screen by remember { mutableStateOf(Screen.Home) }
     // A show for Recorded Shows to open straight away (from Home's New recordings).
     var openShow by remember { mutableStateOf<String?>(null) }
+    // Screens reached from inside another (Home's Guide, Scheduled, a show): Back returns there.
+    // Picking from the rail starts afresh.
+    val backStack = remember { androidx.compose.runtime.mutableStateListOf<Screen>() }
+    fun goTo(s: Screen) {
+        if (s != screen) backStack.add(screen)
+        screen = s
+    }
     var railOpen by remember { mutableStateOf(false) }
     var playingChannel by remember { mutableStateOf<UUID?>(null) }
     var playingRecording by remember { mutableStateOf<PlayRecording?>(null) }
@@ -109,7 +116,9 @@ fun AppRoot() {
             .background(Jc.Ink)
             .onKeyEvent { e ->
                 // Left that nothing on the screen used: at the left edge, so open the rail.
-                if (!railOpen && playingChannel == null && playingRecording == null &&
+                // Not in the guide: there Left scrolls back through programmes, and reaching "now"
+                // kept popping the rail open; Back opens it there.
+                if (!railOpen && playingChannel == null && playingRecording == null && screen != Screen.Guide &&
                     e.type == KeyEventType.KeyDown && e.key == Key.DirectionLeft
                 ) {
                     if (!focusManager.moveFocus(FocusDirection.Left)) railOpen = true
@@ -121,7 +130,7 @@ fun AppRoot() {
     ) {
         // Registered before the screens so their own Back (close a panel, leave a show) wins.
         if (!railOpen && playingChannel == null && playingRecording == null) {
-            BackHandler { railOpen = true }
+            BackHandler { if (backStack.isNotEmpty()) screen = backStack.removeAt(backStack.lastIndex) else railOpen = true }
         }
         Box(Modifier.fillMaxSize().onFocusChanged { screenHasFocus = it.hasFocus }) {
             when (screen) {
@@ -130,15 +139,15 @@ fun AppRoot() {
                         entry = entry,
                         onPlayChannel = { playingChannel = it },
                         onPlayRecording = { playingRecording = it },
-                        onOpenScreen = { screen = it },
+                        onOpenScreen = { goTo(it) },
                         onOpenShow = {
                             openShow = it
-                            screen = Screen.RecordedShows
+                            goTo(Screen.RecordedShows)
                         },
                     )
                 Screen.Guide -> GuideScreen(entry = entry, onPlay = { playingChannel = it }, onPlayRecording = { playingRecording = it })
                 Screen.LiveTv -> ChannelsScreen(entry = entry, onPlay = { playingChannel = it })
-                Screen.RecordedShows -> RecordedShowsScreen(entry = entry, onPlay = { playingRecording = PlayRecording(it) }, openShowId = openShow, onShowOpened = { openShow = null })
+                Screen.RecordedShows -> RecordedShowsScreen(entry = entry, onPlay = { playingRecording = PlayRecording(it) }, openShowId = openShow, onShowOpened = { openShow = null }, onLeave = { if (backStack.isNotEmpty()) screen = backStack.removeAt(backStack.lastIndex) })
                 Screen.Scheduled -> ScheduledScreen(entry = entry)
                 Screen.Series -> SeriesScreen(entry = entry)
                 Screen.Settings -> SettingsScreen(entry = entry)
@@ -149,6 +158,7 @@ fun AppRoot() {
             Rail(
                 selected = screen,
                 onSelect = {
+                    backStack.clear()
                     screen = it
                     railOpen = false
                 },
