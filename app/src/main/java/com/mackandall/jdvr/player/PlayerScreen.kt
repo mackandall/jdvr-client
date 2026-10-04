@@ -62,6 +62,8 @@ import com.mackandall.jdvr.ui.Marks
 import com.mackandall.jdvr.ui.MarkChips
 import com.mackandall.jdvr.ui.rememberMarkSymbols
 import com.mackandall.jdvr.ui.time
+import com.mackandall.jdvr.ui.day
+import androidx.compose.ui.text.style.TextOverflow
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -239,6 +241,21 @@ fun PlayerScreen(
     }
     if (actionsOpen) androidx.activity.compose.BackHandler { actionsOpen = false }
     if (miniOpen) androidx.activity.compose.BackHandler { miniOpen = false }
+    // The programme's full panel (Info): details plus Record, series, favourites, watched…
+    var infoOpen by remember { mutableStateOf(false) }
+    if (infoOpen) androidx.activity.compose.BackHandler { infoOpen = false }
+    LaunchedEffect(infoOpen) { if (!infoOpen) runCatching { focus.requestFocus() } }
+    // The top info box's extras for the programme on now: ratings, genres, and what's next.
+    var nowDetails by remember { mutableStateOf<LiveTvRepository.ItemDetails?>(null) }
+    var nextUp by remember { mutableStateOf<com.mackandall.jdvr.data.Program?>(null) }
+    val nowId = channels.firstOrNull { it.id == channelId }?.now?.id
+    LaunchedEffect(channelId, nowId) {
+        nowDetails = null
+        nextUp = null
+        val now = channels.firstOrNull { it.id == channelId }?.now ?: return@LaunchedEffect
+        nowDetails = runCatching { Jdvr.liveTv.details(now.id) }.getOrNull()
+        nextUp = runCatching { Jdvr.liveTv.programs(listOf(channelId), now.end, now.end.plusHours(3)) }.getOrNull()?.firstOrNull { !it.start.isBefore(now.end) }
+    }
     LaunchedEffect(miniOpen) { if (!miniOpen) runCatching { focus.requestFocus() } }
 
     fun showOsd() {
@@ -432,7 +449,7 @@ fun PlayerScreen(
             }
             .onKeyEvent { e ->
                 // A dialog (tuners busy, error) or the actions row has the remote.
-                if (e.type != KeyEventType.KeyDown || busy != null || error != null || actionsOpen || miniOpen) return@onKeyEvent false
+                if (e.type != KeyEventType.KeyDown || busy != null || error != null || actionsOpen || miniOpen || infoOpen) return@onKeyEvent false
                 when (val code = e.key.nativeKeyCode) {
                     AndroidKeyEvent.KEYCODE_DPAD_UP, AndroidKeyEvent.KEYCODE_CHANNEL_UP -> {
                         step(1)
@@ -458,7 +475,7 @@ fun PlayerScreen(
                         true
                     }
                     AndroidKeyEvent.KEYCODE_INFO -> {
-                        osdUntil = System.currentTimeMillis() + 6000
+                        infoOpen = true
                         true
                     }
                     AndroidKeyEvent.KEYCODE_DPAD_LEFT -> {
@@ -491,6 +508,9 @@ fun PlayerScreen(
 
         val channel = channels.firstOrNull { it.id == channelId }
         if (tuning && error == null && busy == null) TuningFiller(channel)
+        if (!miniOpen && !infoOpen && (tuning || System.currentTimeMillis() < osdUntil || actionsOpen || pausedAt != null) && error == null && busy == null) {
+            channel?.let { TopInfoBox(it, symbols, nowDetails, nextUp, Modifier.align(Alignment.TopCenter)) }
+        }
         if (!miniOpen && (tuning || System.currentTimeMillis() < osdUntil || error != null || actionsOpen || pausedAt != null)) {
             tick.let {
                 val offset = if (onHls) player.currentLiveOffset.takeIf { it != androidx.media3.common.C.TIME_UNSET } ?: 0L else 0L
@@ -514,6 +534,10 @@ fun PlayerScreen(
                                     TransportAction(TransportIcon.Record, active = recording) { record() }
                                 },
                         ) {
+                            Button("Info") {
+                                actionsOpen = false
+                                infoOpen = true
+                            }
                             fromStart?.let { rec ->
                                 Button("Watch from start") { onPlayRecording(com.mackandall.jdvr.PlayRecording(rec, startMs = 0L, liveChannelId = channelId)) }
                             }
@@ -553,6 +577,40 @@ fun PlayerScreen(
                     Button("Back", onClick = onExit)
                 }
             }
+        }
+        // Info: the guide's programme panel on the right, with all its options.
+        if (infoOpen) {
+            channel?.now?.let { now ->
+                com.mackandall.jdvr.ui.ProgramPanel(
+                    program = now,
+                    channel = channel,
+                    symbols = symbols,
+                    onWatch = { infoOpen = false },
+                    onWatchFromStart = { id ->
+                        infoOpen = false
+                        onPlayRecording(com.mackandall.jdvr.PlayRecording(id, startMs = 0L, liveChannelId = channelId))
+                    },
+                    onPlayItem = {
+                        infoOpen = false
+                        onPlayRecording(it)
+                    },
+                    onChanged = {},
+                    onClose = { infoOpen = false },
+                    onActed = { msg ->
+                        infoOpen = false
+                        scope.launch {
+                            note = msg
+                            delay(1500)
+                            runCatching { channels = Jdvr.liveTv.channels() }
+                            buffers = Jdvr.liveTv.buffers(channelId)
+                            bufferIds = Jdvr.liveTv.bufferPrograms()
+                            delay(2500)
+                            note = null
+                        }
+                    },
+                    modifier = Modifier.align(Alignment.CenterEnd).width(400.dp),
+                )
+            } ?: run { infoOpen = false }
         }
         if (miniOpen && channels.isNotEmpty()) {
             MiniGuide(
@@ -603,7 +661,8 @@ private fun TuningFiller(channel: Channel?) {
         }
         Box(Modifier.fillMaxSize().background(Color(0x73080B10)))
         Row(
-            Modifier.align(Alignment.TopEnd).padding(28.dp).background(Color(0xCC0D1117), RoundedCornerShape(50)).padding(horizontal = 14.dp, vertical = 7.dp),
+            // Middle right: the top box and the info bar are up while it tunes.
+            Modifier.align(Alignment.CenterEnd).padding(28.dp).background(Color(0xCC0D1117), RoundedCornerShape(50)).padding(horizontal = 14.dp, vertical = 7.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
@@ -626,6 +685,61 @@ private fun Spinner() {
         val stroke = androidx.compose.ui.graphics.drawscope.Stroke(width = 3.dp.toPx())
         drawArc(Jc.Line, 0f, 360f, false, style = stroke)
         drawArc(Jc.Focus, angle, 100f, false, style = stroke)
+    }
+}
+
+/**
+ * SageTV's top box, shown with the controls: the channel (logo, number, name), the programme
+ * (title, episode, marks, aired, rating, score, genres), its description and what's on next.
+ */
+@Composable
+private fun TopInfoBox(
+    channel: Channel,
+    symbols: LiveTvRepository.MarkSymbols?,
+    details: LiveTvRepository.ItemDetails?,
+    next: com.mackandall.jdvr.data.Program?,
+    modifier: Modifier,
+) {
+    val now = channel.now
+    val marks = Marks.parse(now?.rawEpisodeTitle, symbols)
+    Row(
+        modifier.padding(top = 18.dp).fillMaxWidth(0.76f).background(Color(0xEB0D1117), RoundedCornerShape(14.dp)),
+    ) {
+        Column(
+            Modifier.width(96.dp).background(Jc.Panel2.copy(alpha = 0.9f), RoundedCornerShape(topStart = 14.dp, bottomStart = 14.dp)).padding(vertical = 12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            channel.logoUrl?.let { coil3.compose.AsyncImage(model = it, contentDescription = channel.name, contentScale = androidx.compose.ui.layout.ContentScale.Fit, modifier = Modifier.width(64.dp).height(36.dp)) }
+            Text(channel.number, color = Jc.Text, fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
+            Text(channel.name, color = Jc.Muted, fontSize = 11.sp, maxLines = 1)
+        }
+        Column(Modifier.weight(1f).padding(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(now?.name ?: channel.name, color = Jc.Text, fontSize = 22.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                listOfNotNull(now?.seasonEpisode, marks.title).joinToString(" · ").takeIf { it.isNotEmpty() }?.let {
+                    Text(it, color = Jc.Text, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                }
+                MarkChips(marks)
+            }
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                now?.let { Text("Aired ${it.start.day()} · ${it.start.time()} – ${it.end.time()}", color = Jc.Text, fontSize = 13.sp) }
+                details?.item?.officialRating?.let { Text(it, color = Jc.Text, fontSize = 12.sp, modifier = Modifier.background(Jc.Panel2, RoundedCornerShape(4.dp)).padding(horizontal = 5.dp)) }
+                details?.communityRating?.let { Text("★ %.1f".format(it), color = Jc.Gold, fontSize = 13.sp) }
+                listOfNotNull(details?.genres?.take(3)?.joinToString(" · ")?.ifEmpty { null }, details?.item?.year?.toString()).joinToString(" · ").takeIf { it.isNotEmpty() }?.let {
+                    Text(it, color = Jc.Muted, fontSize = 13.sp, maxLines = 1)
+                }
+            }
+            (now?.overview ?: details?.item?.overview)?.let { Text(it, color = Jc.Text, fontSize = 14.sp, maxLines = 3, overflow = TextOverflow.Ellipsis) }
+            next?.let {
+                Text(
+                    "Next · ${it.start.time()} · ${it.name}" + (Marks.parse(it.rawEpisodeTitle, symbols).title?.let { t -> " · $t" } ?: ""),
+                    color = Jc.Muted,
+                    fontSize = 12.sp,
+                    maxLines = 1,
+                )
+            }
+        }
     }
 }
 
