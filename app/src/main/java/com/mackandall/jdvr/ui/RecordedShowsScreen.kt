@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -183,8 +184,14 @@ private fun RecordingCardView(
                 if (image != null) {
                     AsyncImage(model = image, contentDescription = c.name, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
                 }
-                Row(Modifier.align(Alignment.BottomStart).padding(6.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    if (c.count > 1) Badge("${c.count}", Jc.Panel)
+                // A badge that doesn't fit goes to its own line; its text never wraps inside the pill.
+                FlowRow(
+                    Modifier.align(Alignment.BottomStart).padding(6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    // The plain count only when it says something "N new" doesn't: some are watched.
+                    if (c.count > 1 && c.unplayedCount != c.count) Badge("${c.count}", Jc.Panel)
                     if (c.unplayedCount > 0 && c.count > 1) Badge("${c.unplayedCount} new", Jc.FocusFill)
                     commercials?.let { Badge("✂ ${it.label}", if (it.state == "failed") Jc.Recording else Jc.Panel) }
                     if (c.partialCount > 0) Badge(if (c.count == 1) "Partial${c.partialMinutes?.let { " · $it min" } ?: ""}" else "${c.partialCount} partial", Jc.Amber, dark = true)
@@ -207,6 +214,8 @@ private fun Badge(
         color = if (dark) androidx.compose.ui.graphics.Color(0xFF1A1206) else Jc.Text,
         fontSize = 12.sp,
         fontWeight = FontWeight.Bold,
+        maxLines = 1,
+        softWrap = false,
         modifier = Modifier.background(color.copy(alpha = 0.92f), RoundedCornerShape(6.dp)).padding(horizontal = 7.dp, vertical = 2.dp),
     )
 }
