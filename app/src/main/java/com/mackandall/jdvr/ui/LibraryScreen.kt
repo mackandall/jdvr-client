@@ -215,7 +215,7 @@ private fun ShowPage(
         episodes =
             runCatching { Jdvr.liveTv.episodes(show.id, null) }.getOrNull()?.map {
                 EpisodeEntry(it.id, it.name, it.season, it.episode, it.played, it.resumeMs, it.runtimeMin, it.overview)
-            } ?: emptyList()
+            }?.let { withCommercialBadges(it) } ?: emptyList()
     }
 
     // An episode's own details page.

@@ -46,6 +46,7 @@ import coil3.compose.AsyncImage
 import com.mackandall.jdvr.data.Jdvr
 import com.mackandall.jdvr.data.LiveTvRepository
 import com.mackandall.jdvr.data.Prefs
+import com.mackandall.jdvr.data.plainId
 import com.mackandall.jdvr.data.toUuid
 import java.time.Instant
 import java.time.LocalDateTime
@@ -70,6 +71,7 @@ fun RecordedShowsScreen(
 ) {
     // A movie or one-off recording's details page (from the grid).
     var details by remember { mutableStateOf<UUID?>(null) }
+    var badges by remember { mutableStateOf<Map<String, LiveTvRepository.CommercialBadge>>(emptyMap()) }
     var reloadCards by remember { mutableStateOf(0) }
     // Opened on a show from elsewhere (Home): Back from it goes back there, not to the grid.
     val cameForShow = remember { openShowId != null }
@@ -81,6 +83,8 @@ fun RecordedShowsScreen(
     LaunchedEffect(filter, reloadCards) {
         loaded = false
         cards = Jdvr.liveTv.recordedShows(filter)
+        // Comskip's badges for the cards (a show's: how many of its recordings are scanned).
+        badges = cards?.mapNotNull { it.id.toUuid() }?.let { ids -> runCatching { Jdvr.liveTv.commercialBadges(ids) }.getOrNull() }.orEmpty()
         loaded = true
         // Asked to open a show (from Home): straight to its episodes.
         openShowId?.let { id -> cards?.firstOrNull { it.id == id }?.let { openShow = it } }
@@ -149,7 +153,7 @@ fun RecordedShowsScreen(
                     contentPadding = PaddingValues(bottom = 40.dp),
                 ) {
                     itemsIndexed(list, key = { _, c -> c.id }) { i, c ->
-                        RecordingCardView(c, if (i == 0) Modifier.focusRequester(entry) else Modifier) {
+                        RecordingCardView(c, badges[c.id.plainId()], if (i == 0) Modifier.focusRequester(entry) else Modifier) {
                             if (c.type == "Series") openShow = c else details = c.id.toUuid()
                         }
                     }
@@ -161,6 +165,7 @@ fun RecordedShowsScreen(
 @Composable
 private fun RecordingCardView(
     c: LiveTvRepository.RecordingCard,
+    commercials: LiveTvRepository.CommercialBadge?,
     modifier: Modifier,
     onClick: () -> Unit,
 ) {
@@ -181,6 +186,7 @@ private fun RecordingCardView(
                 Row(Modifier.align(Alignment.BottomStart).padding(6.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     if (c.count > 1) Badge("${c.count}", Jc.Panel)
                     if (c.unplayedCount > 0 && c.count > 1) Badge("${c.unplayedCount} new", Jc.FocusFill)
+                    commercials?.let { Badge("✂ ${it.label}", if (it.state == "failed") Jc.Recording else Jc.Panel) }
                     if (c.partialCount > 0) Badge(if (c.count == 1) "Partial${c.partialMinutes?.let { " · $it min" } ?: ""}" else "${c.partialCount} partial", Jc.Amber, dark = true)
                 }
             }
@@ -235,7 +241,7 @@ private fun ShowEpisodes(
                         partialMinutes = e.minutes,
                     )
                 }
-            }?.sortedWith(compareBy<EpisodeEntry>({ it.season ?: Int.MAX_VALUE }, { it.episode ?: Int.MAX_VALUE }, { it.recordedAt })) ?: emptyList()
+            }?.sortedWith(compareBy<EpisodeEntry>({ it.season ?: Int.MAX_VALUE }, { it.episode ?: Int.MAX_VALUE }, { it.recordedAt }))?.let { withCommercialBadges(it) } ?: emptyList()
     }
     info?.let { id ->
         BackHandler { info = null }
@@ -262,7 +268,7 @@ private fun ShowEpisodes(
                 reload++
             }
         },
-        actions = { e, say -> RecordingActions(e.id, say) { reload++ } },
+        actions = { e, say -> RecordingActions(e.id, say, onDeleted = { reload++ }, tools = false) },
         emptyText = "No recordings of this show here.",
     )
 }

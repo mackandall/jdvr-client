@@ -23,6 +23,8 @@ import java.util.UUID
 fun RecordingActions(
     itemId: UUID,
     onNote: (String) -> Unit,
+    // Comskip's tools (scan, audio fix): on the details page, not in the show page's short row.
+    tools: Boolean = true,
     onDeleted: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
@@ -62,6 +64,14 @@ fun RecordingActions(
                 }
             }
         }
+    }
+    // Comskip's tools, as in the web client's item menu (administrators).
+    if (tools) Button("Scan for commercials") {
+        scope.launch { onNote(runCatching { Jdvr.liveTv.scanCommercials(itemId)?.message }.getOrNull() ?: "Couldn't start a scan (administrators only).") }
+    }
+    if (tools) Button("Fix audio format") {
+        onNote("Fixing the audio format: this can take a minute…")
+        scope.launch { onNote(runCatching { Jdvr.liveTv.fixAudioFormat(itemId)?.message }.getOrNull() ?: "Couldn't fix it (administrators only).") }
     }
     Button(if (armedDelete) "Press again to delete" else "Delete recording", leading = { Dot(Jc.Recording) }) {
         if (!armedDelete) {

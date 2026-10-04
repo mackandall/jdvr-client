@@ -551,6 +551,7 @@ fun PlayerScreen(
                 },
                 onClose = { miniOpen = false },
                 modifier = Modifier.align(Alignment.BottomCenter),
+                buffers = bufferIds,
             )
         }
         busy?.let { status ->

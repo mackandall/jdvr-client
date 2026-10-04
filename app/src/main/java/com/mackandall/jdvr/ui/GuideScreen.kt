@@ -30,6 +30,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.key.Key
@@ -49,6 +50,9 @@ import androidx.tv.material3.Text
 import coil3.compose.AsyncImage
 import com.mackandall.jdvr.data.Channel
 import com.mackandall.jdvr.data.Jdvr
+import androidx.compose.foundation.verticalScroll
+import com.mackandall.jdvr.data.toUuid
+import com.mackandall.jdvr.data.plainId
 import com.mackandall.jdvr.data.LiveTvRepository
 import com.mackandall.jdvr.data.Program
 import kotlinx.coroutines.CancellationException
@@ -64,6 +68,20 @@ private const val WINDOW_MINUTES = 120L
 private const val STEP_MINUTES = 30L
 private val ChannelColumn = 150.dp
 private val RowHeight = 62.dp
+
+/** Marks the guide adds from our plugins: unkept live TV buffers (faint) and live Comskip scans (CS). */
+private data class GuideExtras(
+    val buffers: Set<String> = emptySet(),
+    val scanning: Map<String, Int?> = emptyMap(),
+) {
+    fun isBuffer(p: Program) = p.id.toString().plainId() in buffers
+
+    fun realRecording(p: Program) = p.isRecording && !isBuffer(p)
+
+    fun scanning(p: Program) = p.id.toString().plainId() in scanning
+}
+
+private val LocalGuideExtras = androidx.compose.runtime.compositionLocalOf { GuideExtras() }
 
 private fun floorToHalfHour(t: LocalDateTime): LocalDateTime = t.truncatedTo(ChronoUnit.HOURS).plusMinutes(if (t.minute >= 30) 30 else 0)
 
@@ -89,6 +107,13 @@ fun GuideScreen(
     // After the window moves: which channel and moment should take focus.
     var pendingFocus by remember { mutableStateOf<Pair<UUID, LocalDateTime>?>(null) }
     val symbols = rememberMarkSymbols()
+    var extras by remember { mutableStateOf(GuideExtras()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            extras = GuideExtras(Jdvr.liveTv.bufferPrograms(), Jdvr.liveTv.guideScanning())
+            delay(60_000)
+        }
+    }
 
     LaunchedEffect(Unit) {
         try {
@@ -138,6 +163,10 @@ fun GuideScreen(
                 selected = null
                 onPlay(p.channelId)
             },
+            onPlayItem = {
+                selected = null
+                onPlayRecording(it)
+            },
             onWatchFromStart = { itemId ->
                 selected = null
                 onPlayRecording(com.mackandall.jdvr.PlayRecording(itemId, startMs = 0L))
@@ -161,6 +190,7 @@ fun GuideScreen(
         return true
     }
 
+    androidx.compose.runtime.CompositionLocalProvider(LocalGuideExtras provides extras) {
     Box(Modifier.fillMaxSize()) {
     Column(Modifier.fillMaxSize()) {
     // "Above the guide" (Settings): the details on a band at the top, the grid at full width.
@@ -234,9 +264,19 @@ fun GuideScreen(
         }
     }
     }
+    }
 }
 
 /** The details band above the guide ("Above the guide" in Settings). */
+/** Recording / buffer / live-scan chips for the programme in the info area. */
+@Composable
+private fun GuideChips(p: Program) {
+    val x = LocalGuideExtras.current
+    if (x.realRecording(p)) Chip(if (p.seriesTimerId != null) "● series recording" else "● recording", Jc.Recording)
+    if (x.isBuffer(p)) Chip("live TV buffer", Jc.Muted)
+    if (x.scanning(p)) Chip("CS · finding commercials" + (x.scanning[p.id.toString().plainId()]?.let { " · ${it}m" } ?: ""), Jc.Amber)
+}
+
 @Composable
 private fun TopInfo(
     p: Program,
@@ -255,7 +295,7 @@ private fun TopInfo(
                 fontSize = 15.sp,
             )
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                if (p.isRecording) Chip(if (p.seriesTimerId != null) "● series recording" else "● recording", Jc.Recording)
+                GuideChips(p)
                 if (p.isRepeat) Chip("repeat", Jc.Muted)
                 if (p.isMovie) Chip("movie", Jc.Muted)
                 MarkChips(marks)
@@ -280,7 +320,7 @@ private fun InfoPanel(
         Text("${p.start.day()} · ${p.start.time()} – ${p.end.time()}", color = Jc.Muted, fontSize = 15.sp)
         channel?.let { Text("${it.number} ${it.name}", color = Jc.Muted, fontSize = 15.sp) }
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            if (p.isRecording) Chip(if (p.seriesTimerId != null) "● series recording" else "● recording", Jc.Recording)
+            GuideChips(p)
             if (p.isRepeat) Chip("repeat", Jc.Muted)
             if (p.isMovie) Chip("movie", Jc.Muted)
         }
@@ -400,6 +440,7 @@ private fun ProgramCell(
         }
     }
     val marks = Marks.parse(program.rawEpisodeTitle, symbols)
+    val extras = LocalGuideExtras.current
     Surface(
         onClick = onClick,
         modifier =
@@ -421,7 +462,7 @@ private fun ProgramCell(
         shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(8.dp)),
         colors =
             ClickableSurfaceDefaults.colors(
-                containerColor = if (program.isRecording) Jc.Recording.copy(alpha = 0.14f) else Jc.Panel,
+                containerColor = if (extras.realRecording(program)) Jc.Recording.copy(alpha = 0.14f) else Jc.Panel,
                 focusedContainerColor = Jc.FocusFill,
                 contentColor = Jc.Text,
                 focusedContentColor = Jc.Text,
@@ -431,8 +472,10 @@ private fun ProgramCell(
     ) {
         Column(Modifier.fillMaxSize().padding(horizontal = 8.dp, vertical = 5.dp), verticalArrangement = Arrangement.Center) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                if (program.isRecording) Box(Modifier.size(8.dp).background(Jc.Recording, CircleShape))
-                Text(program.name, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                // Red for a recording; faint for a live TV buffer (only kept if someone presses Record).
+                if (program.isRecording) Box(Modifier.size(8.dp).background(Jc.Recording.copy(alpha = if (extras.isBuffer(program)) 0.35f else 1f), CircleShape))
+                Text(program.name, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                if (extras.scanning(program)) Text("CS", color = Color(0xFF1A1206), fontSize = 10.sp, fontWeight = FontWeight.Bold, modifier = Modifier.background(Jc.Amber, RoundedCornerShape(4.dp)).padding(horizontal = 4.dp))
             }
             val sub = marks.title ?: if (program.isMovie) "Movie" else null
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -457,8 +500,20 @@ private fun ProgramPanel(
     onChanged: () -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
+    onPlayItem: (com.mackandall.jdvr.PlayRecording) -> Unit = {},
 ) {
     var p by remember(program.id) { mutableStateOf(program) }
+    // Episode History (watched mark, a copy to play, forget) and JellyDVR Live (is this only a buffer).
+    var eh by remember(program.id) { mutableStateOf<LiveTvRepository.EhProgram?>(null) }
+    var buffer by remember(program.id) { mutableStateOf<LiveTvRepository.Buffer?>(null) }
+    var isBuffer by remember(program.id) { mutableStateOf(false) }
+    var armed by remember(program.id) { mutableStateOf<String?>(null) }
+    LaunchedEffect(armed) {
+        if (armed != null) {
+            delay(4000)
+            armed = null
+        }
+    }
     // Being recorded now: the recording, to watch from the start (with commercial skipping).
     var recordingItem by remember(program.id) { mutableStateOf<UUID?>(null) }
     LaunchedEffect(program.id) {
@@ -473,8 +528,14 @@ private fun ProgramPanel(
     suspend fun refresh() {
         Jdvr.liveTv.program(p.id)?.let { p = it }
         schedule = Jdvr.liveTv.scheduleState(p.id)
+        eh = Jdvr.liveTv.ehProgram(p.id)
+        isBuffer = p.id.toString().plainId() in Jdvr.liveTv.bufferPrograms()
+        buffer = Jdvr.liveTv.buffers(p.channelId).lastOrNull { it.programId?.plainId() == p.id.toString().plainId() }
     }
     LaunchedEffect(program.id) {
+        eh = Jdvr.liveTv.ehProgram(program.id)
+        isBuffer = program.id.toString().plainId() in Jdvr.liveTv.bufferPrograms()
+        if (isBuffer) buffer = Jdvr.liveTv.buffers(program.channelId).lastOrNull { it.programId?.plainId() == program.id.toString().plainId() }
         schedule = Jdvr.liveTv.scheduleState(program.id)
         runCatching { first.requestFocus() }
     }
@@ -499,6 +560,7 @@ private fun ProgramPanel(
             modifier
                 .fillMaxHeight()
                 .background(Jc.Panel)
+                .verticalScroll(androidx.compose.foundation.rememberScrollState())
                 .padding(22.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
@@ -510,7 +572,11 @@ private fun ProgramPanel(
             color = Jc.Muted,
             fontSize = 15.sp,
         )
-        MarkChips(marks)
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            MarkChips(marks)
+            if (isBuffer) Chip("Live TV buffer", Jc.Muted)
+            if (eh?.markedWatched == true) Chip("marked watched", Jc.Green)
+        }
         p.overview?.let { Text(it, color = Jc.Muted, fontSize = 14.sp, maxLines = 4, overflow = TextOverflow.Ellipsis) }
         schedule?.outcome?.let {
             Text(
@@ -523,8 +589,24 @@ private fun ProgramPanel(
         Spacer(4)
         if (p.isOn()) Button("Watch live", modifier = Modifier.fillMaxWidth().focusRequester(first), onClick = onWatch)
         recordingItem?.let { id -> Button("Watch from start", modifier = Modifier.fillMaxWidth(), leading = { Text("⏮", color = Jc.Text) }) { onWatchFromStart(id) } }
+        // A copy Episode History knows about (recorded before, or in a library).
+        eh?.libraryItemId?.toUuid()?.let { lib ->
+            val resume = eh?.libraryItemPositionTicks?.div(10_000L) ?: 0L
+            Button(if (resume > 60_000) "Play from library · ${resume / 60_000} min in" else "Play from library", modifier = Modifier.fillMaxWidth(), leading = { Text("▶", color = Jc.Text) }) {
+                onPlayItem(com.mackandall.jdvr.PlayRecording(lib))
+            }
+        }
         val recordModifier = if (p.isOn()) Modifier.fillMaxWidth() else Modifier.fillMaxWidth().focusRequester(first)
-        if (p.isRecording) {
+        val bufferNow = buffer
+        if (isBuffer && bufferNow != null && !bufferNow.kept) {
+            // Only a buffer so far: Record keeps it (recorded from when it started).
+            Button("Record (keep the live buffer)", modifier = recordModifier, leading = { Dot(Jc.Recording) }) {
+                act {
+                    Jdvr.liveTv.keepBuffer(bufferNow.id, true)
+                    "Recording: the live TV buffer is kept."
+                }
+            }
+        } else if (p.isRecording && !isBuffer) {
             Button("Don't record this", modifier = recordModifier, leading = { Dot(Jc.Recording) }) {
                 act {
                     Jdvr.liveTv.cancelRecording(p.timerId!!)
@@ -568,7 +650,34 @@ private fun ProgramPanel(
                 modifier = Modifier.fillMaxWidth(),
                 leading = { Text(if (fav == null) "☆" else "★", color = Jc.Gold, fontSize = 18.sp) },
             ) {
-                act { (if (fav == null) Jdvr.liveTv.addFavourite(p.id) else Jdvr.liveTv.removeFavourite(fav.id))?.message }
+                if (fav != null && armed != "fav") {
+                    armed = "fav"
+                } else {
+                    armed = null
+                    act { (if (fav == null) Jdvr.liveTv.addFavourite(p.id) else Jdvr.liveTv.removeFavourite(fav.id))?.message }
+                }
+            }
+            if (armed == "fav") Text("Press again to remove it from Recording Favourites", color = Jc.Amber, fontSize = 13.sp)
+        }
+        eh?.let { info ->
+            Button(if (info.markedWatched) "Unmark watched" else "Mark watched", modifier = Modifier.fillMaxWidth(), leading = { Text("✓", color = Jc.Green) }) {
+                act {
+                    Jdvr.liveTv.setProgramWatched(p.id, !info.markedWatched)
+                    if (info.markedWatched) "No longer marked watched." else "Marked watched: every airing of this episode shows it."
+                }
+            }
+            if (info.canForget) {
+                Button(if (armed == "forget") "Press again to forget" else "Forget this episode", modifier = Modifier.fillMaxWidth()) {
+                    if (armed != "forget") {
+                        armed = "forget"
+                    } else {
+                        armed = null
+                        act {
+                            Jdvr.liveTv.forgetProgram(p.id)
+                            "Forgotten: it can be recorded again."
+                        }
+                    }
+                }
             }
         }
         note?.let { Text(it, color = Jc.Muted, fontSize = 14.sp) }

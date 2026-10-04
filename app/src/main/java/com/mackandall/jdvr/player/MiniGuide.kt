@@ -72,7 +72,10 @@ fun MiniGuide(
     onWatch: (UUID) -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
+    // Guide programmes that are only a live TV buffer: not shown as recordings.
+    buffers: Set<String> = emptySet(),
 ) {
+    fun recording(p: Program) = p.isRecording && p.id.toString().replace("-", "").lowercase() !in buffers
     val focus = remember { FocusRequester() }
     val scope = rememberCoroutineScope()
     val earliest = remember { floorHalfHour(LocalDateTime.now()) }
@@ -187,7 +190,7 @@ fun MiniGuide(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
             )
-            if (sel?.isRecording == true) Text("● Recording", color = Jc.Recording, fontSize = 13.sp)
+            if (sel != null && recording(sel)) Text("● Recording", color = Jc.Recording, fontSize = 13.sp)
             Text(
                 note ?: if (sel != null && sel.start.isBefore(LocalDateTime.now())) "OK watch · Back close" else "OK ${if (sel?.isRecording == true) "don't record" else "record"} · Back close",
                 color = if (note != null) Jc.Text else Jc.Muted,
@@ -229,7 +232,7 @@ fun MiniGuide(
                                 .padding(horizontal = 8.dp),
                             verticalArrangement = Arrangement.Center,
                         ) {
-                            Text((if (p.isRecording) "● " else "") + p.name, color = Jc.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text((if (recording(p)) "● " else "") + p.name, color = Jc.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             Marks.parse(p.rawEpisodeTitle, symbols).title?.let { Text(it, color = Jc.Muted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
                         }
                     }

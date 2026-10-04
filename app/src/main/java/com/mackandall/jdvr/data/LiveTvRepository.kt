@@ -695,6 +695,67 @@ class LiveTvRepository {
     /** Deletes a recording: its file and the files beside it (Jellyfin's own delete). */
     suspend fun deleteItem(itemId: UUID) = io { api.libraryApi.deleteItem(itemId) }
 
+    // ---- Episode History on a guide programme --------------------------------------------------
+
+    @Serializable
+    data class EhProgram(
+        @SerialName("MarkedWatched") val markedWatched: Boolean = false,
+        @SerialName("CanForget") val canForget: Boolean = false,
+        @SerialName("LibraryItemId") val libraryItemId: String? = null,
+        @SerialName("LibraryItemPositionTicks") val libraryItemPositionTicks: Long = 0L,
+    )
+
+    /** What Episode History knows about a guide programme: marked watched, a copy to play, forgettable. */
+    suspend fun ehProgram(programId: UUID): EhProgram? = plugin(HttpMethod.GET, "/EpisodeHistory/Program/${programId.toString().replace("-", "")}")
+
+    suspend fun setProgramWatched(
+        programId: UUID,
+        watched: Boolean,
+    ) = plugin<kotlinx.serialization.json.JsonObject>(if (watched) HttpMethod.POST else HttpMethod.DELETE, "/EpisodeHistory/Program/${programId.toString().replace("-", "")}/Watched")
+
+    /** "Forget this episode": the history no longer counts it as recorded or watched (admins). */
+    suspend fun forgetProgram(programId: UUID) = plugin<kotlinx.serialization.json.JsonObject>(HttpMethod.DELETE, "/EpisodeHistory/Program/${programId.toString().replace("-", "")}/History")
+
+    // ---- Comskip: commercial badges, scan, audio fix -------------------------------------------
+
+    @Serializable
+    data class CommercialBadge(
+        @SerialName("State") val state: String = "",
+        @SerialName("Minutes") val minutes: Int? = null,
+        @SerialName("Done") val done: Int? = null,
+        @SerialName("Total") val total: Int? = null,
+        @SerialName("Failed") val failed: Boolean? = null,
+    ) {
+        /** Short text for a badge: "4m ads", "scanning", "no ads", "scan failed", "8/10 scanned". */
+        val label: String
+            get() =
+                when (state) {
+                    "found" -> "${minutes ?: 0}m ads"
+                    "scanning" -> "scanning" + (minutes?.let { " · ${it}m" } ?: "")
+                    "none" -> "no ads"
+                    "failed" -> "scan failed"
+                    "summary" -> "${done ?: 0}/${total ?: 0} scanned" + if (failed == true) " !" else ""
+                    else -> state
+                }
+    }
+
+    @Serializable
+    private data class CommercialBadges(
+        @SerialName("Items") val items: Map<String, CommercialBadge> = emptyMap(),
+    )
+
+    /** Comskip's badge per item (keys: ids without dashes); items never scanned are left out. */
+    suspend fun commercialBadges(ids: List<UUID>): Map<String, CommercialBadge> =
+        ids.chunked(250).flatMap { chunk ->
+            plugin<CommercialBadges>(HttpMethod.GET, "/ComskipSegments/Badges", mapOf("ids" to chunk.joinToString(",") { it.toString().replace("-", "") }))?.items.orEmpty().entries
+        }.associate { it.key.plainId() to it.value }
+
+    /** Scan (again) for commercials; admins. */
+    suspend fun scanCommercials(itemId: UUID): Message? = plugin(HttpMethod.POST, "/ComskipSegments/Detect/$itemId", mapOf("force" to true))
+
+    /** Trim the stray 2.0 / 5.1 audio at the start and end of a recording; admins. */
+    suspend fun fixAudioFormat(itemId: UUID): Message? = plugin(HttpMethod.POST, "/ComskipSegments/AudioTrim/Apply/$itemId")
+
     suspend fun recordInstead(programId: UUID): Message? = plugin(HttpMethod.POST, "/JellyDvrSchedule/RecordInstead/$programId")
 
     suspend fun addFavourite(programId: UUID): Message? = plugin(HttpMethod.POST, "/JellyDvrSchedule/Favourites/FromItem/$programId")
@@ -907,6 +968,7 @@ class LiveTvRepository {
         @SerialName("StartedUtc") val startedUtc: String? = null,
         @SerialName("Recording") val recording: Boolean = false,
         @SerialName("Kept") val kept: Boolean = false,
+        @SerialName("ProgramId") val programId: String? = null,
     )
 
     @Serializable
@@ -964,12 +1026,18 @@ class LiveTvRepository {
     private data class GuideBadge(
         @SerialName("ProgramId") val programId: String = "",
         @SerialName("RecordingItemId") val recordingItemId: String? = null,
+        @SerialName("State") val state: String = "",
+        @SerialName("Minutes") val minutes: Int? = null,
     )
 
     @Serializable
     private data class GuideBadges(
         @SerialName("Programs") val programs: List<GuideBadge> = emptyList(),
     )
+
+    /** Programmes being recorded now whose recording Comskip is scanning live (the guide's CS tag), with minutes found so far. */
+    suspend fun guideScanning(): Map<String, Int?> =
+        plugin<GuideBadges>(HttpMethod.GET, "/ComskipSegments/Badges/Guide")?.programs.orEmpty().filter { it.state == "scanning" }.associate { it.programId.plainId() to it.minutes }
 
     /** The recording of a programme being recorded now, as a library item (Comskip plugin). */
     suspend fun recordingOfProgram(programId: UUID): UUID? {

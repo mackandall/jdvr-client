@@ -69,6 +69,8 @@ fun DetailsPage(
 ) {
     var d by remember { mutableStateOf<LiveTvRepository.ItemDetails?>(null) }
     var note by remember { mutableStateOf<String?>(null) }
+    var commercials by remember { mutableStateOf<LiveTvRepository.CommercialBadge?>(null) }
+    LaunchedEffect(itemId, refresh) { commercials = runCatching { Jdvr.liveTv.commercialBadges(listOf(itemId)).values.firstOrNull() }.getOrNull() }
     LaunchedEffect(note) {
         if (note != null) {
             kotlinx.coroutines.delay(4000)
@@ -146,6 +148,7 @@ fun DetailsPage(
                 if (det.subtitles.isNotEmpty()) Info("Subtitles", det.subtitles.take(2).joinToString(", ") + if (det.subtitles.size > 2) "  +${det.subtitles.size - 2}" else "")
                 det.file?.let { Info("File", it) }
                 det.location?.let { Info("Stored", it) }
+                commercials?.let { Info("Commercials", it.label) }
             }
 
             val credits =
