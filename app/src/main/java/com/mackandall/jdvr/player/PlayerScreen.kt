@@ -2,6 +2,7 @@ package com.mackandall.jdvr.player
 
 import android.view.KeyEvent as AndroidKeyEvent
 import androidx.annotation.OptIn
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
@@ -101,6 +102,8 @@ fun PlayerScreen(
     var pausedAt by remember(channelId) { mutableStateOf<Instant?>(null) }
     // The mini guide over the bottom of the picture: ▼ opens it, Back closes it.
     var miniOpen by remember { mutableStateOf(false) }
+    // Between choosing a channel and its first picture: the tuning filler covers the old one.
+    var tuning by remember { mutableStateOf(true) }
     // Guide programmes that are only a buffer (their timers look like recordings).
     var bufferIds by remember { mutableStateOf<Set<String>>(emptySet()) }
     var recordArmedUntil by remember { mutableStateOf(0L) }
@@ -138,6 +141,11 @@ fun PlayerScreen(
                 override fun onPlayerError(e: PlaybackException) {
                     Timber.w(e, "Playback error")
                     error = "Playback stopped: ${e.errorCodeName}"
+                    tuning = false
+                }
+
+                override fun onRenderedFirstFrame() {
+                    tuning = false
                 }
             }
         player.addListener(listener)
@@ -159,10 +167,12 @@ fun PlayerScreen(
             kotlinx.coroutines.MainScope().launch {
                 error = null
                 busy = null
+                tuning = true
                 osdUntil = System.currentTimeMillis() + 6000
                 try {
                     val tuners = Jdvr.liveTv.tuners(channelId)
                     if (tuners != null && tuners.isChannel && tuners.full) {
+                        tuning = false
                         busy = tuners
                         return@launch
                     }
@@ -479,7 +489,8 @@ fun PlayerScreen(
         )
 
         val channel = channels.firstOrNull { it.id == channelId }
-        if (!miniOpen && (System.currentTimeMillis() < osdUntil || error != null || actionsOpen || pausedAt != null)) {
+        if (tuning && error == null && busy == null) TuningFiller(channel)
+        if (!miniOpen && (tuning || System.currentTimeMillis() < osdUntil || error != null || actionsOpen || pausedAt != null)) {
             tick.let {
                 val offset = if (onHls) player.currentLiveOffset.takeIf { it != androidx.media3.common.C.TIME_UNSET } ?: 0L else 0L
                 val realRecording = buffers.currentBuffer()?.kept == true || channel?.now?.let { it.timerId != null && it.id.toString().plainId() !in bufferIds } == true
@@ -563,6 +574,57 @@ fun PlayerScreen(
         busy?.let { status ->
             TunersBusy(status, channel, onWatch = { onChannelChange(it) }, onCancel = onExit, modifier = Modifier.align(Alignment.Center))
         }
+    }
+}
+
+/**
+ * While a channel tunes: its programme's picture (else the channel logo, else black), dimmed,
+ * with "Tuning 229 HGTV…" top right; the info bar along the bottom says what's coming.
+ */
+@Composable
+private fun TuningFiller(channel: Channel?) {
+    var artFailed by remember(channel?.now?.id) { mutableStateOf(false) }
+    Box(Modifier.fillMaxSize().background(Color.Black)) {
+        val now = channel?.now
+        val art = now?.let { Jdvr.liveTv.imageUrl(it.id, 720) }
+        if (art != null && !artFailed) {
+            coil3.compose.AsyncImage(
+                model = art,
+                contentDescription = null,
+                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                onState = { if (it is coil3.compose.AsyncImagePainter.State.Error) artFailed = true },
+                modifier = Modifier.fillMaxSize(),
+            )
+        } else {
+            channel?.logoUrl?.let {
+                coil3.compose.AsyncImage(model = it, contentDescription = null, contentScale = androidx.compose.ui.layout.ContentScale.Fit, modifier = Modifier.align(Alignment.Center).padding(bottom = 140.dp).width(260.dp).height(160.dp))
+            }
+        }
+        Box(Modifier.fillMaxSize().background(Color(0x73080B10)))
+        Row(
+            Modifier.align(Alignment.TopEnd).padding(28.dp).background(Color(0xCC0D1117), RoundedCornerShape(50)).padding(horizontal = 14.dp, vertical = 7.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Spinner()
+            Text("Tuning " + listOfNotNull(channel?.number, channel?.name).joinToString(" ") + "…", color = Jc.Text, fontSize = 15.sp)
+        }
+    }
+}
+
+@Composable
+private fun Spinner() {
+    val t = androidx.compose.animation.core.rememberInfiniteTransition(label = "spin")
+    val angle by t.animateFloat(
+        0f,
+        360f,
+        androidx.compose.animation.core.infiniteRepeatable(androidx.compose.animation.core.tween(900, easing = androidx.compose.animation.core.LinearEasing)),
+        label = "angle",
+    )
+    androidx.compose.foundation.Canvas(Modifier.width(18.dp).height(18.dp)) {
+        val stroke = androidx.compose.ui.graphics.drawscope.Stroke(width = 3.dp.toPx())
+        drawArc(Jc.Line, 0f, 360f, false, style = stroke)
+        drawArc(Jc.Focus, angle, 100f, false, style = stroke)
     }
 }
 
