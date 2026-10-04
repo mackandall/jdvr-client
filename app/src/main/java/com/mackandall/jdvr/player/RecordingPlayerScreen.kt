@@ -279,6 +279,16 @@ fun RecordingPlayerScreen(
         onExit()
     }
 
+    fun toggleKeep() {
+        val b = buffer ?: return
+        scope.launch {
+            Jdvr.liveTv.keepBuffer(b.id, !b.kept)?.let { buffer = it }
+            note = if (b.kept) "Won't keep this buffer" else "Recording kept"
+            delay(3000)
+            note = null
+        }
+    }
+
     fun goNext() {
         val n = next
         val live = recording.liveChannelId
@@ -307,6 +317,7 @@ fun RecordingPlayerScreen(
                     AndroidKeyEvent.KEYCODE_MEDIA_STOP -> stop()
                     AndroidKeyEvent.KEYCODE_MEDIA_PREVIOUS -> previous?.let(onPlayRecording)
                     AndroidKeyEvent.KEYCODE_MEDIA_NEXT -> goNext()
+                    AndroidKeyEvent.KEYCODE_MEDIA_RECORD -> toggleKeep()
                     else -> return@onPreviewKeyEvent false
                 }
                 true
@@ -391,13 +402,9 @@ fun RecordingPlayerScreen(
                         forward = TransportAction(TransportIcon.Forward) { seek(true) },
                         next = TransportAction(TransportIcon.Next, next != null || live != null) { goNext() },
                         playFocus = playFocus,
+                        // ● on a live TV buffer keeps it as a recording (or lets it go again).
+                        record = TransportAction(TransportIcon.Record, enabled = buffer != null, active = buffer?.kept == true) { toggleKeep() },
                     ) {
-                        val b = buffer
-                        if (b != null) {
-                            Button(if (b.kept) "Kept · don't keep" else "Keep this programme") {
-                                scope.launch { Jdvr.liveTv.keepBuffer(b.id, !b.kept)?.let { buffer = it } }
-                            }
-                        }
                         if (live != null) Button("Back to live") { onBackToLive(live) }
                     }
                 } else {

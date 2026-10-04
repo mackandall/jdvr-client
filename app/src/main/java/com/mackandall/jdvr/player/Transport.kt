@@ -32,12 +32,14 @@ import com.mackandall.jdvr.ui.Jc
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 
-enum class TransportIcon { Previous, Rewind, Stop, Play, Pause, Forward, Next }
+enum class TransportIcon { Previous, Rewind, Stop, Play, Pause, Forward, Next, Record }
 
 /** One transport action: what it draws, whether it does anything here, and what it does. */
 class TransportAction(
     val icon: TransportIcon,
     val enabled: Boolean = true,
+    // Lit up: e.g. Record while the programme is being recorded.
+    val active: Boolean = false,
     val onClick: () -> Unit,
 )
 
@@ -57,6 +59,7 @@ fun TransportBar(
     forward: TransportAction,
     next: TransportAction,
     playFocus: FocusRequester,
+    record: TransportAction? = null,
     extras: @Composable RowScope.() -> Unit = {},
 ) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -66,6 +69,10 @@ fun TransportBar(
         TransportButton(playPause, Modifier.focusRequester(playFocus))
         TransportButton(forward)
         TransportButton(next)
+        record?.let {
+            Spacer(Modifier.width(6.dp))
+            TransportButton(it)
+        }
         Spacer(Modifier.width(14.dp))
         extras()
         Spacer(Modifier.weight(1f))
@@ -84,8 +91,8 @@ private fun TransportButton(
         shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(10.dp)),
         colors =
             ClickableSurfaceDefaults.colors(
-                containerColor = Jc.Panel2,
-                focusedContainerColor = Jc.FocusFill,
+                containerColor = if (action.active) Jc.Recording.copy(alpha = 0.28f) else Jc.Panel2,
+                focusedContainerColor = if (action.active) Jc.Recording.copy(alpha = 0.45f) else Jc.FocusFill,
                 contentColor = if (action.enabled) Jc.Text else Jc.Muted.copy(alpha = 0.45f),
                 focusedContentColor = if (action.enabled) Jc.Text else Jc.Muted,
             ),
@@ -94,7 +101,8 @@ private fun TransportButton(
     ) {
         val color = LocalContentColor.current
         Box(Modifier.size(width = 58.dp, height = 44.dp), contentAlignment = Alignment.Center) {
-            Canvas(Modifier.size(20.dp)) { drawIcon(action.icon, color) }
+            val tint = if (action.icon == TransportIcon.Record && action.enabled) Jc.Recording else color
+            Canvas(Modifier.size(20.dp)) { drawIcon(action.icon, tint) }
         }
     }
 }
@@ -151,5 +159,6 @@ private fun DrawScope.drawIcon(
             triangle(w * 0.1f, w * 0.75f, true)
             bar(w * 0.75f, w * 0.15f)
         }
+        TransportIcon.Record -> drawCircle(color, radius = w * 0.42f)
     }
 }

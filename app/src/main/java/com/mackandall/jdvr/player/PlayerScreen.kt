@@ -53,6 +53,7 @@ import com.mackandall.jdvr.data.Channel
 import com.mackandall.jdvr.data.Jdvr
 import com.mackandall.jdvr.data.LivePlayback
 import com.mackandall.jdvr.data.LiveTvRepository
+import com.mackandall.jdvr.data.plainId
 import com.mackandall.jdvr.data.toUuid
 import com.mackandall.jdvr.ui.Button
 import com.mackandall.jdvr.ui.Jc
@@ -100,6 +101,9 @@ fun PlayerScreen(
     var pausedAt by remember(channelId) { mutableStateOf<Instant?>(null) }
     // The mini guide over the bottom of the picture: ▼ opens it, Back closes it.
     var miniOpen by remember { mutableStateOf(false) }
+    // Guide programmes that are only a buffer (their timers look like recordings).
+    var bufferIds by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var recordArmedUntil by remember { mutableStateOf(0L) }
     // Hybrid: the channel starts as direct play (quick to tune) while the server starts an HLS copy
     // of the same stream; pause and rewind move over to the HLS copy, where they're instant.
     var onHls by remember(channelId) { mutableStateOf(false) }
@@ -203,6 +207,7 @@ fun PlayerScreen(
     // JellyDVR Live's buffer (from tune-in) and, if the programme is a real recording, the recording.
     LaunchedEffect(channelId, actionsOpen) {
         buffers = Jdvr.liveTv.buffers(channelId)
+        bufferIds = Jdvr.liveTv.bufferPrograms()
         fromStart = channels.firstOrNull { it.id == channelId }?.now?.takeIf { it.isRecording }?.let { Jdvr.liveTv.recordingOfProgram(it.id) }
     }
     LaunchedEffect(actionsOpen) {
@@ -286,6 +291,47 @@ fun PlayerScreen(
         showOsd()
     }
 
+    // ● Record the programme on now: keep the buffer (so it's recorded from tune-in), or schedule it
+    // if there's no buffer yet. On a programme already recording, a second press stops it.
+    fun record() {
+        val now = channels.firstOrNull { it.id == channelId }?.now ?: return
+        val b = buffers.currentBuffer()
+        val realTimer = now.timerId?.takeIf { now.id.toString().plainId() !in bufferIds }
+        scope.launch {
+            note =
+                runCatching {
+                    when {
+                        b?.kept == true -> {
+                            Jdvr.liveTv.keepBuffer(b.id, false)
+                            "Won't record ${now.name} (back to a buffer)"
+                        }
+                        realTimer != null && System.currentTimeMillis() < recordArmedUntil -> {
+                            recordArmedUntil = 0L
+                            Jdvr.liveTv.cancelRecording(realTimer)
+                            "Stopped recording ${now.name}"
+                        }
+                        realTimer != null -> {
+                            recordArmedUntil = System.currentTimeMillis() + 4000
+                            "Already recording ${now.name}: press ● again to stop it"
+                        }
+                        b != null -> {
+                            Jdvr.liveTv.keepBuffer(b.id, true)
+                            "Recording ${now.name}" + (b.startedUtc?.let { s -> runCatching { " from " + LocalDateTime.ofInstant(Instant.parse(s), ZoneId.systemDefault()).time() + " (when you tuned in)" }.getOrNull() } ?: "")
+                        }
+                        else -> {
+                            Jdvr.liveTv.record(now.id, series = false)
+                            "Recording ${now.name}"
+                        }
+                    }
+                }.getOrElse { "Couldn't change the recording: ${it.message}" }
+            buffers = Jdvr.liveTv.buffers(channelId)
+            bufferIds = Jdvr.liveTv.bufferPrograms()
+            runCatching { channels = Jdvr.liveTv.channels() }
+            delay(4000)
+            note = null
+        }
+    }
+
     // Stop: done with this channel, so its tuner input is freed now rather than after the grace.
     fun stop() {
         Jdvr.liveTv.stopBuffering(channelId)
@@ -364,6 +410,7 @@ fun PlayerScreen(
                     AndroidKeyEvent.KEYCODE_MEDIA_REWIND -> rewind()
                     AndroidKeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> forward()
                     AndroidKeyEvent.KEYCODE_MEDIA_NEXT -> toLive()
+                    AndroidKeyEvent.KEYCODE_MEDIA_RECORD -> record()
                     AndroidKeyEvent.KEYCODE_MEDIA_PREVIOUS -> backToTuneIn()
                     AndroidKeyEvent.KEYCODE_MEDIA_STOP -> stop()
                     else -> return@onPreviewKeyEvent false
@@ -433,7 +480,8 @@ fun PlayerScreen(
         if (!miniOpen && (System.currentTimeMillis() < osdUntil || error != null || actionsOpen || pausedAt != null)) {
             tick.let {
                 val offset = if (onHls) player.currentLiveOffset.takeIf { it != androidx.media3.common.C.TIME_UNSET } ?: 0L else 0L
-                InfoBar(channel, symbols, Modifier.align(Alignment.BottomCenter), behindMs = if (offset > 15_000) offset else 0L) {
+                val realRecording = buffers.currentBuffer()?.kept == true || channel?.now?.let { it.timerId != null && it.id.toString().plainId() !in bufferIds } == true
+                InfoBar(channel, symbols, Modifier.align(Alignment.BottomCenter), behindMs = if (offset > 15_000) offset else 0L, recording = realRecording) {
                     if (actionsOpen) {
                         val b = buffers.currentBuffer()
                         val behind = onHls
@@ -446,17 +494,14 @@ fun PlayerScreen(
                             // Next = back to live.
                             next = TransportAction(TransportIcon.Next, behind) { toLive() },
                             playFocus = playFocus,
+                            record =
+                                channel?.now?.let { now ->
+                                    val recording = b?.kept == true || (now.timerId != null && now.id.toString().plainId() !in bufferIds)
+                                    TransportAction(TransportIcon.Record, active = recording) { record() }
+                                },
                         ) {
                             fromStart?.let { rec ->
                                 Button("Watch from start") { onPlayRecording(com.mackandall.jdvr.PlayRecording(rec, startMs = 0L, liveChannelId = channelId)) }
-                            }
-                            if (b != null) {
-                                Button(if (b.kept) "Kept · don't keep" else "Keep this programme") {
-                                    scope.launch {
-                                        Jdvr.liveTv.keepBuffer(b.id, !b.kept)
-                                        buffers = Jdvr.liveTv.buffers(channelId)
-                                    }
-                                }
                             }
                         }
                     }
@@ -520,6 +565,7 @@ private fun InfoBar(
     symbols: LiveTvRepository.MarkSymbols?,
     modifier: Modifier,
     behindMs: Long = 0L,
+    recording: Boolean = false,
     actions: @Composable () -> Unit = {},
 ) {
     val now = channel?.now
@@ -558,7 +604,7 @@ private fun InfoBar(
                     Box(Modifier.fillMaxHeight().fillMaxWidth(done.toFloat() / total).background(Jc.Focus, RoundedCornerShape(3.dp)))
                 }
                 Text(now.end.time(), color = Jc.Muted, fontSize = 14.sp)
-                if (now.isRecording) Text("● Recording", color = Jc.Recording, fontSize = 14.sp)
+                if (recording) Text("● Recording", color = Jc.Recording, fontSize = 14.sp)
             }
         }
         actions()
