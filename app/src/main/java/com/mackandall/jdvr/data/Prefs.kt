@@ -52,6 +52,15 @@ class Prefs(
         p.edit().putString("subtitles", v).apply()
     }
 
+    /** The box at the top of a recording or archive item while it plays (with the info bar). */
+    var infoBoxTop by mutableStateOf(p.getBoolean("infoBoxTop", true))
+        private set
+
+    fun changeInfoBoxTop(v: Boolean) {
+        infoBoxTop = v
+        p.edit().putBoolean("infoBoxTop", v).apply()
+    }
+
     /** Weather on Home (Open-Meteo): on/off, the town (name and coordinates), °F or °C. */
     var weatherOn by mutableStateOf(p.getBoolean("weatherOn", true))
         private set

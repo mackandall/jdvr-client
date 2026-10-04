@@ -181,25 +181,6 @@ fun DetailsPage(
     }
 }
 
-/** Scrolls a focused item just into view (no TV-style pivot), or not at all when it's already in view. */
-@OptIn(ExperimentalFoundationApi::class)
-private val MinimalScroll =
-    object : BringIntoViewSpec {
-        override fun calculateScrollDistance(
-            offset: Float,
-            size: Float,
-            containerSize: Float,
-        ): Float {
-            val trailing = offset + size
-            return when {
-                offset >= 0 && trailing <= containerSize -> 0f
-                offset < 0 && trailing > containerSize -> 0f
-                kotlin.math.abs(offset) < kotlin.math.abs(trailing - containerSize) -> offset
-                else -> trailing - containerSize
-            }
-        }
-    }
-
 @Composable
 private fun Info(
     label: String,

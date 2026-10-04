@@ -98,6 +98,11 @@ fun SettingsScreen(
             help = "Closed captions or subtitles when something starts, if it has any. The player's Subtitles button switches them any time.",
             value = if (prefs.subtitles == Prefs.ON) "On when available" else "Off",
         ) { prefs.changeSubtitles(if (prefs.subtitles == Prefs.ON) Prefs.OFF else Prefs.ON) }
+        Choice(
+            label = "Info box at the top",
+            help = "While a recording, show or movie plays: what it is, when it was recorded and aired, and what's next, at the top whenever the info bar shows. The player's Info button opens the full details either way.",
+            value = if (prefs.infoBoxTop) "On" else "Off",
+        ) { prefs.changeInfoBoxTop(!prefs.infoBoxTop) }
         Section("About")
         Text(
             "JDVR ${BuildConfig.VERSION_NAME} · signed in as ${Jdvr.session.userName ?: "?"} on ${Jdvr.session.serverUrl ?: "?"}",

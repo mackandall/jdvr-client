@@ -107,3 +107,22 @@ data class Marks(
         }
     }
 }
+
+/** Scrolls a focused item just into view (no TV-style pivot), or not at all when it's already in view. */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+val MinimalScroll =
+    object : androidx.compose.foundation.gestures.BringIntoViewSpec {
+        override fun calculateScrollDistance(
+            offset: Float,
+            size: Float,
+            containerSize: Float,
+        ): Float {
+            val trailing = offset + size
+            return when {
+                offset >= 0 && trailing <= containerSize -> 0f
+                offset < 0 && trailing > containerSize -> 0f
+                kotlin.math.abs(offset) < kotlin.math.abs(trailing - containerSize) -> offset
+                else -> trailing - containerSize
+            }
+        }
+    }

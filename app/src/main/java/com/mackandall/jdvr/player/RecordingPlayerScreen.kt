@@ -124,6 +124,13 @@ fun RecordingPlayerScreen(
     val handled = remember { mutableSetOf<Long>() }
     val focus = remember { FocusRequester() }
     val playFocus = remember { FocusRequester() }
+    // What's playing (the top box and the Info panel), and the next episode's name.
+    var details by remember { mutableStateOf<LiveTvRepository.ItemDetails?>(null) }
+    var nextTitle by remember { mutableStateOf<String?>(null) }
+    var commercialsLabel by remember { mutableStateOf<String?>(null) }
+    var infoOpen by remember { mutableStateOf(false) }
+    var infoNote by remember { mutableStateOf<String?>(null) }
+    val infoFocus = remember { FocusRequester() }
 
     val player =
         remember {
@@ -245,6 +252,26 @@ fun RecordingPlayerScreen(
         }
     }
 
+    LaunchedEffect(itemId) {
+        details = runCatching { Jdvr.liveTv.details(itemId) }.getOrNull()
+        commercialsLabel = runCatching { Jdvr.liveTv.commercialBadges(listOf(itemId)) }.getOrNull()?.values?.firstOrNull()?.label
+    }
+    // "Next · S3:E2 Mobile Suit Toyman": the show's next recording (not for live TV buffers).
+    LaunchedEffect(next) {
+        nextTitle =
+            next?.takeIf { recording.liveChannelId == null }?.let { n ->
+                runCatching { Jdvr.liveTv.libItem(n.itemId) }.getOrNull()?.let { listOfNotNull(it.seasonEpisode, it.name).joinToString(" ") }
+            }
+    }
+    LaunchedEffect(infoOpen) {
+        if (infoOpen) {
+            delay(80)
+            runCatching { infoFocus.requestFocus() }
+        } else {
+            runCatching { focus.requestFocus() }
+        }
+    }
+
     LaunchedEffect(controlsOpen) {
         if (controlsOpen) {
             delay(50)
@@ -283,6 +310,7 @@ fun RecordingPlayerScreen(
     val prompt = active?.takeIf { mode == Prefs.ASK && it.startMs !in handled }
 
     if (controlsOpen) BackHandler { controlsOpen = false }
+    if (infoOpen) BackHandler { infoOpen = false }
 
     fun playPause() {
         if (player.isPlaying) player.pause() else player.play()
@@ -344,7 +372,7 @@ fun RecordingPlayerScreen(
                 true
             }
             .onKeyEvent { e ->
-                if (e.type != KeyEventType.KeyDown || error != null || controlsOpen) return@onKeyEvent false
+                if (e.type != KeyEventType.KeyDown || error != null || controlsOpen || infoOpen) return@onKeyEvent false
                 when (e.key.nativeKeyCode) {
                     AndroidKeyEvent.KEYCODE_DPAD_LEFT -> {
                         seek(false)
@@ -375,7 +403,8 @@ fun RecordingPlayerScreen(
                         true
                     }
                     AndroidKeyEvent.KEYCODE_INFO -> {
-                        osdUntil = System.currentTimeMillis() + 5000
+                        infoOpen = details != null
+                        if (!infoOpen) osdUntil = System.currentTimeMillis() + 5000
                         true
                     }
                     else -> false
@@ -384,20 +413,38 @@ fun RecordingPlayerScreen(
     ) {
         AndroidView(factory = { ctx -> PlayerView(ctx).apply { useController = false; this.player = player } }, modifier = Modifier.fillMaxSize())
 
+        val osd = !infoOpen && (System.currentTimeMillis() < osdUntil || !player.isPlaying || controlsOpen)
+        // The top box takes the top of the screen: the skip prompt and notes go just below it.
+        val cornerTop = if (osd && prefs.infoBoxTop && details != null) 176.dp else 32.dp
         prompt?.let {
             Text(
                 skipLabel(it) + "  ›  OK",
                 color = Color(0xFF06121F),
                 fontSize = 20.sp,
                 fontWeight = FontWeight.Bold,
-                modifier = Modifier.align(Alignment.TopEnd).padding(32.dp).background(Jc.Focus, RoundedCornerShape(10.dp)).padding(horizontal = 18.dp, vertical = 10.dp),
+                modifier = Modifier.align(Alignment.TopEnd).padding(start = 32.dp, end = 32.dp, top = cornerTop).background(Jc.Focus, RoundedCornerShape(10.dp)).padding(horizontal = 18.dp, vertical = 10.dp),
             )
         }
         note?.let {
-            Text(it, color = Jc.Text, fontSize = 16.sp, modifier = Modifier.align(Alignment.TopEnd).padding(32.dp).background(Color(0xCC0D1117), RoundedCornerShape(10.dp)).padding(14.dp))
+            Text(it, color = Jc.Text, fontSize = 16.sp, modifier = Modifier.align(Alignment.TopEnd).padding(start = 32.dp, end = 32.dp, top = cornerTop).background(Color(0xCC0D1117), RoundedCornerShape(10.dp)).padding(14.dp))
         }
 
-        if (System.currentTimeMillis() < osdUntil || !player.isPlaying || controlsOpen) {
+        if (osd && prefs.infoBoxTop) details?.let { RecordingTopBox(it, nextTitle, Modifier.align(Alignment.TopCenter)) }
+        if (infoOpen) {
+            details?.let {
+                RecordingInfoPanel(
+                    d = it,
+                    commercials = commercialsLabel,
+                    note = infoNote,
+                    first = infoFocus,
+                    onClose = { infoOpen = false },
+                    onNote = { n -> infoNote = n },
+                    onDeleted = onExit,
+                    modifier = Modifier.align(Alignment.CenterEnd),
+                )
+            }
+        }
+        if (osd) {
             val duration = player.duration.takeIf { it > 0 } ?: playback?.durationMs ?: 0L
             Column(
                 Modifier.align(Alignment.BottomCenter).fillMaxWidth().background(Color(0xF00D1117)).padding(horizontal = 36.dp, vertical = 22.dp),
@@ -428,6 +475,12 @@ fun RecordingPlayerScreen(
                         // ● on a live TV buffer keeps it as a recording (or lets it go again).
                         record = TransportAction(TransportIcon.Record, enabled = buffer != null, active = buffer?.kept == true) { toggleKeep() },
                     ) {
+                        if (details != null) {
+                            Button("Info") {
+                                controlsOpen = false
+                                infoOpen = true
+                            }
+                        }
                         TrackButtons(player)
                         if (live != null) Button("Back to live") { onBackToLive(live) }
                     }

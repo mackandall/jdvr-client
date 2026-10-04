@@ -591,6 +591,9 @@ class LiveTvRepository {
         val file: String?,
         // Where the file is: the live recordings folder, or the share it's on.
         val location: String?,
+        // When it was recorded: only for a file still in the live recordings folder (an archive
+        // or library copy's file date is when it was copied, not recorded).
+        val recordedAt: java.time.LocalDateTime? = null,
     ) {
         val directors get() = people.filter { it.kind == "Director" }
         val writers get() = people.filter { it.kind == "Writer" }
@@ -630,6 +633,8 @@ class LiveTvRepository {
                             else -> null
                         }
                     },
+                // The SDK already gives local time; the file's creation is when recording started.
+                recordedAt = d.dateCreated?.takeIf { source?.path?.startsWith("/mnt/Internal/JellyFinRecordings") == true },
             )
         }
 
