@@ -885,6 +885,9 @@ class LiveTvRepository {
 
     // ---- Series recordings and Recording Favourites ------------------------------------------
 
+    /** Saves a series recording's options (new only, any channel / time, padding, keep…). */
+    suspend fun updateSeriesTimer(t: org.jellyfin.sdk.model.api.SeriesTimerInfoDto) = io { api.liveTvApi.updateSeriesTimer(t.id!!, t) }
+
     suspend fun seriesTimers(): List<org.jellyfin.sdk.model.api.SeriesTimerInfoDto> =
         io { api.liveTvApi.getSeriesTimers().content.items }
 
