@@ -135,8 +135,10 @@ fun AppRoot() {
             },
     ) {
         // Registered before the screens so their own Back (close a panel, leave a show) wins.
-        if (!railOpen && playingChannel == null && playingRecording == null) {
-            BackHandler { if (backStack.isNotEmpty()) screen = backStack.removeAt(backStack.lastIndex) else railOpen = true }
+        // Always composed, only enabled/disabled: dropping it while a player is up and adding it back
+        // afterwards made it the newest handler, so it beat a screen's own (leave a show's episodes).
+        BackHandler(enabled = !railOpen && playingChannel == null && playingRecording == null) {
+            if (backStack.isNotEmpty()) screen = backStack.removeAt(backStack.lastIndex) else railOpen = true
         }
         Box(Modifier.fillMaxSize().onFocusChanged { screenHasFocus = it.hasFocus }) {
             when (screen) {
