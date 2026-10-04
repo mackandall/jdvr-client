@@ -25,6 +25,9 @@ fun RecordingActions(
     onNote: (String) -> Unit,
     // Comskip's tools (scan, audio fix): on the details page, not in the show page's short row.
     tools: Boolean = true,
+    // Favourites, Forget and Delete: for recordings in the live folder. Archive copies (on the
+    // NAS) get only the tools, so nothing deletes them from the TV.
+    manage: Boolean = true,
     onDeleted: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
@@ -33,18 +36,30 @@ fun RecordingActions(
     var armedDelete by remember(itemId) { mutableStateOf(false) }
     var armedUnfav by remember(itemId) { mutableStateOf(false) }
     var armedForget by remember(itemId) { mutableStateOf(false) }
+    var armedRemove by remember(itemId) { mutableStateOf(false) }
+    var commercials by remember(itemId) { mutableStateOf<LiveTvRepository.CommercialStatus?>(null) }
+    var commercialsCheck by remember(itemId) { mutableIntStateOf(0) }
+    LaunchedEffect(itemId, commercialsCheck) {
+        commercials = runCatching { Jdvr.liveTv.commercialStatus(itemId) }.getOrNull()
+        // A scan in progress: check again every few seconds until it's done.
+        while (commercials?.inFlight == true) {
+            delay(4000)
+            commercials = runCatching { Jdvr.liveTv.commercialStatus(itemId) }.getOrNull()
+        }
+    }
     LaunchedEffect(itemId, reload) { fav = runCatching { Jdvr.liveTv.favouriteForItem(itemId) }.getOrNull() }
-    LaunchedEffect(armedDelete, armedUnfav, armedForget) {
-        if (armedDelete || armedUnfav || armedForget) {
+    LaunchedEffect(armedDelete, armedUnfav, armedForget, armedRemove) {
+        if (armedDelete || armedUnfav || armedForget || armedRemove) {
             delay(4000)
             armedDelete = false
             armedUnfav = false
             armedForget = false
+            armedRemove = false
         }
     }
 
     val f = fav
-    if (f != null && !f.isMovie) {
+    if (manage && f != null && !f.isMovie) {
         val rule = f.favourite
         if (rule == null) {
             Button("★ Add to Recording Favourites") {
@@ -68,16 +83,41 @@ fun RecordingActions(
         }
     }
     // Comskip's tools, as in the web client's item menu (administrators).
-    if (tools) Button("Scan for commercials") {
-        scope.launch { onNote(runCatching { Jdvr.liveTv.scanCommercials(itemId)?.message }.getOrNull() ?: "Couldn't start a scan (administrators only).") }
+    // Comskip: scan, or remove what a scan found (in case it shouldn't have run); the button
+    // follows the item's status, and while a scan runs it checks back until it's done.
+    if (tools) {
+        val c = commercials
+        when {
+            c?.inFlight == true -> Button("Scanning for commercials…") {}
+            c?.found == true ->
+                Button(if (armedRemove) "Press again: remove commercials" else "Remove commercials") {
+                    if (!armedRemove) {
+                        armedRemove = true
+                    } else {
+                        armedRemove = false
+                        scope.launch {
+                            val r = runCatching { Jdvr.liveTv.removeCommercials(itemId) }.getOrNull()
+                            onNote(r?.message?.ifEmpty { null } ?: "Couldn't remove them (administrators only).")
+                            commercialsCheck++
+                        }
+                    }
+                }
+            else ->
+                Button("Scan for commercials") {
+                    scope.launch {
+                        onNote(runCatching { Jdvr.liveTv.scanCommercials(itemId)?.message }.getOrNull() ?: "Couldn't start a scan (administrators only).")
+                        commercialsCheck++
+                    }
+                }
+        }
     }
     if (tools) Button("Fix audio format") {
         onNote("Fixing the audio format: this can take a minute…")
         scope.launch { onNote(runCatching { Jdvr.liveTv.fixAudioFormat(itemId)?.message }.getOrNull() ?: "Couldn't fix it (administrators only).") }
     }
     // Episode History's "Forget this episode": delete it and forget it, so it records again.
-    if (tools) {
-        Button(if (armedForget) "Press again: delete and forget" else "Forget this episode") {
+    if (tools && manage) {
+        Button(if (armedForget) "Press again: delete and forget" else if (fav?.isMovie == true) "Forget this movie" else "Forget this episode") {
             if (!armedForget) {
                 armedForget = true
             } else {
@@ -94,7 +134,7 @@ fun RecordingActions(
             }
         }
     }
-    Button(if (armedDelete) "Press again to delete" else "Delete recording", leading = { Dot(Jc.Recording) }) {
+    if (manage) Button(if (armedDelete) "Press again to delete" else "Delete recording", leading = { Dot(Jc.Recording) }) {
         if (!armedDelete) {
             armedDelete = true
         } else {

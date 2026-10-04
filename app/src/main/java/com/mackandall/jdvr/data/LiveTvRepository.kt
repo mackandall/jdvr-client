@@ -813,6 +813,31 @@ class LiveTvRepository {
     /** Scan (again) for commercials; admins. */
     suspend fun scanCommercials(itemId: UUID): Message? = plugin(HttpMethod.POST, "/ComskipSegments/Detect/$itemId", mapOf("force" to true))
 
+    @Serializable
+    data class CommercialStatus(
+        @SerialName("InFlight") val inFlight: Boolean = false,
+        @SerialName("Status") val status: String? = null,
+        @SerialName("BreakCount") val breakCount: Int? = null,
+    ) {
+        /** Comskip found breaks: the button offers to remove them instead of scanning. */
+        val found get() = status == "Detected" && (breakCount ?: 0) > 0
+    }
+
+    /** Where Comskip is with an item: scanning now, found breaks, none, failed. */
+    suspend fun commercialStatus(itemId: UUID): CommercialStatus? = plugin(HttpMethod.GET, "/ComskipSegments/Status/$itemId")
+
+    @Serializable
+    data class Cleared(
+        @SerialName("Cleared") val cleared: Boolean = false,
+        @SerialName("Message") val message: String = "",
+    )
+
+    /**
+     * Removes the commercials Comskip found (a scan that shouldn't have happened): only the
+     * commercial marks go, and automatic detection leaves the item alone afterwards.
+     */
+    suspend fun removeCommercials(itemId: UUID): Cleared? = plugin(HttpMethod.POST, "/ComskipSegments/Clear/$itemId", mapOf("keep" to true))
+
     /** Trim the stray 2.0 / 5.1 audio at the start and end of a recording; admins. */
     suspend fun fixAudioFormat(itemId: UUID): Message? = plugin(HttpMethod.POST, "/ComskipSegments/AudioTrim/Apply/$itemId")
 

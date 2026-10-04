@@ -58,10 +58,14 @@ private fun clockOf(ms: Long): String {
     return if (m >= 60) "${m / 60} h ${m % 60} min" else "$m min"
 }
 
+/** Where [LiveTvRepository.ItemDetails.location] says a file is in the live recordings folder. */
+const val LIVE_FOLDER = "Live recordings folder"
+
 /**
  * One of Jellyfin's libraries (Recorded Movies, Movies Archive, TV Archive …; each has its own menu
  * entry): its movies and shows as posters (A–Z or newest first), a show's seasons and episodes, a movie's details with
- * Resume / Play from start / Mark watched. Read and play only: nothing here changes the files.
+ * Resume / Play from start / Mark watched, and the recording actions (archive copies: the
+ * commercials and audio tools only, nothing deletes them).
  * [refresh] changes when a player closes, so watched marks and resume points update.
  */
 @Composable
@@ -81,7 +85,10 @@ fun LibraryScreen(
     when {
         m != null -> {
             BackHandler { movie = null }
-            DetailsPage(m.id, refresh, onPlay)
+            DetailsPage(m.id, refresh, onPlay, actions = { det, say ->
+                // Live-folder recordings can be managed; archive copies get the tools only.
+                RecordingActions(det.item.id, say, manage = det.location == LIVE_FOLDER) { movie = null }
+            })
         }
         s != null -> {
             BackHandler { show = null }
@@ -221,7 +228,12 @@ private fun ShowPage(
     // An episode's own details page.
     episodeInfo?.let { id ->
         BackHandler { episodeInfo = null }
-        DetailsPage(id, refresh, onPlay)
+        DetailsPage(id, refresh, onPlay, actions = { det, say ->
+            RecordingActions(det.item.id, say, manage = det.location == LIVE_FOLDER) {
+                episodeInfo = null
+                reload++
+            }
+        })
         return
     }
     EpisodeBrowser(
