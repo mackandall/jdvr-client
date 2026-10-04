@@ -41,6 +41,7 @@ import com.mackandall.jdvr.PlayRecording
 import com.mackandall.jdvr.data.Channel
 import com.mackandall.jdvr.data.Jdvr
 import com.mackandall.jdvr.data.LiveTvRepository
+import com.mackandall.jdvr.data.plainId
 import com.mackandall.jdvr.data.toUuid
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -69,6 +70,7 @@ fun HomeScreen(
     var upcoming by remember { mutableStateOf<List<LiveTvRepository.Upcoming>>(emptyList()) }
     var fresh by remember { mutableStateOf<List<LiveTvRepository.RecordingCard>?>(null) }
     var tuners by remember { mutableStateOf<LiveTvRepository.TunerStatus?>(null) }
+    var bufferIds by remember { mutableStateOf<Set<String>>(emptySet()) }
     var now by remember { mutableStateOf(LocalDateTime.now()) }
     val scope = rememberCoroutineScope()
     val symbols = rememberMarkSymbols()
@@ -80,6 +82,7 @@ fun HomeScreen(
             last = channels.firstOrNull { it.id.toString() == Jdvr.session.lastChannelId } ?: channels.firstOrNull()
             fromStart = last?.now?.takeIf { it.isRecording }?.let { Jdvr.liveTv.recordingOfProgram(it.id) }
             upcoming = Jdvr.liveTv.upcoming().orEmpty()
+            bufferIds = Jdvr.liveTv.bufferPrograms()
             fresh = Jdvr.liveTv.recordedShows()?.filter { it.unplayedCount > 0 }?.take(5)
             tuners = Jdvr.liveTv.tuners(null)
             delay(60_000)
@@ -117,11 +120,13 @@ fun HomeScreen(
                 Text("RECORDING NOW", color = Jc.Muted, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 val rec = upcoming.filter { it.recordingNow }
                 if (rec.isEmpty()) Text("Nothing is recording.", color = Jc.Muted, fontSize = 14.sp)
-                rec.take(3).forEach { r ->
+                // Real recordings first; a live TV buffer is shown as one, not as a recording.
+                rec.sortedBy { it.programId?.plainId() in bufferIds }.take(3).forEach { r ->
+                    val buffer = r.programId?.plainId() in bufferIds
                     SmallRow(
                         title = r.name,
-                        detail = listOfNotNull(r.channelName, localOf(r.end)?.let { "until ${it.time()}" }).joinToString(" · "),
-                        dot = true,
+                        detail = listOfNotNull(if (buffer) "Live TV buffer" else null, r.channelName, if (buffer) null else localOf(r.end)?.let { "until ${it.time()}" }).joinToString(" · "),
+                        dot = !buffer,
                     ) {
                         // Watch it from the start.
                         scope.launch { r.programId?.toUuid()?.let { Jdvr.liveTv.recordingOfProgram(it) }?.let { onPlayRecording(PlayRecording(it, startMs = 0L)) } }
@@ -154,7 +159,7 @@ fun HomeScreen(
 
         // Tonight's schedule.
         val tonight =
-            upcoming.filter { !it.recordingNow }.filter { u -> localOf(u.start)?.let { Duration.between(now, it).toHours() < 8 } == true }.take(5)
+            upcoming.filter { !it.recordingNow && it.programId?.plainId() !in bufferIds }.filter { u -> localOf(u.start)?.let { Duration.between(now, it).toHours() < 8 } == true }.take(5)
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("Tonight", color = Jc.Text, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(end = 4.dp))
             if (tonight.isEmpty()) Text("Nothing more scheduled.", color = Jc.Muted, fontSize = 14.sp)

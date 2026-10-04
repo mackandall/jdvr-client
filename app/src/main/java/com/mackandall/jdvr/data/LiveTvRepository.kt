@@ -716,6 +716,18 @@ class LiveTvRepository {
     suspend fun startBuffering(channelId: UUID): List<Buffer> =
         plugin<Buffers>(HttpMethod.POST, "/JellyDvrLive/Channel/${channelId.toString().replace("-", "")}/Start")?.buffers.orEmpty()
 
+    @Serializable
+    private data class BufferPrograms(
+        @SerialName("ProgramIds") val programIds: List<String> = emptyList(),
+    )
+
+    /**
+     * Guide programmes that are only a live TV buffer (JellyDVR Live's, not kept), in a plain
+     * lower-case no-dash form: their timers look like recordings everywhere else.
+     */
+    suspend fun bufferPrograms(): Set<String> =
+        plugin<BufferPrograms>(HttpMethod.GET, "/JellyDvrLive/Programs")?.programIds.orEmpty().map { it.plainId() }.toSet()
+
     /** The buffer an item is, if it is one (for Keep in the player). */
     suspend fun bufferOfItem(itemId: UUID): Buffer? = plugin(HttpMethod.GET, "/JellyDvrLive/Item/${itemId.toString().replace("-", "")}")
 
@@ -765,6 +777,9 @@ class LiveTvRepository {
 
     suspend fun tuners(channelId: UUID?): TunerStatus? = plugin(HttpMethod.GET, "/JellyDvrSchedule/Tuners", if (channelId == null) emptyMap() else mapOf("channelId" to channelId.toString()))
 }
+
+/** An id compared across APIs: some send dashes, some don't. */
+fun String.plainId(): String = replace("-", "").lowercase()
 
 /** Jellyfin ids come without dashes; UUID.fromString needs them. */
 fun String.toUuid(): UUID? = toUUIDOrNull()

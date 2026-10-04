@@ -35,6 +35,7 @@ import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
 import com.mackandall.jdvr.data.Jdvr
 import com.mackandall.jdvr.data.LiveTvRepository
+import com.mackandall.jdvr.data.plainId
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.time.Instant
@@ -55,10 +56,12 @@ fun ScheduledScreen(entry: FocusRequester) {
     var reload by remember { mutableIntStateOf(0) }
     var open by remember { mutableStateOf<String?>(null) }
     var note by remember { mutableStateOf<String?>(null) }
+    var bufferIds by remember { mutableStateOf<Set<String>>(emptySet()) }
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(reload) {
         items = Jdvr.liveTv.upcoming()
+        bufferIds = Jdvr.liveTv.bufferPrograms()
         loaded = true
     }
 
@@ -91,6 +94,7 @@ fun ScheduledScreen(entry: FocusRequester) {
                             ScheduleRow(
                                 r = r,
                                 expanded = open == r.timerId,
+                                buffer = r.programId?.plainId() in bufferIds,
                                 modifier = if (r == list.first()) Modifier.focusRequester(entry) else Modifier,
                                 onToggle = { open = if (open == r.timerId) null else r.timerId },
                                 onCancel = {
@@ -118,6 +122,7 @@ fun ScheduledScreen(entry: FocusRequester) {
 private fun ScheduleRow(
     r: LiveTvRepository.Upcoming,
     expanded: Boolean,
+    buffer: Boolean,
     modifier: Modifier,
     onToggle: () -> Unit,
     onCancel: () -> Unit,
@@ -143,8 +148,9 @@ private fun ScheduleRow(
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f),
                 )
-                if (r.recordingNow) Chip("● Recording", Jc.Recording)
-                when (r.kind) {
+                if (r.recordingNow && !buffer) Chip("● Recording", Jc.Recording)
+                if (buffer) Chip("Live TV buffer", Jc.Muted)
+                else when (r.kind) {
                     "favourite" -> Chip("★ ${r.favourite ?: "Favourite"}", Jc.Gold)
                     "series" -> Chip("Series", Jc.Muted)
                     else -> Chip("One-off", Jc.Muted)
