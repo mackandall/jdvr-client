@@ -34,6 +34,15 @@ class Prefs(
     var recordingsFilter by mutableStateOf(p.getString("recordingsFilter", CURRENT) ?: CURRENT)
         private set
 
+    /** A show's episodes: "list" (rows plus the focused episode's details) or "tiles" (web client style). */
+    var episodeView by mutableStateOf(p.getString("episodeView", LIST) ?: LIST)
+        private set
+
+    fun changeEpisodeView(v: String) {
+        episodeView = v
+        p.edit().putString("episodeView", v).apply()
+    }
+
     fun toggleLibrary(id: String) {
         hiddenLibraries = if (id in hiddenLibraries) hiddenLibraries - id else hiddenLibraries + id
         p.edit().putStringSet("hiddenLibraries", hiddenLibraries).apply()
@@ -68,5 +77,7 @@ class Prefs(
         const val CURRENT = "current"
         const val ARCHIVED = "archived"
         const val ALL = "all"
+        const val LIST = "list"
+        const val TILES = "tiles"
     }
 }

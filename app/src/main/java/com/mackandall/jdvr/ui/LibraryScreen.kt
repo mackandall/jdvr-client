@@ -200,22 +200,23 @@ private fun Tag(
     color: androidx.compose.ui.graphics.Color,
 ) = Text(text, color = Jc.Text, fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.background(color.copy(alpha = 0.92f), RoundedCornerShape(5.dp)).padding(horizontal = 6.dp, vertical = 1.dp))
 
-/** A show: its seasons across the top, the chosen season's episodes below. */
+/** A show: all its episodes in the episode browser (list with details, or tiles by season). */
 @Composable
 private fun ShowPage(
     show: LiveTvRepository.LibItem,
     refresh: Int,
     onPlay: (PlayRecording) -> Unit,
 ) {
-    var seasons by remember { mutableStateOf<List<LiveTvRepository.LibItem>?>(null) }
-    var season by remember { mutableStateOf<LiveTvRepository.LibItem?>(null) }
-    var episodes by remember { mutableStateOf<List<LiveTvRepository.LibItem>?>(null) }
+    var episodes by remember { mutableStateOf<List<EpisodeEntry>?>(null) }
     var reload by remember { mutableIntStateOf(0) }
-    var info by remember { mutableStateOf<LiveTvRepository.ItemDetails?>(null) }
     var episodeInfo by remember { mutableStateOf<UUID?>(null) }
     val scope = rememberCoroutineScope()
-    val firstEpisode = remember { FocusRequester() }
-    LaunchedEffect(show.id) { info = runCatching { Jdvr.liveTv.details(show.id) }.getOrNull() }
+    LaunchedEffect(show.id, refresh, reload) {
+        episodes =
+            runCatching { Jdvr.liveTv.episodes(show.id, null) }.getOrNull()?.map {
+                EpisodeEntry(it.id, it.name, it.season, it.episode, it.played, it.resumeMs, it.runtimeMin, it.overview)
+            } ?: emptyList()
+    }
 
     // An episode's own details page.
     episodeInfo?.let { id ->
@@ -223,82 +224,19 @@ private fun ShowPage(
         DetailsPage(id, refresh, onPlay)
         return
     }
-
-    LaunchedEffect(show.id) {
-        val list = runCatching { Jdvr.liveTv.seasons(show.id) }.getOrDefault(emptyList())
-        seasons = list
-        // Start on the first season with something unwatched.
-        season = list.firstOrNull { (it.unplayed ?: 0) > 0 } ?: list.firstOrNull()
-    }
-    LaunchedEffect(season?.id, refresh, reload) {
-        episodes = runCatching { Jdvr.liveTv.episodes(show.id, season?.id) }.getOrNull()
-    }
-    LaunchedEffect(episodes != null && reload == 0) { if (!episodes.isNullOrEmpty()) runCatching { firstEpisode.requestFocus() } }
-
-    Box(Modifier.fillMaxSize()) {
-    info?.backdropOf?.let {
-        AsyncImage(model = Jdvr.liveTv.backdropUrl(it), contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
-        Box(Modifier.fillMaxSize().background(Jc.Ink.copy(alpha = 0.86f)))
-    }
-    Column(Modifier.fillMaxSize().padding(start = 28.dp, top = 20.dp, end = 28.dp)) {
-        Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text(show.name, color = Jc.Text, fontSize = 26.sp, fontWeight = FontWeight.SemiBold)
-            Text(
-                listOfNotNull(show.year?.toString(), show.officialRating, info?.communityRating?.let { "★ %.1f".format(it) }, info?.genres?.take(3)?.joinToString(" · ")?.ifEmpty { null }).joinToString("  ·  "),
-                color = Jc.Muted,
-                fontSize = 14.sp,
-            )
-        }
-        show.overview?.let { Text(it, color = Jc.Text, fontSize = 13.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.fillMaxWidth(0.8f).padding(top = 4.dp)) }
-        Spacer(10)
-        val list = seasons
-        if (list != null && list.size > 1) {
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(list, key = { it.id }) { se ->
-                    Button(se.name + ((se.unplayed ?: 0).takeIf { it > 0 }?.let { " · $it" } ?: ""), primary = se.id == season?.id) { season = se }
-                }
+    EpisodeBrowser(
+        seriesId = show.id,
+        title = show.name,
+        subtitle = listOfNotNull(show.year?.toString(), show.officialRating, episodes?.let { "${it.size} episodes" }).joinToString(" · "),
+        entries = episodes,
+        entry = null,
+        onPlay = { onPlay(PlayRecording(it.id)) },
+        onInfo = { episodeInfo = it.id },
+        onToggleWatched = { e ->
+            scope.launch {
+                runCatching { Jdvr.liveTv.setPlayed(e.id, !e.played) }
+                reload++
             }
-            Spacer(10)
-        }
-        val eps = episodes
-        when {
-            list == null || eps == null -> Text("Loading…", color = Jc.Muted, fontSize = 16.sp)
-            eps.isEmpty() -> Text("No episodes.", color = Jc.Muted, fontSize = 16.sp)
-            else ->
-                LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp), contentPadding = PaddingValues(bottom = 40.dp)) {
-                    itemsIndexed(eps, key = { _, e -> e.id }) { i, e ->
-                        Row(Modifier.fillMaxWidth().height(64.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Surface(
-                                onClick = { onPlay(PlayRecording(e.id)) },
-                                modifier = (if (i == 0) Modifier.focusRequester(firstEpisode) else Modifier).weight(1f).fillMaxHeight(),
-                                shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(10.dp)),
-                                colors = ClickableSurfaceDefaults.colors(containerColor = Jc.Panel, focusedContainerColor = Jc.FocusFill, contentColor = Jc.Text, focusedContentColor = Jc.Text),
-                                border = ClickableSurfaceDefaults.border(focusedBorder = Border(BorderStroke(2.dp, Jc.Focus))),
-                                scale = ClickableSurfaceDefaults.scale(focusedScale = 1.01f),
-                            ) {
-                                Row(Modifier.fillMaxSize().padding(end = 14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                                    AsyncImage(model = Jdvr.liveTv.imageUrl(e.id, 160), contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxHeight().aspectRatio(16f / 9f).background(Jc.Panel2))
-                                    Text(e.seasonEpisode ?: e.episode?.let { "E$it" } ?: "", color = Jc.Muted, fontSize = 14.sp, modifier = Modifier.width(70.dp))
-                                    Column(Modifier.weight(1f)) {
-                                        Text(e.name, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                        e.overview?.let { Text(it, color = Jc.Muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
-                                    }
-                                    if (e.resumeMs > 0 && !e.played) Text("${clockOf(e.resumeMs)} in", color = Jc.Focus, fontSize = 13.sp)
-                                    e.runtimeMin?.let { Text("$it min", color = Jc.Muted, fontSize = 13.sp) }
-                                    if (e.played) Chip("watched", Jc.Green)
-                                }
-                            }
-                            Button("Info", modifier = Modifier.align(Alignment.CenterVertically)) { episodeInfo = e.id }
-                            Button(if (e.played) "Unwatch" else "Watched", modifier = Modifier.align(Alignment.CenterVertically)) {
-                                scope.launch {
-                                    runCatching { Jdvr.liveTv.setPlayed(e.id, !e.played) }
-                                    reload++
-                                }
-                            }
-                        }
-                    }
-                }
-        }
-    }
-    }
+        },
+    )
 }

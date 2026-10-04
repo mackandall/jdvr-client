@@ -197,7 +197,7 @@ private fun Badge(
     )
 }
 
-/** A show's recordings, newest first; OK plays one. */
+/** A show's recordings, in the episode browser (list with details, or tiles); OK plays one. */
 @Composable
 private fun ShowEpisodes(
     show: LiveTvRepository.RecordingCard,
@@ -208,52 +208,38 @@ private fun ShowEpisodes(
     onPlayItem: (com.mackandall.jdvr.PlayRecording) -> Unit,
 ) {
     var info by remember { mutableStateOf<UUID?>(null) }
+    var episodes by remember { mutableStateOf<List<EpisodeEntry>?>(null) }
+    LaunchedEffect(show.id, refresh) {
+        episodes =
+            Jdvr.liveTv.showRecordings(show.id, filter)?.mapNotNull { e ->
+                e.id.toUuid()?.let { id ->
+                    EpisodeEntry(
+                        id = id,
+                        name = e.name,
+                        season = e.season,
+                        episode = e.episode,
+                        played = e.played,
+                        recordedAt = local(e.recordedUtc),
+                        archived = e.archived && filter == Prefs.ALL,
+                        partial = e.partial,
+                        partialMinutes = e.minutes,
+                    )
+                }
+            }?.sortedWith(compareBy<EpisodeEntry>({ it.season ?: Int.MAX_VALUE }, { it.episode ?: Int.MAX_VALUE }, { it.recordedAt })) ?: emptyList()
+    }
     info?.let { id ->
         BackHandler { info = null }
         DetailsPage(id, refresh, onPlay = onPlayItem)
         return
     }
-    var episodes by remember { mutableStateOf<List<LiveTvRepository.EpisodeRecording>?>(null) }
-    var loaded by remember { mutableStateOf(false) }
-    val first = remember { FocusRequester() }
-    LaunchedEffect(show.id) {
-        episodes = Jdvr.liveTv.showRecordings(show.id, filter)
-        loaded = true
-    }
-    LaunchedEffect(episodes) { if (!episodes.isNullOrEmpty()) runCatching { first.requestFocus() } }
-
-    Column(Modifier.fillMaxSize().padding(start = 28.dp, top = 24.dp, end = 28.dp)) {
-        Text(show.name, color = Jc.Text, fontSize = 28.sp, fontWeight = FontWeight.SemiBold)
-        Text("Back for all Recorded Shows", color = Jc.Muted, fontSize = 14.sp)
-        Spacer(14)
-        val list = episodes
-        when {
-            !loaded -> Text("Loading…", color = Jc.Muted, fontSize = 16.sp)
-            list.isNullOrEmpty() -> Text("No recordings of this show here.", color = Jc.Muted, fontSize = 16.sp)
-            else ->
-                LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp), contentPadding = PaddingValues(bottom = 40.dp)) {
-                    itemsIndexed(list, key = { _, e -> e.id }) { i, e ->
-                        Row(Modifier.fillMaxWidth().height(60.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Surface(
-                            onClick = { e.id.toUuid()?.let(onPlay) },
-                            modifier = (if (i == 0) Modifier.focusRequester(first).focusRequester(entry) else Modifier).weight(1f).fillMaxHeight(),
-                            shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(10.dp)),
-                            colors = ClickableSurfaceDefaults.colors(containerColor = Jc.Panel, focusedContainerColor = Jc.FocusFill, contentColor = Jc.Text, focusedContentColor = Jc.Text),
-                            border = ClickableSurfaceDefaults.border(focusedBorder = Border(BorderStroke(2.dp, Jc.Focus))),
-                            scale = ClickableSurfaceDefaults.scale(focusedScale = 1.01f),
-                        ) {
-                            Row(Modifier.fillMaxSize().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                                Text(local(e.recordedUtc)?.let { "${it.day()} ${it.time()}" } ?: "", color = Jc.Muted, fontSize = 15.sp, modifier = Modifier.width(150.dp))
-                                Text(e.name, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                                if (e.archived && filter == Prefs.ALL) Badge("Archive", Jc.Panel2)
-                                if (e.partial) Badge("Partial${e.minutes?.let { " · $it min" } ?: ""}", Jc.Amber, dark = true)
-                                if (e.played) Chip("watched", Jc.Green)
-                            }
-                        }
-                        Button("Info") { info = e.id.toUuid() }
-                        }
-                    }
-                }
-        }
-    }
+    EpisodeBrowser(
+        seriesId = show.id.toUuid(),
+        title = show.name,
+        subtitle = episodes?.let { "${it.size} recording" + (if (it.size == 1) "" else "s") },
+        entries = episodes,
+        entry = entry,
+        onPlay = { onPlay(it.id) },
+        onInfo = { info = it.id },
+        emptyText = "No recordings of this show here.",
+    )
 }
