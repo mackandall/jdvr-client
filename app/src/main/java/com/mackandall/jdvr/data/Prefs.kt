@@ -52,6 +52,31 @@ class Prefs(
         p.edit().putString("subtitles", v).apply()
     }
 
+    /** Weather on Home (Open-Meteo): on/off, the town (name and coordinates), °F or °C. */
+    var weatherOn by mutableStateOf(p.getBoolean("weatherOn", true))
+        private set
+    var weatherPlace by mutableStateOf(
+        p.getString("weatherName", null)?.let { n -> Place(n, p.getFloat("weatherLat", 0f).toDouble(), p.getFloat("weatherLon", 0f).toDouble()) },
+    )
+        private set
+    var fahrenheit by mutableStateOf(p.getBoolean("fahrenheit", true))
+        private set
+
+    fun changeWeatherOn(v: Boolean) {
+        weatherOn = v
+        p.edit().putBoolean("weatherOn", v).apply()
+    }
+
+    fun changeWeatherPlace(v: Place) {
+        weatherPlace = v
+        p.edit().putString("weatherName", v.name).putFloat("weatherLat", v.latitude.toFloat()).putFloat("weatherLon", v.longitude.toFloat()).apply()
+    }
+
+    fun changeFahrenheit(v: Boolean) {
+        fahrenheit = v
+        p.edit().putBoolean("fahrenheit", v).apply()
+    }
+
     fun toggleLibrary(id: String) {
         hiddenLibraries = if (id in hiddenLibraries) hiddenLibraries - id else hiddenLibraries + id
         p.edit().putStringSet("hiddenLibraries", hiddenLibraries).apply()

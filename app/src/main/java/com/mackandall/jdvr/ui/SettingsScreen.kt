@@ -12,6 +12,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.foundation.border
+import androidx.compose.foundation.background
+import kotlinx.coroutines.launch
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -72,6 +80,18 @@ fun SettingsScreen(
                 ) { prefs.toggleLibrary(l.id.toString()) }
             }
         }
+        Section("Weather on Home")
+        Choice(
+            label = "Weather",
+            help = "Today's weather and a sky to match behind Home (from Open-Meteo: only your town is sent).",
+            value = if (prefs.weatherOn) "Shown" else "Off",
+        ) { prefs.changeWeatherOn(!prefs.weatherOn) }
+        Choice(
+            label = "Temperature",
+            help = "Degrees Fahrenheit or Celsius.",
+            value = if (prefs.fahrenheit) "°F" else "°C",
+        ) { prefs.changeFahrenheit(!prefs.fahrenheit) }
+        TownRow()
         Section("Playback")
         Choice(
             label = "Subtitles",
@@ -129,5 +149,49 @@ private fun Choice(
             }
             Text(value, color = Jc.Focus, fontSize = 16.sp, modifier = Modifier.width(260.dp))
         }
+    }
+}
+
+/** The weather's town: type it (on-screen keyboard), Find looks it up and keeps the best match. */
+@Composable
+private fun TownRow() {
+    val prefs = Jdvr.prefs
+    var text by remember { mutableStateOf("") }
+    var note by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+    Column(Modifier.fillMaxWidth(0.8f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text("Town: " + (prefs.weatherPlace?.name ?: "not set"), color = Jc.Text, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            androidx.compose.foundation.text.BasicTextField(
+                value = text,
+                onValueChange = { text = it },
+                singleLine = true,
+                textStyle = androidx.compose.ui.text.TextStyle(color = Jc.Text, fontSize = 16.sp),
+                cursorBrush = androidx.compose.ui.graphics.SolidColor(Jc.Focus),
+                modifier =
+                    Modifier
+                        .weight(1f)
+                        .border(BorderStroke(2.dp, Jc.Line), RoundedCornerShape(10.dp))
+                        .background(Jc.Panel2, RoundedCornerShape(10.dp))
+                        .padding(horizontal = 12.dp, vertical = 11.dp),
+                decorationBox = { inner ->
+                    if (text.isEmpty()) Text("Town, e.g. Atlanta or Springfield, IL", color = Jc.Muted, fontSize = 16.sp)
+                    inner()
+                },
+            )
+            Button("Find", primary = true) {
+                val q = text.trim()
+                if (q.isEmpty()) return@Button
+                scope.launch {
+                    note =
+                        runCatching { com.mackandall.jdvr.data.Weather.find(q) }.getOrNull()?.let {
+                            prefs.changeWeatherPlace(it)
+                            text = ""
+                            "Weather for ${it.name}"
+                        } ?: "Couldn't find \"$q\" (check the spelling, or add the state: Springfield, IL)"
+                }
+            }
+        }
+        note?.let { Text(it, color = Jc.Muted, fontSize = 14.sp) }
     }
 }

@@ -51,6 +51,15 @@ import java.time.LocalDateTime
 import java.time.ZoneId
 import java.util.UUID
 
+/** Home's panels: see-through over the weather sky, solid otherwise. */
+private val LocalSeeThrough = androidx.compose.runtime.compositionLocalOf { false }
+
+@Composable
+private fun homePanel() = if (LocalSeeThrough.current) Jc.Panel.copy(alpha = 0.62f) else Jc.Panel
+
+@Composable
+private fun homePanel2() = if (LocalSeeThrough.current) Jc.Panel2.copy(alpha = 0.72f) else Jc.Panel2
+
 private fun localOf(iso: String?): LocalDateTime? = iso?.let { runCatching { LocalDateTime.ofInstant(Instant.parse(it), ZoneId.systemDefault()) }.getOrNull() }
 
 /**
@@ -72,6 +81,18 @@ fun HomeScreen(
     var tuners by remember { mutableStateOf<LiveTvRepository.TunerStatus?>(null) }
     var bufferIds by remember { mutableStateOf<Set<String>>(emptySet()) }
     var now by remember { mutableStateOf(LocalDateTime.now()) }
+    // Today's weather (Settings › Weather on Home), refreshed every 15 minutes.
+    val prefs = Jdvr.prefs
+    var weather by remember { mutableStateOf<com.mackandall.jdvr.data.WeatherNow?>(null) }
+    LaunchedEffect(prefs.weatherOn, prefs.weatherPlace, prefs.fahrenheit) {
+        weather = null
+        val place = prefs.weatherPlace ?: return@LaunchedEffect
+        if (!prefs.weatherOn) return@LaunchedEffect
+        while (true) {
+            runCatching { com.mackandall.jdvr.data.Weather.now(place, prefs.fahrenheit) }.getOrNull()?.let { weather = it }
+            delay(15 * 60_000L)
+        }
+    }
     val scope = rememberCoroutineScope()
     val symbols = rememberMarkSymbols()
 
@@ -89,6 +110,14 @@ fun HomeScreen(
         }
     }
 
+    val w = weather
+    androidx.compose.runtime.CompositionLocalProvider(LocalSeeThrough provides (w != null)) {
+    Box(Modifier.fillMaxSize()) {
+    if (w != null) {
+        WeatherBackdrop(w.sky, w.isDay)
+        // A light shade so text stays readable on bright skies.
+        Box(Modifier.fillMaxSize().background(Jc.Ink.copy(alpha = 0.25f)))
+    }
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(start = 28.dp, top = 18.dp, end = 28.dp, bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
@@ -103,9 +132,17 @@ fun HomeScreen(
                         "${t.busy.size} of ${t.capacity} tuners in use",
                         color = Jc.Text,
                         fontSize = 14.sp,
-                        modifier = Modifier.background(Jc.Panel, RoundedCornerShape(50)).padding(horizontal = 12.dp, vertical = 5.dp),
+                        modifier = Modifier.background(homePanel(), RoundedCornerShape(50)).padding(horizontal = 12.dp, vertical = 5.dp),
                     )
                 }
+            }
+            w?.let { x ->
+                Text(
+                    "${x.temperature}° ${x.label}" + (if (x.high != null && x.low != null) " · H ${x.high}° L ${x.low}°" else "") + (prefs.weatherPlace?.name?.substringBefore(',')?.let { " · $it" } ?: ""),
+                    color = Jc.Text,
+                    fontSize = 14.sp,
+                    modifier = Modifier.background(homePanel(), RoundedCornerShape(50)).padding(horizontal = 12.dp, vertical = 5.dp),
+                )
             }
             Text("${now.day()} · ${now.time()}", color = Jc.Text, fontSize = 16.sp)
         }
@@ -114,7 +151,7 @@ fun HomeScreen(
         Row(Modifier.fillMaxWidth().height(196.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             LiveCard(last, fromStart, symbols, entry, Modifier.weight(1f).fillMaxHeight(), onPlayChannel, onPlayRecording, onGuide = { onOpenScreen(com.mackandall.jdvr.Screen.Guide) })
             Column(
-                Modifier.width(300.dp).fillMaxHeight().background(Jc.Panel, RoundedCornerShape(14.dp)).padding(14.dp),
+                Modifier.width(300.dp).fillMaxHeight().background(homePanel(), RoundedCornerShape(14.dp)).padding(14.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Text("RECORDING NOW", color = Jc.Muted, fontSize = 12.sp, fontWeight = FontWeight.Bold)
@@ -172,6 +209,8 @@ fun HomeScreen(
             HomeChip("All scheduled ›") { onOpenScreen(com.mackandall.jdvr.Screen.Scheduled) }
         }
     }
+    }
+    }
 }
 
 @Composable
@@ -184,7 +223,7 @@ private fun HomeChip(
         onClick = onClick,
         modifier = modifier,
         shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(50)),
-        colors = ClickableSurfaceDefaults.colors(containerColor = Jc.Panel, focusedContainerColor = Jc.FocusFill, contentColor = Jc.Text, focusedContentColor = Jc.Text),
+        colors = ClickableSurfaceDefaults.colors(containerColor = homePanel(), focusedContainerColor = Jc.FocusFill, contentColor = Jc.Text, focusedContentColor = Jc.Text),
         border = ClickableSurfaceDefaults.border(focusedBorder = Border(BorderStroke(2.dp, Jc.Focus))),
         scale = ClickableSurfaceDefaults.scale(focusedScale = 1.03f),
     ) {
@@ -205,7 +244,7 @@ private fun LiveCard(
 ) {
     val p = channel?.now
     Column(
-        modifier.background(Jc.Panel, RoundedCornerShape(14.dp)).padding(horizontal = 20.dp, vertical = 16.dp),
+        modifier.background(homePanel(), RoundedCornerShape(14.dp)).padding(horizontal = 20.dp, vertical = 16.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         Text("BACK TO LIVE · LAST CHANNEL", color = Jc.Muted, fontSize = 12.sp, fontWeight = FontWeight.Bold)
@@ -249,7 +288,7 @@ private fun SmallRow(
         onClick = onClick,
         modifier = Modifier.fillMaxWidth(),
         shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(9.dp)),
-        colors = ClickableSurfaceDefaults.colors(containerColor = Jc.Panel2, focusedContainerColor = Jc.FocusFill, contentColor = Jc.Text, focusedContentColor = Jc.Text),
+        colors = ClickableSurfaceDefaults.colors(containerColor = homePanel2(), focusedContainerColor = Jc.FocusFill, contentColor = Jc.Text, focusedContentColor = Jc.Text),
         border = ClickableSurfaceDefaults.border(focusedBorder = Border(BorderStroke(2.dp, Jc.Focus))),
         scale = ClickableSurfaceDefaults.scale(focusedScale = 1.02f),
     ) {
@@ -274,7 +313,7 @@ private fun NewCard(
             onClick = onClick,
             modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f),
             shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(9.dp)),
-            colors = ClickableSurfaceDefaults.colors(containerColor = Jc.Panel2, focusedContainerColor = Jc.Panel2),
+            colors = ClickableSurfaceDefaults.colors(containerColor = homePanel2(), focusedContainerColor = homePanel2()),
             border = ClickableSurfaceDefaults.border(focusedBorder = Border(BorderStroke(3.dp, Jc.Focus))),
             scale = ClickableSurfaceDefaults.scale(focusedScale = 1.05f),
         ) {
