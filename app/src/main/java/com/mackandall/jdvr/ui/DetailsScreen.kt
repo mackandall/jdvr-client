@@ -17,6 +17,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
+import androidx.compose.foundation.gestures.BringIntoViewSpec
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -99,8 +104,14 @@ fun DetailsPage(
         Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(0f to Jc.Ink.copy(alpha = 0.97f), 0.55f to Jc.Ink.copy(alpha = 0.86f), 1f to Jc.Ink.copy(alpha = 0.35f))))
         Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0.6f to Jc.Ink.copy(alpha = 0f), 1f to Jc.Ink.copy(alpha = 0.9f))))
 
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(start = 36.dp, top = 28.dp, end = 36.dp, bottom = 28.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+        // TV's default scrolling pulls the focused button to ~30% down the screen, which cut off the
+        // top of the page. Here it scrolls only as far as needed (to reach the cast), and back to
+        // the top whenever the title and buttons get focus.
+        val scroll = rememberScrollState()
+        @OptIn(ExperimentalFoundationApi::class)
+        CompositionLocalProvider(LocalBringIntoViewSpec provides MinimalScroll) {
+        Column(Modifier.fillMaxSize().verticalScroll(scroll).padding(start = 36.dp, top = 28.dp, end = 36.dp, bottom = 28.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(Modifier.onFocusChanged { if (it.hasFocus) scope.launch { scroll.animateScrollTo(0) } }, horizontalArrangement = Arrangement.spacedBy(24.dp)) {
                 AsyncImage(
                     model = Jdvr.liveTv.imageUrl(item.id, 480),
                     contentDescription = item.name,
@@ -166,8 +177,28 @@ fun DetailsPage(
                 }
             }
         }
+        }
     }
 }
+
+/** Scrolls a focused item just into view (no TV-style pivot), or not at all when it's already in view. */
+@OptIn(ExperimentalFoundationApi::class)
+private val MinimalScroll =
+    object : BringIntoViewSpec {
+        override fun calculateScrollDistance(
+            offset: Float,
+            size: Float,
+            containerSize: Float,
+        ): Float {
+            val trailing = offset + size
+            return when {
+                offset >= 0 && trailing <= containerSize -> 0f
+                offset < 0 && trailing > containerSize -> 0f
+                kotlin.math.abs(offset) < kotlin.math.abs(trailing - containerSize) -> offset
+                else -> trailing - containerSize
+            }
+        }
+    }
 
 @Composable
 private fun Info(
