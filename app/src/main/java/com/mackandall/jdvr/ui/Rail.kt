@@ -24,7 +24,11 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -46,7 +50,26 @@ fun Rail(
     onSelectLibrary: (com.mackandall.jdvr.data.LiveTvRepository.Library) -> Unit = {},
     onDismiss: () -> Unit = {},
 ) {
-    val current = remember { FocusRequester() }
+    // Every item in on-screen order (sections up to Recorded Shows, the libraries, the rest,
+    // Settings, Sign out), each with a stable focus handle; ▲▼ go to the item above/below
+    // explicitly, so focus never slips out of the rail into the screen behind.
+    val sections = Screen.entries.filter { it != Screen.Settings && it != Screen.Library }
+    val split = sections.indexOf(Screen.RecordedShows) + 1
+    data class Entry(val label: String, val on: Boolean, val click: () -> Unit)
+    val entries =
+        sections.take(split).map { s -> Entry(s.label, s == selected) { onSelect(s) } } +
+            libraries.map { l -> Entry(l.name, selected == Screen.Library && l.id == selectedLibrary) { onSelectLibrary(l) } } +
+            sections.drop(split).map { s -> Entry(s.label, s == selected) { onSelect(s) } } +
+            listOf(Entry(Screen.Settings.label, selected == Screen.Settings) { onSelect(Screen.Settings) }, Entry("Sign out", false, onSignOut))
+    val count = entries.size
+    val reqs = remember(count) { List(count) { FocusRequester() } }
+    val current = reqs[entries.indexOfFirst { it.on }.coerceAtLeast(0)]
+    fun slot(i: Int): Modifier =
+        Modifier.focusRequester(reqs[i]).focusProperties {
+            up = if (i > 0) reqs[i - 1] else FocusRequester.Cancel
+            down = if (i < count - 1) reqs[i + 1] else FocusRequester.Cancel
+            left = FocusRequester.Cancel
+        }
     var hadFocus by remember { mutableStateOf(false) }
     // Keep asking until the rail really has focus: a screen still settling (a grid loading,
     // restoring its focus) can take it back, and then the rail would never notice focus leaving.
@@ -71,26 +94,15 @@ fun Rail(
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Text("JDVR", color = Jc.Focus, fontWeight = FontWeight.Bold, fontSize = 18.sp, modifier = Modifier.padding(start = 10.dp, bottom = 6.dp))
-            // Sections and libraries scroll if they outgrow the screen; Settings stays at the bottom.
+            // One scrolling list (no boundary for focus to cross), dividers around the libraries and
+            // above Settings.
             Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Screen.entries.filter { it != Screen.Settings && it != Screen.Library }.forEach { s ->
-                RailItem(s.label, s == selected, if (s == selected) Modifier.focusRequester(current) else Modifier) { onSelect(s) }
-                // The server's libraries, one entry each, after Recorded Shows.
-                if (s == Screen.RecordedShows && libraries.isNotEmpty()) {
-                    Box(Modifier.padding(horizontal = 12.dp, vertical = 2.dp).width(168.dp).height(1.dp).background(Jc.Line))
-                    libraries.forEach { l ->
-                        val on = selected == Screen.Library && l.id == selectedLibrary
-                        RailItem(l.name, on, if (on) Modifier.focusRequester(current) else Modifier) { onSelectLibrary(l) }
-                    }
-                    Box(Modifier.padding(horizontal = 12.dp, vertical = 2.dp).width(168.dp).height(1.dp).background(Jc.Line))
+                entries.forEachIndexed { i, e ->
+                    val divider = (libraries.isNotEmpty() && (i == split || i == split + libraries.size)) || i == count - 2
+                    if (divider) Box(Modifier.padding(horizontal = 12.dp, vertical = 2.dp).width(168.dp).height(1.dp).background(Jc.Line))
+                    RailItem(e.label, e.on, slot(i), e.click)
                 }
             }
-            }
-            // App-wide preferences sit apart from the content sections, at the bottom.
-            RailItem(Screen.Settings.label, selected == Screen.Settings, if (selected == Screen.Settings) Modifier.focusRequester(current) else Modifier) {
-                onSelect(Screen.Settings)
-            }
-            RailItem("Sign out", false, Modifier, onSignOut)
         }
     }
 }
