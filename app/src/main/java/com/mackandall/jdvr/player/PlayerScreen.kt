@@ -140,6 +140,8 @@ fun PlayerScreen(
                 }
         }
 
+    val formats = rememberPlayingFormats(player)
+
     DisposableEffect(Unit) {
         val listener =
             object : Player.Listener {
@@ -518,7 +520,7 @@ fun PlayerScreen(
             tick.let {
                 val offset = if (onHls) player.currentLiveOffset.takeIf { it != androidx.media3.common.C.TIME_UNSET } ?: 0L else 0L
                 val realRecording = buffers.currentBuffer()?.kept == true || channel?.now?.let { it.timerId != null && it.id.toString().plainId() !in bufferIds } == true
-                InfoBar(channel, symbols, Modifier.align(Alignment.BottomCenter), behindMs = if (offset > 15_000) offset else 0L, recording = realRecording) {
+                InfoBar(channel, symbols, Modifier.align(Alignment.BottomCenter), behindMs = if (offset > 15_000) offset else 0L, recording = realRecording, formats = formats) {
                     if (actionsOpen) {
                         val b = buffers.currentBuffer()
                         val behind = onHls
@@ -754,6 +756,7 @@ private fun InfoBar(
     modifier: Modifier,
     behindMs: Long = 0L,
     recording: Boolean = false,
+    formats: PlayingFormats? = null,
     actions: @Composable () -> Unit = {},
 ) {
     val now = channel?.now
@@ -762,13 +765,16 @@ private fun InfoBar(
         modifier.fillMaxWidth().background(Color(0xF00D1117)).padding(horizontal = 36.dp, vertical = 22.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
+        TitleWithFormats(formats, Modifier.fillMaxWidth()) {
         Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             Text(
                 listOfNotNull(channel?.number, channel?.name).joinToString("  "),
                 color = Jc.Muted,
                 fontSize = 18.sp,
+                maxLines = 1,
+                softWrap = false,
             )
-            Text(now?.name ?: "", color = Jc.Text, fontSize = 26.sp, fontWeight = FontWeight.SemiBold)
+            Text(now?.name ?: "", color = Jc.Text, fontSize = 26.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
             MarkChips(marks)
             if (behindMs > 0) {
                 val sec = behindMs / 1000
@@ -776,10 +782,13 @@ private fun InfoBar(
                     "−" + (if (sec >= 3600) "%d:%02d:%02d".format(sec / 3600, sec / 60 % 60, sec % 60) else "%d:%02d".format(sec / 60, sec % 60)) + " behind live",
                     color = Jc.Amber,
                     fontSize = 16.sp,
+                    maxLines = 1,
+                    softWrap = false,
                 )
             } else {
-                Text("● LIVE", color = Jc.Recording, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                Text("● LIVE", color = Jc.Recording, fontSize = 15.sp, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
             }
+        }
         }
         val sub = listOfNotNull(now?.seasonEpisode, marks.title).joinToString(" · ")
         if (sub.isNotEmpty()) Text(sub, color = Jc.Text, fontSize = 16.sp)

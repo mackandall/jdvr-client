@@ -40,6 +40,7 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -138,6 +139,8 @@ fun RecordingPlayerScreen(
                     applySubtitlePreference(this)
                 }
         }
+
+    val formats = rememberPlayingFormats(player)
 
     DisposableEffect(Unit) {
         val listener =
@@ -400,10 +403,12 @@ fun RecordingPlayerScreen(
                 Modifier.align(Alignment.BottomCenter).fillMaxWidth().background(Color(0xF00D1117)).padding(horizontal = 36.dp, vertical = 22.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                    Text(playback?.name ?: "", color = Jc.Text, fontSize = 24.sp, fontWeight = FontWeight.SemiBold)
-                    if (inProgress) Text("● still recording", color = Jc.Recording, fontSize = 15.sp)
-                    buffer?.let { Text(if (it.kept) "Live TV buffer · kept" else "Live TV buffer", color = Jc.Muted, fontSize = 15.sp) }
+                TitleWithFormats(formats, Modifier.fillMaxWidth()) {
+                    Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                        Text(playback?.name ?: "", color = Jc.Text, fontSize = 24.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                        if (inProgress) Text("● still recording", color = Jc.Recording, fontSize = 15.sp, maxLines = 1, softWrap = false)
+                        buffer?.let { Text(if (it.kept) "Live TV buffer · kept" else "Live TV buffer", color = Jc.Muted, fontSize = 15.sp, maxLines = 1, softWrap = false) }
+                    }
                 }
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                     Text(clock(position), color = Jc.Muted, fontSize = 14.sp)
