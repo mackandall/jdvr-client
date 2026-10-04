@@ -239,7 +239,7 @@ private fun EpisodePane(
             contentScale = ContentScale.Crop,
             modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f).clip(RoundedCornerShape(8.dp)).background(Jc.Panel2),
         )
-        Text(e.name, color = Jc.Text, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        Text(e.shortName(), color = Jc.Text, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
         Text(
             listOfNotNull(
                 e.seasonEpisode,
@@ -361,7 +361,7 @@ private fun TilesView(
             Column(Modifier.padding(horizontal = 36.dp).fillMaxWidth(0.62f).height(128.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     focused.seasonEpisode?.let { Text(it, color = Jc.Muted, fontSize = 16.sp) }
-                    Text(focused.name, color = Jc.Text, fontSize = 20.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(focused.shortName(), color = Jc.Text, fontSize = 20.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     d?.premiere?.let { Text(it.format(java.time.format.DateTimeFormatter.ofPattern("MMM d, yyyy")), color = Jc.Text, fontSize = 13.sp) }
