@@ -47,6 +47,7 @@ import java.util.UUID
 enum class Screen(
     val label: String,
 ) {
+    Search("Search"),
     Home("Home"),
     Guide("Guide"),
     LiveTv("Live TV"),
@@ -196,6 +197,7 @@ fun AppRoot() {
                     currentLibrary?.let { lib ->
                         androidx.compose.runtime.key(lib.id) { LibraryScreen(library = lib, entry = entry, refresh = played, onPlay = { playingRecording = it }) }
                     }
+                Screen.Search -> com.mackandall.jdvr.ui.SearchScreen(entry = entry, refresh = played, onPlayChannel = { playingChannel = it }, onPlay = { playingRecording = it })
                 Screen.Scheduled -> ScheduledScreen(entry = entry)
                 Screen.Series -> SeriesScreen(entry = entry)
                 Screen.Settings -> SettingsScreen(entry = entry, libraries = libraries)

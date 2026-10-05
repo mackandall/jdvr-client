@@ -23,7 +23,17 @@ import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -49,7 +59,12 @@ import coil3.compose.AsyncImage
 import com.mackandall.jdvr.PlayRecording
 import com.mackandall.jdvr.data.Jdvr
 import com.mackandall.jdvr.data.LiveTvRepository
+import com.mackandall.jdvr.data.letterOf
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.util.UUID
 
 private const val PAGE = 120
@@ -78,8 +93,9 @@ fun LibraryScreen(
 ) {
     var show by remember { mutableStateOf<LiveTvRepository.LibItem?>(null) }
     var movie by remember { mutableStateOf<LiveTvRepository.LibItem?>(null) }
-    // What was opened, to put focus back on it after Back.
+    // What was opened (and where in the list), to put focus back on it after Back.
     var lastItem by remember { mutableStateOf<UUID?>(null) }
+    var lastIndex by remember { mutableIntStateOf(0) }
 
     val m = movie
     val s = show
@@ -96,8 +112,9 @@ fun LibraryScreen(
             ShowPage(s, refresh, onPlay)
         }
         else ->
-            LibraryGrid(library, entry, lastItem, refresh) {
+            LibraryGrid(library, entry, lastItem, lastIndex, refresh) { it, i ->
                 lastItem = it.id
+                lastIndex = i
                 if (it.type == "Series") show = it else movie = it
             }
     }
@@ -108,36 +125,80 @@ private fun LibraryGrid(
     library: LiveTvRepository.Library,
     entry: FocusRequester,
     restore: UUID?,
+    restoreIndex: Int,
     refresh: Int,
-    onOpen: (LiveTvRepository.LibItem) -> Unit,
+    onOpen: (LiveTvRepository.LibItem, Int) -> Unit,
 ) {
     // Remembered per library, so it opens the way it was left.
     val newest = library.id.toString() in Jdvr.prefs.newestLibraries
     var items by remember(newest) { mutableStateOf<List<LiveTvRepository.LibItem>>(emptyList()) }
     var total by remember(newest) { mutableIntStateOf(-1) }
-    var loading by remember { mutableStateOf(false) }
+    // Bumped on every reload, so a page still arriving for the old list is dropped.
+    var generation by remember { mutableIntStateOf(0) }
+    val loadLock = remember { Mutex() }
     val scope = rememberCoroutineScope()
     val first = remember { FocusRequester() }
+    val grid = rememberLazyGridState()
 
-    fun loadMore() {
-        if (loading || (total >= 0 && items.size >= total)) return
-        loading = true
-        scope.launch {
-            runCatching { Jdvr.liveTv.libraryItems(library.id, newest, items.size, PAGE) }.getOrNull()?.let { (page, t) ->
+    // A–Z only: every item's letter (same order as the grid), where each letter starts, and a
+    // focus handle per letter for Left out of the grid's first column.
+    var letters by remember(newest) { mutableStateOf<List<String>>(emptyList()) }
+    val firstOf = remember(letters) { buildMap { letters.forEachIndexed { i, l -> putIfAbsent(l, i) } } }
+    val letterReqs = remember { LETTERS.associateWith { FocusRequester() } }
+    // The posters on screen, by index, to focus one after a jump.
+    val itemReqs = remember { mutableMapOf<Int, FocusRequester>() }
+    var focusedIndex by remember { mutableIntStateOf(0) }
+    val currentLetter = letters.getOrNull(focusedIndex) ?: items.getOrNull(focusedIndex)?.let { letterOf(it.name) }
+
+    // Loads pages until [through] is in the list (or the library ends).
+    suspend fun fetch(through: Int) =
+        loadLock.withLock {
+            val gen = generation
+            while (items.size <= through && (total < 0 || items.size < total)) {
+                val (page, t) = runCatching { Jdvr.liveTv.libraryItems(library.id, newest, items.size, PAGE) }.getOrNull() ?: break
+                if (gen != generation) break
                 items = items + page
                 total = t
+                if (page.isEmpty()) break
             }
-            loading = false
         }
+
+    fun loadMore() {
+        if (!loadLock.isLocked) scope.launch { fetch(items.size) }
     }
     val movesFinished by MoveWatcher.finished.collectAsState()
     LaunchedEffect(newest, refresh, movesFinished) {
+        generation++
         items = emptyList()
         total = -1
-        loading = false
-        loadMore()
+        // Back from an item far down the list: load up to it and scroll there, so its poster can take focus.
+        fetch(restoreIndex + 21)
+        if (restore != null && restoreIndex > 0) runCatching { grid.scrollToItem(restoreIndex) }
+        letters = if (newest) emptyList() else runCatching { Jdvr.liveTv.libraryLetters(library.id) }.getOrDefault(emptyList())
     }
     LaunchedEffect(items.isNotEmpty()) { if (items.isNotEmpty() && restore == null) runCatching { first.requestFocus() } }
+
+    var jumpJob by remember { mutableStateOf<Job?>(null) }
+    // Scrolls the grid to the letter's first item; with [focus], puts the cursor on it.
+    fun jump(
+        letter: String,
+        focus: Boolean,
+    ) {
+        val idx = firstOf[letter] ?: return
+        jumpJob?.cancel()
+        jumpJob =
+            scope.launch {
+                fetch(idx + 35)
+                runCatching { grid.scrollToItem(idx) }
+                if (focus) {
+                    repeat(20) {
+                        delay(40)
+                        val r = itemReqs[idx] ?: return@repeat
+                        if (runCatching { r.requestFocus() }.isSuccess) return@launch
+                    }
+                }
+            }
+    }
 
     Column(Modifier.fillMaxSize().padding(start = 28.dp, top = 20.dp, end = 28.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -151,25 +212,118 @@ private fun LibraryGrid(
             total < 0 -> Text("Loading…", color = Jc.Muted, fontSize = 16.sp)
             items.isEmpty() -> Text("Nothing in this library.", color = Jc.Muted, fontSize = 16.sp)
             else ->
-                LazyVerticalGrid(
-                    columns = GridCells.Fixed(7),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(14.dp),
-                    contentPadding = PaddingValues(bottom = 40.dp),
-                ) {
-                    itemsIndexed(items, key = { _, it -> it.id }) { i, it ->
-                        if (i >= items.size - 14) LaunchedEffect(items.size) { loadMore() }
-                        val back = remember { FocusRequester() }
-                        LaunchedEffect(Unit) { if (it.id == restore) runCatching { back.requestFocus() } }
-                        Poster(it, (if (i == 0) Modifier.focusRequester(first).focusRequester(entry) else Modifier).focusRequester(back)) { onOpen(it) }
+                Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                    val strip = !newest && letters.isNotEmpty()
+                    if (strip) {
+                        LetterStrip(
+                            present = firstOf.keys,
+                            current = currentLetter,
+                            reqs = letterReqs,
+                            onPreview = { if (it != currentLetter) jump(it, focus = false) },
+                            onEnter = { l ->
+                                // Back to the poster it came from when the letter hasn't changed.
+                                val back = itemReqs[focusedIndex].takeIf { l == currentLetter }
+                                if (back == null || runCatching { back.requestFocus() }.isFailure) jump(l, focus = true)
+                            },
+                        )
+                    }
+                    LazyVerticalGrid(
+                        state = grid,
+                        columns = GridCells.Fixed(7),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(14.dp),
+                        contentPadding = PaddingValues(bottom = 40.dp),
+                    ) {
+                        itemsIndexed(items, key = { _, it -> it.id }) { i, it ->
+                            if (i >= items.size - 14) LaunchedEffect(items.size) { loadMore() }
+                            val back = remember { FocusRequester() }
+                            DisposableEffect(i, back) {
+                                itemReqs[i] = back
+                                onDispose { if (itemReqs[i] === back) itemReqs.remove(i) }
+                            }
+                            LaunchedEffect(Unit) { if (it.id == restore) runCatching { back.requestFocus() } }
+                            val letter = letters.getOrNull(i) ?: letterOf(it.name)
+                            Poster(
+                                it,
+                                (if (i == 0) Modifier.focusRequester(first).focusRequester(entry) else Modifier)
+                                    .focusRequester(back)
+                                    .onFocusChanged { f -> if (f.isFocused) focusedIndex = i }
+                                    // First column: Left goes to this item's letter on the strip.
+                                    .then(if (strip && i % 7 == 0) Modifier.focusProperties { left = letterReqs[letter] ?: FocusRequester.Default } else Modifier),
+                            ) { onOpen(it, i) }
+                        }
                     }
                 }
         }
     }
 }
 
+private val LETTERS = listOf("#") + ('A'..'Z').map { it.toString() }
+
+/**
+ * The A–Z strip beside the grid. Resting on a letter scrolls the grid there; OK or Right goes into
+ * the grid at that letter's first item. Letters with nothing under them are dimmed and skipped.
+ */
 @Composable
-private fun Poster(
+private fun LetterStrip(
+    present: Set<String>,
+    current: String?,
+    reqs: Map<String, FocusRequester>,
+    onPreview: (String) -> Unit,
+    onEnter: (String) -> Unit,
+) {
+    var focused by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(focused) {
+        val l = focused ?: return@LaunchedEffect
+        delay(250)
+        onPreview(l)
+    }
+    Column(
+        Modifier.width(30.dp).fillMaxHeight().padding(bottom = 24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        LETTERS.forEach { l ->
+            val has = l in present
+            Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                if (has) {
+                    Surface(
+                        onClick = { onEnter(l) },
+                        modifier =
+                            Modifier
+                                .fillMaxHeight()
+                                .aspectRatio(1f)
+                                .focusRequester(reqs.getValue(l))
+                                .onFocusChanged { if (it.isFocused) focused = l else if (focused == l) focused = null }
+                                .onPreviewKeyEvent { e ->
+                                    if (e.type == KeyEventType.KeyDown && e.key == Key.DirectionRight) {
+                                        onEnter(l)
+                                        true
+                                    } else {
+                                        false
+                                    }
+                                },
+                        shape = ClickableSurfaceDefaults.shape(CircleShape),
+                        colors =
+                            ClickableSurfaceDefaults.colors(
+                                containerColor = androidx.compose.ui.graphics.Color.Transparent,
+                                focusedContainerColor = Jc.FocusFill,
+                                contentColor = if (l == current) Jc.Focus else Jc.Text,
+                                focusedContentColor = Jc.Text,
+                            ),
+                        scale = ClickableSurfaceDefaults.scale(focusedScale = 1.5f),
+                    ) {
+                        Text(l, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.align(Alignment.Center))
+                    }
+                } else {
+                    Text(l, color = Jc.Line, fontSize = 12.sp)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+internal fun Poster(
     item: LiveTvRepository.LibItem,
     modifier: Modifier,
     onClick: () -> Unit,
@@ -213,7 +367,7 @@ private fun Tag(
 
 /** A show: all its episodes in the episode browser (list with details, or tiles by season). */
 @Composable
-private fun ShowPage(
+internal fun ShowPage(
     show: LiveTvRepository.LibItem,
     refresh: Int,
     onPlay: (PlayRecording) -> Unit,

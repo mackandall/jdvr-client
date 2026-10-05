@@ -553,6 +553,54 @@ class LiveTvRepository {
             r.items.map { toLibItem(it) } to (r.totalRecordCount ?: r.items.size)
         }
 
+    /**
+     * Each item's letter ("#" for digits and symbols), in A–Z order: what the library's letter strip
+     * jumps by. One small reply (names only), however big the library.
+     */
+    suspend fun libraryLetters(libraryId: UUID): List<String> =
+        io {
+            api.itemsApi.getItems(
+                userId = Jdvr.userId,
+                parentId = libraryId,
+                recursive = true,
+                includeItemTypes = listOf(BaseItemKind.MOVIE, BaseItemKind.SERIES, BaseItemKind.VIDEO),
+                sortBy = listOf(ItemSortBy.SORT_NAME),
+                sortOrder = listOf(org.jellyfin.sdk.model.api.SortOrder.ASCENDING),
+                fields = listOf(ItemFields.SORT_NAME),
+                enableImages = false,
+                enableUserData = false,
+            ).content.items.map { letterOf(it.sortName ?: it.name) }
+        }
+
+    /** Movies and shows in every library whose name matches. */
+    suspend fun searchLibrary(term: String): List<LibItem> =
+        io {
+            api.itemsApi.getItems(
+                userId = Jdvr.userId,
+                searchTerm = term,
+                recursive = true,
+                includeItemTypes = listOf(BaseItemKind.MOVIE, BaseItemKind.SERIES, BaseItemKind.VIDEO),
+                limit = 60,
+                fields = listOf(ItemFields.OVERVIEW),
+                enableUserData = true,
+            ).content.items.map { toLibItem(it) }
+        }
+
+    /** Guide programmes whose name matches, still to come or on now, soonest first. */
+    suspend fun searchGuide(term: String): List<Program> =
+        io {
+            val now = LocalDateTime.now()
+            api.itemsApi.getItems(
+                userId = Jdvr.userId,
+                searchTerm = term,
+                recursive = true,
+                includeItemTypes = listOf(BaseItemKind.LIVE_TV_PROGRAM),
+                limit = 200,
+                fields = listOf(ItemFields.OVERVIEW),
+                enableImages = false,
+            ).content.items.mapNotNull { toProgram(it) }.filter { it.end.isAfter(now) }.sortedBy { it.start }
+        }
+
     suspend fun seasons(seriesId: UUID): List<LibItem> =
         io { api.tvShowsApi.getSeasons(seriesId = seriesId, userId = Jdvr.userId, enableUserData = true).content.items.map { toLibItem(it) } }
 
@@ -1248,3 +1296,9 @@ fun String.plainId(): String = replace("-", "").lowercase()
 
 /** Jellyfin ids come without dashes; UUID.fromString needs them. */
 fun String.toUuid(): UUID? = toUUIDOrNull()
+
+/** The letter-strip bucket for a name: its first letter without accents, or "#" for anything else. */
+fun letterOf(name: String?): String {
+    val c = java.text.Normalizer.normalize(name?.trim()?.take(1) ?: "", java.text.Normalizer.Form.NFD).firstOrNull()?.uppercaseChar()
+    return if (c != null && c in 'A'..'Z') c.toString() else "#"
+}
