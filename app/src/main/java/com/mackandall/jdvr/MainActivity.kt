@@ -46,16 +46,18 @@ import java.util.UUID
 /** The sections in the left rail. */
 enum class Screen(
     val label: String,
+    // Its place in Prefs.menuOrder.
+    val key: String,
 ) {
-    Search("Search"),
-    Home("Home"),
-    Guide("Guide"),
-    LiveTv("Live TV"),
-    RecordedShows("Recorded Shows"),
-    Library("Library"),
-    Scheduled("Scheduled"),
-    Series("Series"),
-    Settings("Settings"),
+    Search("Search", "search"),
+    Home("Home", "home"),
+    Guide("Guide", "guide"),
+    LiveTv("Live TV", "livetv"),
+    RecordedShows("Recorded Shows", "recorded"),
+    Library("Library", "libraries"),
+    Scheduled("Scheduled", "scheduled"),
+    Series("Series", "series"),
+    Settings("Settings", "settings"),
 }
 
 /** A recording to play: from where, and (for a live buffer) the channel to go back to. */
@@ -94,6 +96,8 @@ fun AppRoot() {
         screen = s
     }
     var railOpen by remember { mutableStateOf(false) }
+    // The rail uses Right itself just now (Settings icon → Sign out, or opening Libraries).
+    var railKeepsRight by remember { mutableStateOf(false) }
     // The server's video libraries, each its own menu entry (minus the ones hidden in Settings);
     // re-read whenever the app comes back to the front, so new libraries appear by themselves.
     var libraries by remember { mutableStateOf<List<com.mackandall.jdvr.data.LiveTvRepository.Library>>(emptyList()) }
@@ -145,7 +149,7 @@ fun AppRoot() {
             .onPreviewKeyEvent { e ->
                 // Right with the rail open: into the screen, and the rail goes away (whether or not
                 // focus was in the rail).
-                if (railOpen && e.type == KeyEventType.KeyDown && e.key == Key.DirectionRight) {
+                if (railOpen && !railKeepsRight && e.type == KeyEventType.KeyDown && e.key == Key.DirectionRight) {
                     focusManager.moveFocus(FocusDirection.Right)
                     railOpen = false
                     true
@@ -217,6 +221,7 @@ fun AppRoot() {
             Rail(
                 // Focus moved off the rail (Right into the screen): it's done, put it away.
                 onDismiss = { railOpen = false },
+                onKeepsRight = { railKeepsRight = it },
                 selected = screen,
                 onSelect = {
                     backStack.clear()

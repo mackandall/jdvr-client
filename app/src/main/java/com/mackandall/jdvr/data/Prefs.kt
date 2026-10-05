@@ -118,6 +118,81 @@ class Prefs(
         p.edit().putBoolean("fahrenheit", v).apply()
     }
 
+    // ---- the menu (Settings › Menu) ---------------------------------------------------------
+
+    /** The menu's entries in order, by key ([MENU_DEFAULT]); "libraries" is the libraries' place. */
+    var menuOrder by mutableStateOf(normalizeMenu(p.getString("menuOrder", null)))
+        private set
+
+    /** Menu entries left out (by key). Home always stays. */
+    var hiddenMenu by mutableStateOf(p.getStringSet("hiddenMenu", emptySet())?.toSet() ?: emptySet())
+        private set
+
+    /** The libraries' order in the menu (by id); new ones go after these, in the server's order. */
+    var libraryOrder by mutableStateOf(p.getString("libraryOrder", "")!!.split(',').filter { it.isNotEmpty() })
+        private set
+
+    /** Libraries under one "Libraries" entry that opens and closes, or each listed on its own. */
+    var librariesGrouped by mutableStateOf(p.getBoolean("librariesGrouped", true))
+        private set
+
+    /** How the Libraries group is when the menu opens: [OPEN], [CLOSED] or [LAST] (as last left). */
+    var librariesStart by mutableStateOf(p.getString("librariesStart", LAST) ?: LAST)
+        private set
+
+    /** Whether the Libraries group was last left open. */
+    var librariesOpen by mutableStateOf(p.getBoolean("librariesOpen", false))
+        private set
+
+    /** Settings and Sign out as icons beside JDVR at the top of the menu, or as the last entries. */
+    var menuIcons by mutableStateOf(p.getBoolean("menuIcons", true))
+        private set
+
+    fun changeMenuOrder(v: List<String>) {
+        menuOrder = v
+        p.edit().putString("menuOrder", v.joinToString(",")).apply()
+    }
+
+    fun toggleMenu(key: String) {
+        if (key == "home") return
+        hiddenMenu = if (key in hiddenMenu) hiddenMenu - key else hiddenMenu + key
+        p.edit().putStringSet("hiddenMenu", hiddenMenu).apply()
+    }
+
+    fun changeLibraryOrder(v: List<String>) {
+        libraryOrder = v
+        p.edit().putString("libraryOrder", v.joinToString(",")).apply()
+    }
+
+    fun changeLibrariesGrouped(v: Boolean) {
+        librariesGrouped = v
+        p.edit().putBoolean("librariesGrouped", v).apply()
+    }
+
+    fun changeLibrariesStart(v: String) {
+        librariesStart = v
+        p.edit().putString("librariesStart", v).apply()
+    }
+
+    fun changeLibrariesOpen(v: Boolean) {
+        librariesOpen = v
+        p.edit().putBoolean("librariesOpen", v).apply()
+    }
+
+    fun changeMenuIcons(v: Boolean) {
+        menuIcons = v
+        p.edit().putBoolean("menuIcons", v).apply()
+    }
+
+    /** The standard order, everything shown (libraries too). */
+    fun resetMenu() {
+        changeMenuOrder(MENU_DEFAULT)
+        changeLibraryOrder(emptyList())
+        hiddenMenu = emptySet()
+        hiddenLibraries = emptySet()
+        p.edit().putStringSet("hiddenMenu", hiddenMenu).putStringSet("hiddenLibraries", hiddenLibraries).apply()
+    }
+
     fun toggleLibrary(id: String) {
         hiddenLibraries = if (id in hiddenLibraries) hiddenLibraries - id else hiddenLibraries + id
         p.edit().putStringSet("hiddenLibraries", hiddenLibraries).apply()
@@ -155,5 +230,15 @@ class Prefs(
         const val ALL = "all"
         const val LIST = "list"
         const val TILES = "tiles"
+        const val OPEN = "open"
+        const val CLOSED = "closed"
+        const val LAST = "last"
+        val MENU_DEFAULT = listOf("search", "home", "guide", "livetv", "recorded", "libraries", "scheduled", "series")
+
+        /** A saved order, minus keys no longer known, plus new ones at the end. */
+        fun normalizeMenu(saved: String?): List<String> {
+            val known = saved.orEmpty().split(',').filter { it in MENU_DEFAULT }.distinct()
+            return known + MENU_DEFAULT.filter { it !in known }
+        }
     }
 }

@@ -24,6 +24,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -45,6 +50,19 @@ fun SettingsScreen(
     libraries: List<com.mackandall.jdvr.data.LiveTvRepository.Library> = emptyList(),
 ) {
     val prefs = Jdvr.prefs
+    var menuPage by remember { mutableStateOf(false) }
+    var cameBack by remember { mutableStateOf(false) }
+    val menuButton = remember { FocusRequester() }
+    if (menuPage) {
+        androidx.activity.compose.BackHandler {
+            menuPage = false
+            cameBack = true
+        }
+        MenuSettings(libraries)
+        return
+    }
+    // Back from the Menu page: focus where it was opened from.
+    androidx.compose.runtime.LaunchedEffect(Unit) { if (cameBack) runCatching { menuButton.requestFocus() } }
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(start = 28.dp, top = 24.dp, end = 28.dp, bottom = 32.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -80,17 +98,13 @@ fun SettingsScreen(
             help = "Found by Intro Skipper.",
             value = skipLabel(prefs.introSkip),
         ) { prefs.changeIntroSkip(next(prefs.introSkip)) }
-        if (libraries.isNotEmpty()) {
-            Section("Libraries in the menu")
-            libraries.forEach { l ->
-                val hidden = l.id.toString() in prefs.hiddenLibraries
-                Choice(
-                    label = l.name,
-                    help = "A Jellyfin library. New libraries appear in the menu by themselves.",
-                    value = if (hidden) "Hidden" else "Shown in the menu",
-                ) { prefs.toggleLibrary(l.id.toString()) }
-            }
-        }
+        Section("Menu")
+        Choice(
+            label = "Menu entries",
+            help = "Their order, which are shown, the Libraries group, and where Settings and Sign out go.",
+            value = "Arrange…",
+            modifier = Modifier.focusRequester(menuButton),
+        ) { menuPage = true }
         Section("Weather on Home")
         Choice(
             label = "Weather",
@@ -209,5 +223,208 @@ private fun TownRow() {
             }
         }
         note?.let { Text(it, color = Jc.Muted, fontSize = 14.sp) }
+    }
+}
+
+/**
+ * Settings › Menu: the menu's entries in order. OK picks one up, ▲▼ move it, OK puts it down (Back
+ * puts it back where it was); the button beside each shows or hides it. Libraries move as a group,
+ * and each library within it.
+ */
+@Composable
+private fun MenuSettings(libraries: List<com.mackandall.jdvr.data.LiveTvRepository.Library>) {
+    val prefs = Jdvr.prefs
+    val libs = libraries.inMenuOrder()
+    data class MRow(
+        val key: String,
+        val label: String,
+        val child: Boolean,
+    )
+    val rows =
+        prefs.menuOrder.flatMap { k ->
+            if (k == "libraries") {
+                listOf(MRow(k, if (prefs.librariesGrouped) "Libraries" else "Libraries (each on its own line)", false)) +
+                    libs.map { MRow("lib:${it.id}", it.name, true) }
+            } else {
+                listOf(MRow(k, com.mackandall.jdvr.Screen.entries.first { s -> s.key == k }.label, false))
+            }
+        }
+    var lifted by remember { mutableStateOf<String?>(null) }
+    // The order before the pick-up, for Back.
+    var before by remember { mutableStateOf<Pair<List<String>, List<String>>?>(null) }
+    val first = remember { FocusRequester() }
+    androidx.compose.runtime.LaunchedEffect(Unit) { runCatching { first.requestFocus() } }
+
+    fun move(
+        key: String,
+        by: Int,
+    ) {
+        if (key.startsWith("lib:")) {
+            val ids = libs.map { it.id.toString() }.toMutableList()
+            val i = ids.indexOf(key.removePrefix("lib:"))
+            val j = i + by
+            if (i < 0 || j !in ids.indices) return
+            ids.add(j, ids.removeAt(i))
+            prefs.changeLibraryOrder(ids)
+        } else {
+            val order = prefs.menuOrder.toMutableList()
+            val i = order.indexOf(key)
+            val j = i + by
+            if (i < 0 || j !in order.indices) return
+            order.add(j, order.removeAt(i))
+            prefs.changeMenuOrder(order)
+        }
+    }
+    androidx.activity.compose.BackHandler(enabled = lifted != null) {
+        before?.let { (order, libOrder) ->
+            prefs.changeMenuOrder(order)
+            prefs.changeLibraryOrder(libOrder)
+        }
+        lifted = null
+    }
+
+    Column(
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(start = 28.dp, top = 24.dp, end = 28.dp, bottom = 32.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("Settings", color = Jc.Text, fontSize = 28.sp, fontWeight = FontWeight.SemiBold)
+            Text("› Menu", color = Jc.Muted, fontSize = 20.sp, modifier = Modifier.padding(bottom = 3.dp))
+        }
+        Text(
+            "OK picks an entry up, ▲▼ move it, OK puts it down (Back puts it back). The button on the right shows or hides it.",
+            color = Jc.Muted,
+            fontSize = 15.sp,
+            modifier = Modifier.padding(bottom = 6.dp),
+        )
+        rows.forEachIndexed { i, r ->
+            androidx.compose.runtime.key(r.key) {
+                val isLifted = lifted == r.key
+                val hidden =
+                    when {
+                        r.key == "home" -> false
+                        r.child -> r.key.removePrefix("lib:") in prefs.hiddenLibraries
+                        else -> r.key in prefs.hiddenMenu
+                    }
+                Row(
+                    Modifier.fillMaxWidth(0.7f).padding(start = if (r.child) 36.dp else 0.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Surface(
+                        onClick = {
+                            if (lifted == null) {
+                                before = prefs.menuOrder to libs.map { it.id.toString() }
+                                lifted = r.key
+                            } else if (isLifted) {
+                                lifted = null
+                            }
+                        },
+                        modifier =
+                            Modifier
+                                .weight(1f)
+                                .then(if (i == 0) Modifier.focusRequester(first) else Modifier)
+                                .onPreviewKeyEvent { e ->
+                                    // While picked up: ▲▼ move it; nothing else moves focus away.
+                                    if (!isLifted || e.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                                    when (e.key) {
+                                        Key.DirectionUp -> {
+                                            move(r.key, -1)
+                                            true
+                                        }
+                                        Key.DirectionDown -> {
+                                            move(r.key, 1)
+                                            true
+                                        }
+                                        Key.DirectionLeft, Key.DirectionRight -> true
+                                        else -> false
+                                    }
+                                },
+                        shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(10.dp)),
+                        colors =
+                            ClickableSurfaceDefaults.colors(
+                                containerColor = if (isLifted) Jc.FocusFill else Jc.Panel,
+                                focusedContainerColor = Jc.FocusFill,
+                                contentColor = if (hidden) Jc.Muted else Jc.Text,
+                                focusedContentColor = Jc.Text,
+                            ),
+                        border = ClickableSurfaceDefaults.border(focusedBorder = Border(BorderStroke(if (isLifted) 3.dp else 2.dp, Jc.Focus))),
+                        scale = ClickableSurfaceDefaults.scale(focusedScale = if (isLifted) 1.03f else 1.01f),
+                    ) {
+                        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text(if (isLifted) "▲▼" else "⋮⋮", color = if (isLifted) Jc.Focus else Jc.Line, fontSize = 15.sp, fontWeight = FontWeight.Bold, modifier = Modifier.width(34.dp))
+                            Text(r.label, fontSize = 18.sp, modifier = Modifier.weight(1f))
+                            if (isLifted) Text("Moving · OK to place", color = Jc.Focus, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+                    if (r.key == "home") {
+                        Text("Always shown", color = Jc.Muted, fontSize = 15.sp, modifier = Modifier.width(150.dp).padding(start = 14.dp))
+                    } else {
+                        Surface(
+                            onClick = {
+                                if (lifted != null) return@Surface
+                                if (r.child) prefs.toggleLibrary(r.key.removePrefix("lib:")) else prefs.toggleMenu(r.key)
+                            },
+                            modifier = Modifier.width(150.dp),
+                            shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(10.dp)),
+                            colors = ClickableSurfaceDefaults.colors(containerColor = Jc.Panel, focusedContainerColor = Jc.FocusFill, contentColor = if (hidden) Jc.Muted else Jc.Focus, focusedContentColor = Jc.Text),
+                            border = ClickableSurfaceDefaults.border(focusedBorder = Border(BorderStroke(2.dp, Jc.Focus))),
+                        ) {
+                            Text(if (hidden) "Hidden" else "Shown", fontSize = 16.sp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 11.dp))
+                        }
+                    }
+                }
+            }
+        }
+        Section("Options")
+        Choice(
+            label = "Libraries in the menu",
+            help = "One Libraries entry that opens and closes (OK or ►; ◄ closes it), or each library on its own line.",
+            value = if (prefs.librariesGrouped) "Grouped" else "Each on its own line",
+        ) { prefs.changeLibrariesGrouped(!prefs.librariesGrouped) }
+        if (prefs.librariesGrouped) {
+            Choice(
+                label = "Libraries group starts",
+                help = "How the group is when the menu opens.",
+                value =
+                    when (prefs.librariesStart) {
+                        Prefs.OPEN -> "Open"
+                        Prefs.CLOSED -> "Closed"
+                        else -> "As last left"
+                    },
+            ) {
+                prefs.changeLibrariesStart(
+                    when (prefs.librariesStart) {
+                        Prefs.LAST -> Prefs.CLOSED
+                        Prefs.CLOSED -> Prefs.OPEN
+                        else -> Prefs.LAST
+                    },
+                )
+            }
+        }
+        Choice(
+            label = "Settings and Sign out",
+            help = "Icons beside JDVR at the top of the menu (▲ from the first entry), or the last two entries.",
+            value = if (prefs.menuIcons) "Icons beside JDVR" else "Last in the list",
+        ) { prefs.changeMenuIcons(!prefs.menuIcons) }
+        var armed by remember { mutableStateOf(false) }
+        androidx.compose.runtime.LaunchedEffect(armed) {
+            if (armed) {
+                kotlinx.coroutines.delay(4000)
+                armed = false
+            }
+        }
+        Choice(
+            label = "Reset the menu",
+            help = "The standard order, with every entry and library shown.",
+            value = if (armed) "Press again to reset" else "Reset",
+        ) {
+            if (armed) {
+                prefs.resetMenu()
+                armed = false
+            } else {
+                armed = true
+            }
+        }
     }
 }
