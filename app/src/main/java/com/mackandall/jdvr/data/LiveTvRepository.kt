@@ -841,6 +841,53 @@ class LiveTvRepository {
     /** Trim the stray 2.0 / 5.1 audio at the start and end of a recording; admins. */
     suspend fun fixAudioFormat(itemId: UUID): Message? = plugin(HttpMethod.POST, "/ComskipSegments/AudioTrim/Apply/$itemId")
 
+    @Serializable
+    data class ArchiveChoice(
+        @SerialName("Path") val path: String = "",
+        @SerialName("Kind") val kind: String = "both",
+        @SerialName("FreeBytes") val freeBytes: Long? = null,
+        @SerialName("TotalBytes") val totalBytes: Long? = null,
+        @SerialName("KeepFreeGb") val keepFreeGb: Int = 0,
+        @SerialName("Destination") val destination: String = "",
+        @SerialName("Problem") val problem: String? = null,
+        @SerialName("Note") val note: String? = null,
+    )
+
+    @Serializable
+    data class ArchiveChoices(
+        @SerialName("Name") val name: String = "",
+        @SerialName("IsRecording") val isRecording: Boolean = false,
+        @SerialName("Kind") val kind: String = "",
+        @SerialName("Bytes") val bytes: Long = 0,
+        @SerialName("Blocked") val blocked: String? = null,
+        @SerialName("InFlight") val inFlight: String? = null,
+        @SerialName("Targets") val targets: List<ArchiveChoice> = emptyList(),
+        @SerialName("Progress") val progress: MoveProgress? = null,
+    )
+
+    @Serializable
+    data class MoveProgress(
+        @SerialName("ItemId") val itemId: String = "",
+        @SerialName("SeriesId") val seriesId: String? = null,
+        @SerialName("Name") val name: String = "",
+        @SerialName("Destination") val destination: String = "",
+        @SerialName("Bytes") val bytes: Long = 0,
+        @SerialName("CopiedBytes") val copiedBytes: Long = 0,
+        @SerialName("Started") val started: Boolean = false,
+    ) {
+        val fraction get() = if (bytes > 0) (copiedBytes.toFloat() / bytes).coerceIn(0f, 1f) else 0f
+    }
+
+    /** JellyDVR Space: recordings being moved to the archive right now, with progress; admins. */
+    suspend fun moving(): List<MoveProgress>? = plugin(HttpMethod.GET, "/JellyDvrSpace/Moving")
+
+    /** JellyDVR Space: whether the item is a DVR recording, and the archive locations it can go to; admins. */
+    suspend fun archiveChoices(itemId: UUID): ArchiveChoices? = plugin(HttpMethod.GET, "/JellyDvrSpace/Archive/$itemId")
+
+    /** Move a recording to an archive location (in the background on the server); admins. */
+    suspend fun archive(itemId: UUID, target: String): Message? =
+        plugin(HttpMethod.POST, "/JellyDvrSpace/Archive/$itemId", mapOf("target" to target))
+
     suspend fun recordInstead(programId: UUID): Message? = plugin(HttpMethod.POST, "/JellyDvrSchedule/RecordInstead/$programId")
 
     suspend fun addFavourite(programId: UUID): Message? = plugin(HttpMethod.POST, "/JellyDvrSchedule/Favourites/FromItem/$programId")

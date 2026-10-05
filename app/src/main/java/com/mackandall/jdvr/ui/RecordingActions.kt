@@ -48,6 +48,26 @@ fun RecordingActions(
         }
     }
     LaunchedEffect(itemId, reload) { fav = runCatching { Jdvr.liveTv.favouriteForItem(itemId) }.getOrNull() }
+    // JellyDVR Space: "Move to archive…" for recordings in the live folder. While a move runs it
+    // checks back; once the recording has moved, this item is gone (the archive copy is a new
+    // item), so the page closes.
+    var archive by remember(itemId) { mutableStateOf<LiveTvRepository.ArchiveChoices?>(null) }
+    var archiveCheck by remember(itemId) { mutableIntStateOf(0) }
+    var picking by remember(itemId) { mutableStateOf(false) }
+    LaunchedEffect(itemId, archiveCheck) {
+        if (!manage) return@LaunchedEffect
+        archive = runCatching { Jdvr.liveTv.archiveChoices(itemId) }.getOrNull()
+        var wasMoving = false
+        while (archive?.inFlight != null) {
+            wasMoving = true
+            delay(5000)
+            archive = runCatching { Jdvr.liveTv.archiveChoices(itemId) }.getOrNull()
+        }
+        if (wasMoving && archive == null) {
+            onNote("Moved to the archive")
+            onDeleted()
+        }
+    }
     LaunchedEffect(armedDelete, armedUnfav, armedForget, armedRemove) {
         if (armedDelete || armedUnfav || armedForget || armedRemove) {
             delay(4000)
@@ -132,6 +152,37 @@ fun RecordingActions(
                     }
                 }
             }
+        }
+    }
+    val a = archive
+    if (manage && a != null && a.isRecording) {
+        if (a.inFlight != null) {
+            MovingBar(movingFor(itemId.toString()) ?: a.progress)
+        } else {
+            Button("Move to archive…") {
+                scope.launch {
+                    // Ask again: free space may have changed since the page opened.
+                    archive = runCatching { Jdvr.liveTv.archiveChoices(itemId) }.getOrNull() ?: archive
+                    picking = true
+                }
+            }
+        }
+    }
+    if (picking) {
+        archive?.let { choices ->
+            ArchivePicker(
+                choices,
+                onPick = { t ->
+                    picking = false
+                    scope.launch {
+                        val r = runCatching { Jdvr.liveTv.archive(itemId, t.path) }.getOrNull()
+                        onNote(r?.message?.ifEmpty { null } ?: "Couldn't move it (administrators only, needs JellyDVR Space).")
+                        MoveWatcher.kick()
+                        archiveCheck++
+                    }
+                },
+                onDismiss = { picking = false },
+            )
         }
     }
     if (manage) Button(if (armedDelete) "Press again to delete" else "Delete recording", leading = { Dot(Jc.Recording) }) {

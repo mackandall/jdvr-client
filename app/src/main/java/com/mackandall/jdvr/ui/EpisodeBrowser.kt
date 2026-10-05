@@ -267,6 +267,7 @@ private fun BadgeLine(e: EpisodeEntry) =
 
 @Composable
 private fun Badges(e: EpisodeEntry) {
+    movingFor(e.id.toString())?.let { MovingTag(it) }
     e.commercials?.let { Tag("✂ $it", if (it.startsWith("scan failed")) Jc.Recording else Jc.Panel2) }
     if (e.archived) Tag("Archive", Jc.Panel2)
     if (e.partial) Tag("Partial" + (e.partialMinutes?.let { " · $it min" } ?: ""), Jc.Amber, dark = true)
@@ -459,6 +460,7 @@ private fun EpisodeCard(
         ) {
             Box(Modifier.fillMaxSize()) {
                 AsyncImage(model = Jdvr.liveTv.imageUrl(e.id, 300), contentDescription = e.name, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+                movingFor(e.id.toString())?.let { MovingOverlay(it) }
                 e.episode?.let {
                     Text("E$it", color = Jc.Text, fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.align(Alignment.TopEnd).padding(6.dp).background(Jc.Ink.copy(alpha = 0.85f), RoundedCornerShape(5.dp)).padding(horizontal = 6.dp, vertical = 1.dp))
                 }

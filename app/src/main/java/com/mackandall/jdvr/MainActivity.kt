@@ -80,6 +80,8 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun AppRoot() {
     var signedIn by remember { mutableStateOf(Jdvr.signedIn) }
+    // Recordings being moved to the archive, for the cards' and details page's animation.
+    if (signedIn) com.mackandall.jdvr.ui.MoveWatcherEffect()
     var screen by remember { mutableStateOf(Screen.Home) }
     // A show for Recorded Shows to open straight away (from Home's New recordings).
     var openShow by remember { mutableStateOf<String?>(null) }

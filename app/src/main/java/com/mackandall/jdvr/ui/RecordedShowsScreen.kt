@@ -24,6 +24,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -81,7 +82,9 @@ fun RecordedShowsScreen(
     var openShow by remember { mutableStateOf<LiveTvRepository.RecordingCard?>(null) }
 
     val filter = Jdvr.prefs.recordingsFilter
-    LaunchedEffect(filter, reloadCards) {
+    // A move to the archive finished: the recording now lives elsewhere.
+    val movesFinished by MoveWatcher.finished.collectAsState()
+    LaunchedEffect(filter, reloadCards, movesFinished) {
         loaded = false
         cards = Jdvr.liveTv.recordedShows(filter)
         // Comskip's badges for the cards (a show's: how many of its recordings are scanned).
@@ -184,6 +187,7 @@ private fun RecordingCardView(
                 if (image != null) {
                     AsyncImage(model = image, contentDescription = c.name, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
                 }
+                movingFor(c.id)?.let { MovingOverlay(it) }
                 // A badge that doesn't fit goes to its own line; its text never wraps inside the pill.
                 FlowRow(
                     Modifier.align(Alignment.BottomStart).padding(6.dp),

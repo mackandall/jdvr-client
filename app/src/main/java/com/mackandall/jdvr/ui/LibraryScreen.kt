@@ -25,6 +25,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -128,7 +129,8 @@ private fun LibraryGrid(
             loading = false
         }
     }
-    LaunchedEffect(newest, refresh) {
+    val movesFinished by MoveWatcher.finished.collectAsState()
+    LaunchedEffect(newest, refresh, movesFinished) {
         items = emptyList()
         total = -1
         loading = false
@@ -182,6 +184,7 @@ private fun Poster(
         ) {
             Box(Modifier.fillMaxSize()) {
                 AsyncImage(model = Jdvr.liveTv.imageUrl(item.id, 360), contentDescription = item.name, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+                movingFor(item.id.toString())?.let { MovingOverlay(it) }
                 Row(Modifier.align(Alignment.BottomStart).padding(5.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     when {
                         item.played -> Tag("✓", Jc.Green)
