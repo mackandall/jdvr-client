@@ -67,6 +67,15 @@ import java.util.UUID
 
 private const val WINDOW_MINUTES = 120L
 private const val STEP_MINUTES = 30L
+
+// Programmes are fetched in blocks reaching well past the window, so moving it never shows empty
+// rows. Each fetch is for every channel and takes a moment; with only the window loaded, quick
+// presses at the right edge kept cancelling it, the focused programme scrolled out of a row with
+// nothing new in it, and focus fell to another channel.
+private const val BLOCK_HOURS = 3L
+private const val FETCH_HOURS = 9L
+
+private fun blockStart(t: LocalDateTime): LocalDateTime = t.truncatedTo(ChronoUnit.HOURS).let { it.minusHours(it.hour % BLOCK_HOURS) }
 private val ChannelColumn = 150.dp
 private val RowHeight = 62.dp
 
@@ -104,6 +113,8 @@ fun GuideScreen(
     var channels by remember { mutableStateOf<List<Channel>?>(null) }
     var windowStart by remember { mutableStateOf(floorToHalfHour(LocalDateTime.now())) }
     var programs by remember { mutableStateOf<Map<UUID, List<Program>>>(emptyMap()) }
+    // The span `programs` covers for every channel (null until the first fetch lands).
+    var loaded by remember { mutableStateOf<Pair<LocalDateTime, LocalDateTime>?>(null) }
     var reload by remember { mutableIntStateOf(0) }
     var error by remember { mutableStateOf<String?>(null) }
     var selected by remember { mutableStateOf<Program?>(null) }
@@ -140,13 +151,25 @@ fun GuideScreen(
         }
     }
 
-    LaunchedEffect(channels, windowStart, reload) {
+    val block = blockStart(windowStart)
+    LaunchedEffect(channels, block, reload) {
         val list = channels ?: return@LaunchedEffect
+        val from = block
+        val to = block.plusHours(FETCH_HOURS)
         try {
+            val fetched = Jdvr.liveTv.programs(list.map { it.id }, from, to).groupBy { it.channelId }
+            // Keep what was loaded outside this block (moving back shows it at once); drop what has ended.
+            val keepAfter = floorToHalfHour(LocalDateTime.now()).minusHours(1)
             programs =
-                Jdvr.liveTv
-                    .programs(list.map { it.id }, windowStart, windowStart.plusMinutes(WINDOW_MINUTES))
-                    .groupBy { it.channelId }
+                (programs.keys + fetched.keys).associateWith { id ->
+                    (fetched[id].orEmpty() + programs[id].orEmpty().filter { !it.end.isAfter(from) || !it.start.isBefore(to) })
+                        .filter { it.end.isAfter(keepAfter) }
+                        .distinctBy { it.id }
+                        .sortedBy { it.start }
+                }
+            loaded =
+                loaded?.takeIf { (f, t) -> !from.isAfter(t) && !to.isBefore(f) }?.let { (f, t) -> minOf(f, from) to maxOf(t, to) }
+                    ?: (from to to)
             error = null
         } catch (e: CancellationException) {
             throw e
@@ -225,6 +248,9 @@ fun GuideScreen(
         val floor = floorToHalfHour(LocalDateTime.now())
         val next = windowStart.plusMinutes(minutes).let { if (it.isBefore(floor)) floor else it }
         if (next == windowStart) return false
+        // Not past what's loaded: wait for the next block rather than show rows with nothing to focus.
+        val end = loaded?.second
+        if (minutes > 0 && (end == null || next.plusMinutes(WINDOW_MINUTES).isAfter(end))) return true
         windowStart = next
         pendingFocus = channelId to (if (minutes > 0) next.plusMinutes(WINDOW_MINUTES - STEP_MINUTES) else next)
         return true
@@ -496,6 +522,9 @@ private fun GuideRow(
                 androidx.compose.foundation.layout.Spacer(Modifier.width(perMinute * Duration.between(windowStart, from).toMinutes().toFloat()))
             }
             val wantFocus = pendingFocus != null && !p.start.isAfter(pendingFocus) && p.end.isAfter(pendingFocus)
+            // Keyed by programme: without it, moving the window reused the focused cell for another
+            // programme, so focus never moved and the info panel kept showing the old one.
+            androidx.compose.runtime.key(p.id) {
             ProgramCell(
                 program = p,
                 width = width,
@@ -508,6 +537,7 @@ private fun GuideRow(
                 onEdgeRight = if (i == visible.lastIndex) ({ onShift(STEP_MINUTES) }) else null,
                 onEdgeLeft = if (i == 0) ({ onShift(-STEP_MINUTES) }) else null,
             )
+            }
         }
     }
 }
