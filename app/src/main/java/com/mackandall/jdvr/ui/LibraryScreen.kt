@@ -111,7 +111,8 @@ private fun LibraryGrid(
     refresh: Int,
     onOpen: (LiveTvRepository.LibItem) -> Unit,
 ) {
-    var newest by remember { mutableStateOf(false) }
+    // Remembered per library, so it opens the way it was left.
+    val newest = library.id.toString() in Jdvr.prefs.newestLibraries
     var items by remember(newest) { mutableStateOf<List<LiveTvRepository.LibItem>>(emptyList()) }
     var total by remember(newest) { mutableIntStateOf(-1) }
     var loading by remember { mutableStateOf(false) }
@@ -143,7 +144,7 @@ private fun LibraryGrid(
             Text(library.name, color = Jc.Text, fontSize = 26.sp, fontWeight = FontWeight.SemiBold)
             if (total >= 0) Text("$total", color = Jc.Muted, fontSize = 15.sp)
             Box(Modifier.weight(1f))
-            Button(if (newest) "Recently added" else "A–Z") { newest = !newest }
+            Button(if (newest) "Recently added" else "A–Z") { Jdvr.prefs.changeLibraryNewest(library.id.toString(), !newest) }
         }
         Spacer(12)
         when {

@@ -30,6 +30,15 @@ class Prefs(
     var hiddenLibraries by mutableStateOf(p.getStringSet("hiddenLibraries", emptySet())?.toSet() ?: emptySet())
         private set
 
+    /** Libraries listed newest first (by id); the rest are A–Z. */
+    var newestLibraries by mutableStateOf(p.getStringSet("newestLibraries", emptySet())?.toSet() ?: emptySet())
+        private set
+
+    fun changeLibraryNewest(libraryId: String, newest: Boolean) {
+        newestLibraries = if (newest) newestLibraries + libraryId else newestLibraries - libraryId
+        p.edit().putStringSet("newestLibraries", newestLibraries).apply()
+    }
+
     /** Recorded Shows: "current" (the live recordings folder), "archived", or "all". */
     var recordingsFilter by mutableStateOf(p.getString("recordingsFilter", CURRENT) ?: CURRENT)
         private set
