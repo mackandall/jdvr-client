@@ -129,6 +129,7 @@ fun RecordingPlayerScreen(
     var nextTitle by remember { mutableStateOf<String?>(null) }
     var commercialsLabel by remember { mutableStateOf<String?>(null) }
     var infoOpen by remember { mutableStateOf(false) }
+    var programStartBusy by remember { mutableStateOf(false) }
     var infoNote by remember { mutableStateOf<String?>(null) }
     val infoFocus = remember { FocusRequester() }
 
@@ -338,6 +339,32 @@ fun RecordingPlayerScreen(
         }
     }
 
+    // Program start (Comskip plugin): paused on the program's first frame, or on the channel's
+    // card before its programs (kept, so later recordings find their start by themselves).
+    fun programStart(card: Boolean) {
+        // One at a time: the server refuses a second action on the same recording anyway.
+        if (programStartBusy) return
+        programStartBusy = true
+        val at = player.currentPosition / 1000.0
+        controlsOpen = false
+        scope.launch {
+            note = if (card) "Looking at the card…" else "Setting the program start…"
+            val r = runCatching {
+                if (card) Jdvr.liveTv.rememberStartCard(itemId, at) else Jdvr.liveTv.setProgramStart(itemId, at)
+            }.getOrNull()
+            programStartBusy = false
+            note = when {
+                r == null -> "Couldn't do it: something may already be working on this recording (or you're not an administrator)."
+                r.trimmed -> r.message + " Start the recording again to see it."
+                else -> r.message
+            }
+            if (r?.ok == true && !r.trimmed) runCatching { segments = Jdvr.liveTv.segments(itemId) }
+            com.mackandall.jdvr.ui.MoveWatcher.kick()
+            delay(7000)
+            note = null
+        }
+    }
+
     fun goNext() {
         val n = next
         val live = recording.liveChannelId
@@ -483,6 +510,11 @@ fun RecordingPlayerScreen(
                         }
                         TrackButtons(player)
                         if (live != null) Button("Back to live") { onBackToLive(live) }
+                        // Paused on the first frame of the program, or on the channel's card before it.
+                        if (!player.isPlaying && live == null && !inProgress && com.mackandall.jdvr.ui.cuttingFor(itemId.toString()) == null) {
+                            Button("Program starts here") { programStart(card = false) }
+                            Button("Remember this card") { programStart(card = true) }
+                        }
                     }
                 } else {
                     Text(

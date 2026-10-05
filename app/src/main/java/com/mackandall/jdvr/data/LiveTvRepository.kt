@@ -878,6 +878,46 @@ class LiveTvRepository {
         val fraction get() = if (bytes > 0) (copiedBytes.toFloat() / bytes).coerceIn(0f, 1f) else 0f
     }
 
+    @Serializable
+    data class ProgramStartResult(
+        @SerialName("Ok") val ok: Boolean = false,
+        @SerialName("Trimmed") val trimmed: Boolean = false,
+        @SerialName("StartSeconds") val startSeconds: Double? = null,
+        @SerialName("Message") val message: String = "",
+    )
+
+    /** Comskip plugin: "Program starts here" at [seconds]; admins. */
+    suspend fun setProgramStart(itemId: UUID, seconds: Double): ProgramStartResult? =
+        plugin(HttpMethod.POST, "/ComskipSegments/ProgramStart/$itemId", mapOf("seconds" to seconds))
+
+    /** "Remember this card": the frame at [seconds] is the channel's card before its programs; admins. */
+    suspend fun rememberStartCard(itemId: UUID, seconds: Double): ProgramStartResult? =
+        plugin(HttpMethod.POST, "/ComskipSegments/ProgramStart/$itemId/Card", mapOf("seconds" to seconds))
+
+    /** Look for a remembered card in the recording's opening minutes; admins. */
+    suspend fun findProgramStart(itemId: UUID): ProgramStartResult? =
+        plugin(HttpMethod.POST, "/ComskipSegments/ProgramStart/$itemId/Find")
+
+    @Serializable
+    data class CutJob(
+        @SerialName("ItemId") val itemId: String = "",
+        @SerialName("SeriesId") val seriesId: String? = null,
+        @SerialName("Name") val name: String = "",
+        @SerialName("Kind") val kind: String = "",
+        @SerialName("Phase") val phase: String = "checking",
+        @SerialName("Stoppable") val stoppable: Boolean = false,
+        @SerialName("Bytes") val bytes: Long = 0,
+        @SerialName("DoneBytes") val doneBytes: Long = 0,
+    ) {
+        val fraction get() = if (bytes > 0) (doneBytes.toFloat() / bytes).coerceIn(0f, 1f) else 0f
+    }
+
+    /** Comskip plugin: recordings being cut right now (program start, audio format), with progress; admins. */
+    suspend fun cuts(): List<CutJob>? = plugin(HttpMethod.GET, "/ComskipSegments/Cuts")
+
+    /** Stop a cut while the original is still untouched; admins. */
+    suspend fun stopCut(itemId: UUID): Message? = plugin(HttpMethod.POST, "/ComskipSegments/Cuts/$itemId/Stop")
+
     /** JellyDVR Space: recordings being moved to the archive right now, with progress; admins. */
     suspend fun moving(): List<MoveProgress>? = plugin(HttpMethod.GET, "/JellyDvrSpace/Moving")
 

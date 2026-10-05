@@ -78,6 +78,13 @@ fun RecordingActions(
         }
     }
 
+    // Being cut (program start, audio format): its progress and Stop, and nothing else that
+    // touches the file until it's done (a second cut, a scan, a move or a delete meanwhile
+    // would work on a file about to be replaced).
+    val cut = cuttingFor(itemId.toString())
+    if (cut != null) {
+        CuttingBar(cut, onStop = if (cut.stoppable) { { scope.launch { onNote(runCatching { Jdvr.liveTv.stopCut(itemId)?.message }.getOrNull() ?: "Couldn't stop it."); MoveWatcher.kick() } } } else null)
+    }
     val f = fav
     if (manage && f != null && !f.isMovie) {
         val rule = f.favourite
@@ -105,7 +112,7 @@ fun RecordingActions(
     // Comskip's tools, as in the web client's item menu (administrators).
     // Comskip: scan, or remove what a scan found (in case it shouldn't have run); the button
     // follows the item's status, and while a scan runs it checks back until it's done.
-    if (tools) {
+    if (tools && cut == null) {
         val c = commercials
         when {
             c?.inFlight == true -> Button("Scanning for commercials…") {}
@@ -131,12 +138,22 @@ fun RecordingActions(
                 }
         }
     }
-    if (tools) Button("Fix audio format") {
-        onNote("Fixing the audio format: this can take a minute…")
-        scope.launch { onNote(runCatching { Jdvr.liveTv.fixAudioFormat(itemId)?.message }.getOrNull() ?: "Couldn't fix it (administrators only).") }
+    // Program start: a remembered channel card (set from the player) found in the opening.
+    if (tools && cut == null) Button("Find program start") {
+        onNote("Looking for a remembered card…")
+        scope.launch {
+            onNote(runCatching { Jdvr.liveTv.findProgramStart(itemId)?.message }.getOrNull() ?: "Couldn't look: something may already be working on it (or you're not an administrator).")
+            MoveWatcher.kick()
+        }
+    }
+    if (tools && cut == null) Button("Fix audio format") {
+        scope.launch {
+            onNote(runCatching { Jdvr.liveTv.fixAudioFormat(itemId)?.message }.getOrNull() ?: "Couldn't fix it: something may already be working on it (or you're not an administrator).")
+            MoveWatcher.kick()
+        }
     }
     // Episode History's "Forget this episode": delete it and forget it, so it records again.
-    if (tools && manage) {
+    if (tools && manage && cut == null) {
         Button(if (armedForget) "Press again: delete and forget" else if (fav?.isMovie == true) "Forget this movie" else "Forget this episode") {
             if (!armedForget) {
                 armedForget = true
@@ -155,7 +172,7 @@ fun RecordingActions(
         }
     }
     val a = archive
-    if (manage && a != null && a.isRecording) {
+    if (manage && a != null && a.isRecording && cut == null) {
         if (a.inFlight != null) {
             MovingBar(movingFor(itemId.toString()) ?: a.progress)
         } else {
@@ -185,7 +202,7 @@ fun RecordingActions(
             )
         }
     }
-    if (manage) Button(if (armedDelete) "Press again to delete" else "Delete recording", leading = { Dot(Jc.Recording) }) {
+    if (manage && cut == null) Button(if (armedDelete) "Press again to delete" else "Delete recording", leading = { Dot(Jc.Recording) }) {
         if (!armedDelete) {
             armedDelete = true
         } else {

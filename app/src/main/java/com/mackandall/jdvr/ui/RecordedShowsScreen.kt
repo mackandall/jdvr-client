@@ -187,7 +187,7 @@ private fun RecordingCardView(
                 if (image != null) {
                     AsyncImage(model = image, contentDescription = c.name, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
                 }
-                movingFor(c.id)?.let { MovingOverlay(it) }
+                movingFor(c.id)?.let { MovingOverlay(it) } ?: cuttingFor(c.id)?.let { CuttingOverlay(it) }
                 // A badge that doesn't fit goes to its own line; its text never wraps inside the pill.
                 FlowRow(
                     Modifier.align(Alignment.BottomStart).padding(6.dp),

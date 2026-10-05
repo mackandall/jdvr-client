@@ -185,7 +185,7 @@ private fun Poster(
         ) {
             Box(Modifier.fillMaxSize()) {
                 AsyncImage(model = Jdvr.liveTv.imageUrl(item.id, 360), contentDescription = item.name, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
-                movingFor(item.id.toString())?.let { MovingOverlay(it) }
+                movingFor(item.id.toString())?.let { MovingOverlay(it) } ?: cuttingFor(item.id.toString())?.let { CuttingOverlay(it) }
                 Row(Modifier.align(Alignment.BottomStart).padding(5.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     when {
                         item.played -> Tag("✓", Jc.Green)
