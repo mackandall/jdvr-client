@@ -886,11 +886,11 @@ class LiveTvRepository {
         @SerialName("Message") val message: String = "",
     )
 
-    /** Comskip plugin: "Program starts here" at [seconds]; admins. */
+    /** Comskip plugin: "Starts here (this recording)" at [seconds]; admins. */
     suspend fun setProgramStart(itemId: UUID, seconds: Double): ProgramStartResult? =
         plugin(HttpMethod.POST, "/ComskipSegments/ProgramStart/$itemId", mapOf("seconds" to seconds))
 
-    /** "Remember this card": the frame at [seconds] is the channel's card before its programs; admins. */
+    /** "Remember card (all recordings)": the frame at [seconds] is the channel's card before its programs; admins. */
     suspend fun rememberStartCard(itemId: UUID, seconds: Double): ProgramStartResult? =
         plugin(HttpMethod.POST, "/ComskipSegments/ProgramStart/$itemId/Card", mapOf("seconds" to seconds))
 

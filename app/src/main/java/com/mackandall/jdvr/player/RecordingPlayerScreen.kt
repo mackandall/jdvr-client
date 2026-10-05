@@ -510,10 +510,13 @@ fun RecordingPlayerScreen(
                         }
                         TrackButtons(player)
                         if (live != null) Button("Back to live") { onBackToLive(live) }
-                        // Paused on the first frame of the program, or on the channel's card before it.
-                        if (!player.isPlaying && live == null && !inProgress && com.mackandall.jdvr.ui.cuttingFor(itemId.toString()) == null) {
-                            Button("Program starts here") { programStart(card = false) }
-                            Button("Remember this card") { programStart(card = true) }
+                    }
+                    // Program start (paused): its own line, the labels say what each one covers.
+                    if (!player.isPlaying && live == null && !inProgress && com.mackandall.jdvr.ui.cuttingFor(itemId.toString()) == null) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Text("Program start:", color = Jc.Muted, fontSize = 15.sp)
+                            Button("Starts here (this recording)") { programStart(card = false) }
+                            Button("Remember card (all recordings)") { programStart(card = true) }
                         }
                     }
                 } else {
