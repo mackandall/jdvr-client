@@ -894,6 +894,22 @@ class LiveTvRepository {
     suspend fun rememberStartCard(itemId: UUID, seconds: Double): ProgramStartResult? =
         plugin(HttpMethod.POST, "/ComskipSegments/ProgramStart/$itemId/Card", mapOf("seconds" to seconds))
 
+    @Serializable
+    data class ProgramStartStatus(
+        @SerialName("StartSeconds") val startSeconds: Double? = null,
+        @SerialName("Action") val action: String? = null,
+        @SerialName("CanUndo") val canUndo: Boolean = false,
+    )
+
+    /** The recording's program start (a skip marker), and whether a trim's original was kept; admins. */
+    suspend fun programStartStatus(itemId: UUID): ProgramStartStatus? = plugin(HttpMethod.GET, "/ComskipSegments/ProgramStart/$itemId")
+
+    /** Remove the program start's skip marker; admins. */
+    suspend fun clearProgramStart(itemId: UUID): ProgramStartResult? = plugin(HttpMethod.DELETE, "/ComskipSegments/ProgramStart/$itemId")
+
+    /** Put a trimmed recording's kept original back; admins. */
+    suspend fun undoTrim(itemId: UUID): ProgramStartResult? = plugin(HttpMethod.POST, "/ComskipSegments/ProgramStart/$itemId/Undo")
+
     /** Look for a remembered card in the recording's opening minutes; admins. */
     suspend fun findProgramStart(itemId: UUID): ProgramStartResult? =
         plugin(HttpMethod.POST, "/ComskipSegments/ProgramStart/$itemId/Find")

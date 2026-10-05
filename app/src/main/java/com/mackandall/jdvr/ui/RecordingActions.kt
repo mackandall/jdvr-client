@@ -54,6 +54,17 @@ fun RecordingActions(
     var archive by remember(itemId) { mutableStateOf<LiveTvRepository.ArchiveChoices?>(null) }
     var archiveCheck by remember(itemId) { mutableIntStateOf(0) }
     var picking by remember(itemId) { mutableStateOf(false) }
+    // Program start: a skip marker to remove, or a trim whose original was kept to undo.
+    var start by remember(itemId) { mutableStateOf<LiveTvRepository.ProgramStartStatus?>(null) }
+    var startCheck by remember(itemId) { mutableIntStateOf(0) }
+    var armedUndo by remember(itemId) { mutableStateOf(false) }
+    LaunchedEffect(itemId, startCheck) { if (tools) start = runCatching { Jdvr.liveTv.programStartStatus(itemId) }.getOrNull() }
+    LaunchedEffect(armedUndo) {
+        if (armedUndo) {
+            delay(4000)
+            armedUndo = false
+        }
+    }
     LaunchedEffect(itemId, archiveCheck) {
         if (!manage) return@LaunchedEffect
         archive = runCatching { Jdvr.liveTv.archiveChoices(itemId) }.getOrNull()
@@ -144,6 +155,29 @@ fun RecordingActions(
         scope.launch {
             onNote(runCatching { Jdvr.liveTv.findProgramStart(itemId)?.message }.getOrNull() ?: "Couldn't look: something may already be working on it (or you're not an administrator).")
             MoveWatcher.kick()
+        }
+    }
+    val ps = start
+    if (tools && cut == null && ps?.action == "marker" && (ps.startSeconds ?: 0.0) >= 1) {
+        val s = ps.startSeconds!!.toInt()
+        Button("Remove program start (skips to ${s / 60}:${"%02d".format(s % 60)})") {
+            scope.launch {
+                onNote(runCatching { Jdvr.liveTv.clearProgramStart(itemId)?.message }.getOrNull() ?: "Couldn't remove it.")
+                startCheck++
+            }
+        }
+    }
+    if (tools && cut == null && ps?.canUndo == true) {
+        Button(if (armedUndo) "Press again: put the original back" else "Undo trim (put the original back)") {
+            if (!armedUndo) {
+                armedUndo = true
+            } else {
+                armedUndo = false
+                scope.launch {
+                    onNote(runCatching { Jdvr.liveTv.undoTrim(itemId)?.message }.getOrNull() ?: "Couldn't undo it.")
+                    startCheck++
+                }
+            }
         }
     }
     if (tools && cut == null) Button("Fix audio format") {
