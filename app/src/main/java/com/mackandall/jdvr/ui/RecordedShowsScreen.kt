@@ -28,6 +28,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -95,6 +96,10 @@ fun RecordedShowsScreen(
         onShowOpened()
     }
 
+    // Focus goes to the first card once the grid is there (it comes after the cards and their
+    // badges load); only the first time, so switching the filter leaves focus on its button.
+    var focusedFirst by remember { mutableStateOf(false) }
+
     details?.let { id ->
         BackHandler { details = null }
         DetailsPage(id, refresh, onPlay = onPlayItem, actions = { det, say ->
@@ -149,7 +154,15 @@ fun RecordedShowsScreen(
             !loaded -> Text("Loading…", color = Jc.Muted, fontSize = 16.sp)
             list == null -> Text("Couldn't load Recorded Shows (the Episode History plugin answers this).", color = Jc.Amber, fontSize = 16.sp)
             list.isEmpty() -> Text(if (filter == Prefs.ARCHIVED) "Nothing has been moved to the archive." else "Nothing recorded yet.", color = Jc.Muted, fontSize = 16.sp)
-            else ->
+            else -> {
+                LaunchedEffect(Unit) {
+                    if (focusedFirst) return@LaunchedEffect
+                    focusedFirst = true
+                    repeat(40) {
+                        if (runCatching { entry.requestFocus() }.isSuccess) return@LaunchedEffect
+                        delay(50)
+                    }
+                }
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(5),
                     horizontalArrangement = Arrangement.spacedBy(16.dp),
@@ -162,6 +175,7 @@ fun RecordedShowsScreen(
                         }
                     }
                 }
+            }
         }
     }
 }
