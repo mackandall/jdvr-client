@@ -119,6 +119,10 @@ fun GuideScreen(
     var error by remember { mutableStateOf<String?>(null) }
     var selected by remember { mutableStateOf<Program?>(null) }
     var focused by remember { mutableStateOf<Program?>(null) }
+    // The programme picked to watch: where focus goes back to when the player closes. Kept apart
+    // from `focused`, because as the panel and then the player go away, focus falls on whatever
+    // cell is at that spot on screen (rows above), and the guide scrolls to it.
+    var returnTo by remember { mutableStateOf<Program?>(null) }
     // After the window moves: which channel and moment should take focus.
     var pendingFocus by remember { mutableStateOf<Pair<UUID, LocalDateTime>?>(null) }
     val symbols = rememberMarkSymbols()
@@ -214,14 +218,17 @@ fun GuideScreen(
             channel = channels?.firstOrNull { it.id == p.channelId },
             symbols = symbols,
             onWatch = {
+                returnTo = p
                 selected = null
                 onPlay(p.channelId)
             },
             onPlayItem = {
+                returnTo = p
                 selected = null
                 onPlayRecording(it)
             },
             onWatchFromStart = { itemId ->
+                returnTo = p
                 selected = null
                 onPlayRecording(com.mackandall.jdvr.PlayRecording(itemId, startMs = 0L))
             },
@@ -270,7 +277,11 @@ fun GuideScreen(
     }
 
     androidx.compose.runtime.CompositionLocalProvider(LocalGuideExtras provides extras, LocalCellFocus provides cellFocus) {
-    Box(Modifier.fillMaxSize()) {
+    // A key pressed in the guide means focus is where the user put it: the way back in follows it again.
+    Box(Modifier.fillMaxSize().onPreviewKeyEvent { e ->
+        if (e.type == KeyEventType.KeyDown) returnTo = null
+        false
+    }) {
     GuideArt(art)
     Column(Modifier.fillMaxSize()) {
     // "Above the guide" (Settings): the details on a band at the top, the grid at full width.
@@ -302,6 +313,8 @@ fun GuideScreen(
                     Box {
                         // Behind the cells: shows in the gaps between them, never over the titles.
                         NowLine(windowStart, perMinute)
+                        // The way back in (after the rail or a player): the programme picked to watch, else the last one on, else the top-left.
+                        val home = (returnTo ?: focused)?.takeIf { p -> list.any { it.id == p.channelId } }
                         LazyColumn(contentPadding = PaddingValues(bottom = 40.dp)) {
                             items(list, key = { it.id }) { ch ->
                                 GuideRow(
@@ -315,9 +328,8 @@ fun GuideScreen(
                                     onFocusTaken = { pendingFocus = null },
                                     onSelect = { selected = it },
                                     onFocused = { focused = it },
-                                    // The way back in (after the rail or a player): the programme last on, else the top-left.
-                                    entry = if (ch.id == (focused?.channelId?.takeIf { id -> list.any { it.id == id } } ?: list.first().id)) entry else null,
-                                    entryProgram = focused?.id,
+                                    entry = if (ch.id == (home?.channelId ?: list.first().id)) entry else null,
+                                    entryProgram = home?.id,
                                     onShift = { minutes -> shift(minutes, ch.id) },
                                 )
                             }

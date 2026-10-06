@@ -133,10 +133,16 @@ fun AppRoot() {
 
     // Hand focus to the screen once the rail is closed. Its items may still be loading, and a
     // request before they exist does nothing, so keep asking until focus is really in the screen.
+    // Back from a player, focus has usually fallen onto whatever was under the player's focused
+    // control already (so the screen "has focus"), but not where the user was: ask for the entry anyway.
+    var leftPlayer by remember { mutableStateOf(false) }
     LaunchedEffect(screen, libraryId, railOpen, playingChannel, playingRecording) {
+        if (playingChannel != null || playingRecording != null) leftPlayer = true
         if (railOpen || playingChannel != null || playingRecording != null) return@LaunchedEffect
-        repeat(150) {
-            if (screenHasFocus) return@LaunchedEffect
+        val fromPlayer = leftPlayer
+        leftPlayer = false
+        repeat(150) { attempt ->
+            if (screenHasFocus && !(fromPlayer && attempt == 0)) return@LaunchedEffect
             runCatching { entry.requestFocus() }
             delay(100)
         }
