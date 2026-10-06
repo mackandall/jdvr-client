@@ -108,6 +108,8 @@ fun GuideScreen(
     entry: FocusRequester,
     onPlay: (UUID) -> Unit,
     onPlayRecording: (com.mackandall.jdvr.PlayRecording) -> Unit,
+    // The channel the live player is on (null when it's closed).
+    watching: UUID? = null,
 ) {
     val infoOnTop = Jdvr.prefs.guideInfo == com.mackandall.jdvr.data.Prefs.TOP
     var channels by remember { mutableStateOf<List<Channel>?>(null) }
@@ -123,6 +125,7 @@ fun GuideScreen(
     // from `focused`, because as the panel and then the player go away, focus falls on whatever
     // cell is at that spot on screen (rows above), and the guide scrolls to it.
     var returnTo by remember { mutableStateOf<Program?>(null) }
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
     // After the window moves: which channel and moment should take focus.
     var pendingFocus by remember { mutableStateOf<Pair<UUID, LocalDateTime>?>(null) }
     val symbols = rememberMarkSymbols()
@@ -263,6 +266,18 @@ fun GuideScreen(
         return true
     }
 
+    // Channels changed in the player (▲▼, CH±, digits, mini guide): Back lands on the one last
+    // watched, so its row is scrolled on screen while the player is up, ready to take focus.
+    LaunchedEffect(watching) {
+        val ch = watching ?: return@LaunchedEffect
+        val picked = returnTo ?: return@LaunchedEffect
+        if (picked.channelId == ch) return@LaunchedEffect
+        val index = channels?.indexOfFirst { it.id == ch }?.takeIf { it >= 0 } ?: return@LaunchedEffect
+        val now = LocalDateTime.now()
+        returnTo = programs[ch].orEmpty().firstOrNull { it.end.isAfter(now) } ?: return@LaunchedEffect
+        listState.scrollToItem((index - 2).coerceAtLeast(0))
+    }
+
     // Background art: the programme the cursor has rested on for the set time (Settings).
     val artSeconds = Jdvr.prefs.guideArtSeconds
     var art by remember { mutableStateOf<Program?>(null) }
@@ -315,7 +330,7 @@ fun GuideScreen(
                         NowLine(windowStart, perMinute)
                         // The way back in (after the rail or a player): the programme picked to watch, else the last one on, else the top-left.
                         val home = (returnTo ?: focused)?.takeIf { p -> list.any { it.id == p.channelId } }
-                        LazyColumn(contentPadding = PaddingValues(bottom = 40.dp)) {
+                        LazyColumn(state = listState, contentPadding = PaddingValues(bottom = 40.dp)) {
                             items(list, key = { it.id }) { ch ->
                                 GuideRow(
                                     channel = ch,
