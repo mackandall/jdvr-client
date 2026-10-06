@@ -20,6 +20,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
@@ -99,6 +100,11 @@ fun RecordedShowsScreen(
     // Focus goes to the first card once the grid is there (it comes after the cards and their
     // badges load); only the first time, so switching the filter leaves focus on its button.
     var focusedFirst by remember { mutableStateOf(false) }
+    // The card a show or details page was opened from: Back from there lands on it again (closing
+    // that page removes the focused button, and Android otherwise leaves nothing focused).
+    var returnTo by remember { mutableStateOf<String?>(null) }
+    val back = remember { FocusRequester() }
+    val gridState = rememberLazyGridState()
 
     details?.let { id ->
         BackHandler { details = null }
@@ -156,6 +162,22 @@ fun RecordedShowsScreen(
             list.isEmpty() -> Text(if (filter == Prefs.ARCHIVED) "Nothing has been moved to the archive." else "Nothing recorded yet.", color = Jc.Muted, fontSize = 16.sp)
             else -> {
                 LaunchedEffect(Unit) {
+                    returnTo?.let { id ->
+                        val index = list.indexOfFirst { it.id == id }
+                        if (index >= 0) {
+                            if (gridState.layoutInfo.visibleItemsInfo.none { it.index == index }) gridState.scrollToItem(index)
+                            repeat(40) {
+                                if (runCatching { back.requestFocus() }.isSuccess) {
+                                    returnTo = null
+                                    return@LaunchedEffect
+                                }
+                                delay(50)
+                            }
+                        }
+                        // The card is gone (deleted or moved): the first card instead.
+                        returnTo = null
+                        focusedFirst = false
+                    }
                     if (focusedFirst) return@LaunchedEffect
                     focusedFirst = true
                     repeat(40) {
@@ -165,12 +187,17 @@ fun RecordedShowsScreen(
                 }
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(5),
+                    state = gridState,
                     horizontalArrangement = Arrangement.spacedBy(16.dp),
                     verticalArrangement = Arrangement.spacedBy(18.dp),
                     contentPadding = PaddingValues(bottom = 40.dp),
                 ) {
                     itemsIndexed(list, key = { _, c -> c.id }) { i, c ->
-                        RecordingCardView(c, badges[c.id.plainId()], if (i == 0) Modifier.focusRequester(entry) else Modifier) {
+                        var m: Modifier = Modifier
+                        if (i == 0) m = m.focusRequester(entry)
+                        if (c.id == returnTo) m = m.focusRequester(back)
+                        RecordingCardView(c, badges[c.id.plainId()], m) {
+                            returnTo = c.id
                             if (c.type == "Series") openShow = c else details = c.id.toUuid()
                         }
                     }
