@@ -46,6 +46,7 @@ import com.mackandall.jdvr.data.Jdvr
 import com.mackandall.jdvr.data.LiveTvRepository.ItemDetails
 import com.mackandall.jdvr.ui.Button
 import com.mackandall.jdvr.ui.Jc
+import com.mackandall.jdvr.ui.seeThrough
 import com.mackandall.jdvr.ui.RecordingActions
 import com.mackandall.jdvr.ui.day
 import com.mackandall.jdvr.ui.time
@@ -114,7 +115,7 @@ fun RecordingTopBox(
 ) {
     Row(modifier.padding(top = 18.dp).fillMaxWidth(0.76f).clip(RoundedCornerShape(14.dp)).background(Jc.Ink.copy(alpha = 0.92f))) {
         Column(
-            Modifier.width(96.dp).background(Jc.Panel2.copy(alpha = 0.9f)).padding(vertical = 12.dp),
+            Modifier.width(96.dp).background(Jc.Panel2.seeThrough(0.9f)).padding(vertical = 12.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
@@ -219,7 +220,7 @@ private fun Fact(
     label: String,
     value: String,
 ) {
-    Column(Modifier.background(Jc.Panel.copy(alpha = 0.85f), RoundedCornerShape(8.dp)).padding(horizontal = 10.dp, vertical = 6.dp)) {
+    Column(Modifier.background(Jc.Panel.seeThrough(0.85f), RoundedCornerShape(8.dp)).padding(horizontal = 10.dp, vertical = 6.dp)) {
         Text(label.uppercase(), color = Jc.Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.5.sp)
         Text(value, color = Jc.Text, fontSize = 13.sp)
     }

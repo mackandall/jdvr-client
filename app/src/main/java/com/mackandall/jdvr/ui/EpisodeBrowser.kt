@@ -202,7 +202,7 @@ private fun ListView(
                                     .heightIn(min = 64.dp)
                                     .onFocusChanged { if (it.isFocused) focusedId = e.id },
                             shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(10.dp)),
-                            colors = ClickableSurfaceDefaults.colors(containerColor = Jc.Panel.copy(alpha = 0.92f), focusedContainerColor = Jc.FocusFill, contentColor = Jc.Text, focusedContentColor = Jc.Text),
+                            colors = ClickableSurfaceDefaults.colors(containerColor = Jc.Panel.seeThrough(0.92f), focusedContainerColor = Jc.FocusFill, contentColor = Jc.Text, focusedContentColor = Jc.Text),
                             border = ClickableSurfaceDefaults.border(focusedBorder = Border(BorderStroke(2.dp, Jc.Focus))),
                             scale = ClickableSurfaceDefaults.scale(focusedScale = 1.01f),
                         ) {
@@ -232,7 +232,7 @@ private fun EpisodePane(
     more: LiveTvRepository.LibItem?,
     modifier: Modifier,
 ) {
-    Column(modifier.background(Jc.Panel.copy(alpha = 0.9f), RoundedCornerShape(12.dp)).padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    Column(modifier.background(Jc.Panel.seeThrough(0.9f), RoundedCornerShape(12.dp)).padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         AsyncImage(
             model = Jdvr.liveTv.imageUrl(e.id, 300),
             contentDescription = null,
@@ -283,7 +283,7 @@ private fun Tag(
     dark: Boolean = false,
 ) = Text(
     text,
-    color = if (dark) Color(0xFF1A1206) else Jc.Text,
+    color = badgeText(color, dark),
     fontSize = 11.sp,
     fontWeight = FontWeight.Bold,
     maxLines = 1,
@@ -469,7 +469,7 @@ private fun EpisodeCard(
                     Text("✓", color = Jc.Text, fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.align(Alignment.TopStart).padding(6.dp).background(Jc.Green, RoundedCornerShape(5.dp)).padding(horizontal = 6.dp, vertical = 1.dp))
                 }
                 if (e.partial) {
-                    Text("Partial", color = Color(0xFF1A1206), fontSize = 10.sp, fontWeight = FontWeight.Bold, modifier = Modifier.align(Alignment.BottomStart).padding(6.dp).background(Jc.Amber, RoundedCornerShape(5.dp)).padding(horizontal = 5.dp, vertical = 1.dp))
+                    Text("Partial", color = Jc.OnAmber, fontSize = 10.sp, fontWeight = FontWeight.Bold, modifier = Modifier.align(Alignment.BottomStart).padding(6.dp).background(Jc.Amber, RoundedCornerShape(5.dp)).padding(horizontal = 5.dp, vertical = 1.dp))
                 }
                 if (e.resumeMs > 0 && !e.played && e.runtimeMin != null) {
                     val f = (e.resumeMs / 60_000f / e.runtimeMin).coerceIn(0f, 1f)

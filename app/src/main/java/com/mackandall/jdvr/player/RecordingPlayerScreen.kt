@@ -529,7 +529,7 @@ fun RecordingPlayerScreen(
             }
         }
         error?.let {
-            Column(Modifier.align(Alignment.Center).background(Jc.Panel, RoundedCornerShape(14.dp)).padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(Modifier.align(Alignment.Center).background(Jc.Sheet, RoundedCornerShape(14.dp)).padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(it, color = Jc.Amber, fontSize = 18.sp)
                 Button("Back", primary = true, onClick = onExit)
             }

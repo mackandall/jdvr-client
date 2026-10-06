@@ -72,10 +72,17 @@ fun SettingsScreen(
         Section("Appearance")
         Choice(
             label = "Theme",
-            help = "The colours of the whole app. Recording red, commercial amber and watched green stay the same in every theme.",
+            help = "The colours of the whole app. Ode to Emby's Apple is light: frosted panels on a soft backdrop.",
             value = paletteFor(prefs.theme).name,
             modifier = Modifier.focusRequester(entry),
         ) { prefs.changeTheme(Palettes[(Palettes.indexOf(paletteFor(prefs.theme)) + 1) % Palettes.size].key) }
+        if (paletteFor(prefs.theme).light) {
+            Choice(
+                label = "Backdrop",
+                help = "The soft colour behind the screens.",
+                value = washFor(prefs.wash).name,
+            ) { prefs.changeWash(Washes[(Washes.indexOf(washFor(prefs.wash)) + 1) % Washes.size].key) }
+        }
         Section("Guide")
         Choice(
             label = "Programme details",

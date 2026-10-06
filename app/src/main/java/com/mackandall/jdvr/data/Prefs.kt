@@ -74,8 +74,19 @@ class Prefs(
     var theme by mutableStateOf(p.getString("theme", "midnight") ?: "midnight")
         private set
 
+    /** A light theme's backdrop (Settings › Backdrop): a key of [com.mackandall.jdvr.ui.Washes]. */
+    var wash by mutableStateOf(p.getString("wash", "blue") ?: "blue")
+        private set
+
     init {
         com.mackandall.jdvr.ui.Jc.palette = com.mackandall.jdvr.ui.paletteFor(theme)
+        com.mackandall.jdvr.ui.Jc.wash = com.mackandall.jdvr.ui.washFor(wash)
+    }
+
+    fun changeWash(v: String) {
+        wash = v
+        com.mackandall.jdvr.ui.Jc.wash = com.mackandall.jdvr.ui.washFor(v)
+        p.edit().putString("wash", v).apply()
     }
 
     fun changeTheme(v: String) {

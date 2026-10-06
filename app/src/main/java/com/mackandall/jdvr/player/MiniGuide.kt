@@ -47,6 +47,7 @@ import com.mackandall.jdvr.data.Jdvr
 import com.mackandall.jdvr.data.LiveTvRepository
 import com.mackandall.jdvr.data.Program
 import com.mackandall.jdvr.ui.Jc
+import com.mackandall.jdvr.ui.seeThrough
 import com.mackandall.jdvr.ui.Marks
 import com.mackandall.jdvr.ui.time
 import kotlinx.coroutines.delay
@@ -234,7 +235,7 @@ fun MiniGuide(
                     val on = inRecent && i == recentIndex
                     Row(
                         Modifier
-                            .background(if (on) Jc.FocusFill else Jc.Panel.copy(alpha = 0.9f), RoundedCornerShape(7.dp))
+                            .background(if (on) Jc.FocusFill else Jc.Panel.seeThrough(0.9f), RoundedCornerShape(7.dp))
                             .then(if (on) Modifier.border(2.dp, Jc.Focus, RoundedCornerShape(7.dp)) else Modifier)
                             .padding(horizontal = 9.dp, vertical = 4.dp),
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -278,7 +279,7 @@ fun MiniGuide(
             val ch = channels[i]
             Row(Modifier.fillMaxWidth().height(40.dp), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                 Row(
-                    Modifier.width(145.dp).fillMaxHeight().background(if (i == row) Jc.FocusFill else Jc.Panel.copy(alpha = 0.9f), RoundedCornerShape(7.dp)).padding(horizontal = 10.dp),
+                    Modifier.width(145.dp).fillMaxHeight().background(if (i == row) Jc.FocusFill else Jc.Panel.seeThrough(0.9f), RoundedCornerShape(7.dp)).padding(horizontal = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
@@ -297,7 +298,7 @@ fun MiniGuide(
                                 .offset(x = w * from)
                                 .width((w * (to - from) - 4.dp).coerceAtLeast(6.dp))
                                 .fillMaxHeight()
-                                .background(if (isSel) Jc.FocusFill else Jc.Panel2.copy(alpha = 0.9f), RoundedCornerShape(7.dp))
+                                .background(if (isSel) Jc.FocusFill else Jc.Panel2.seeThrough(0.9f), RoundedCornerShape(7.dp))
                                 .then(if (isSel) Modifier.border(2.dp, Jc.Focus, RoundedCornerShape(7.dp)) else Modifier)
                                 .padding(horizontal = 8.dp),
                             verticalArrangement = Arrangement.Center,

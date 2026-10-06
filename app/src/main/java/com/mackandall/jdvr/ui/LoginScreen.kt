@@ -87,7 +87,7 @@ fun LoginScreen(onSignedIn: () -> Unit) {
         }
     }
 
-    Box(Modifier.fillMaxSize().background(Jc.Ink), contentAlignment = Alignment.Center) {
+    Box(Modifier.fillMaxSize().screenBackground(), contentAlignment = Alignment.Center) {
         Column(
             modifier = Modifier.width(620.dp).background(Jc.Panel, RoundedCornerShape(16.dp)).padding(32.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),

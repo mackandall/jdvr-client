@@ -115,8 +115,9 @@ fun HomeScreen(
     Box(Modifier.fillMaxSize()) {
     if (w != null) {
         WeatherPicture(w.sky, w.isDay)
-        // A light shade so text stays readable on bright skies.
-        Box(Modifier.fillMaxSize().background(Jc.Ink.copy(alpha = 0.35f)))
+        // A light shade so text stays readable on bright skies; a light theme's dark text needs more
+        // (the picture's dark ground, trees, night sky).
+        Box(Modifier.fillMaxSize().background(Jc.Ink.copy(alpha = if (Jc.Light) 0.66f else 0.35f)))
     }
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(start = 28.dp, top = 18.dp, end = 28.dp, bottom = 24.dp),

@@ -30,6 +30,7 @@ import com.mackandall.jdvr.player.PlayerScreen
 import com.mackandall.jdvr.player.RecordingPlayerScreen
 import com.mackandall.jdvr.ui.ChannelsScreen
 import com.mackandall.jdvr.ui.GuideScreen
+import com.mackandall.jdvr.ui.screenBackground
 import com.mackandall.jdvr.ui.HomeScreen
 import com.mackandall.jdvr.ui.LibraryScreen
 import com.mackandall.jdvr.ui.Jc
@@ -127,7 +128,7 @@ fun AppRoot() {
     val focusManager = LocalFocusManager.current
 
     if (!signedIn) {
-        Box(Modifier.fillMaxSize().background(Jc.Ink)) { LoginScreen(onSignedIn = { signedIn = true }) }
+        Box(Modifier.fillMaxSize().screenBackground()) { LoginScreen(onSignedIn = { signedIn = true }) }
         return
     }
 
@@ -151,7 +152,7 @@ fun AppRoot() {
     Box(
         Modifier
             .fillMaxSize()
-            .background(Jc.Ink)
+            .screenBackground()
             .onPreviewKeyEvent { e ->
                 // Right with the rail open: into the screen, and the rail goes away (whether or not
                 // focus was in the rail).

@@ -4,13 +4,36 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.darkColorScheme
+import androidx.tv.material3.lightColorScheme
+
+/** A soft backdrop: a base colour with blurred patches of colour over it (light themes). */
+data class Wash(
+    val key: String,
+    val name: String,
+    val base: Color,
+    // Each patch: centre (fractions of the screen), radius (fraction of the width), colour.
+    val spots: List<Triple<Offset, Float, Color>>,
+)
+
+val Washes =
+    listOf(
+        Wash("blue", "Dusty blue", Color(0xFFAFC4D6), listOf(Triple(Offset(0.15f, 0.1f), 0.7f, Color(0xFFD6E1EA)), Triple(Offset(0.9f, 0.8f), 0.62f, Color(0xFF93AFC6)), Triple(Offset(0.7f, 0.2f), 0.45f, Color(0xFFC9D2DC)))),
+        Wash("sage", "Sage", Color(0xFFA9C0BC), listOf(Triple(Offset(0.2f, 0.05f), 0.7f, Color(0xFFD3E0DC)), Triple(Offset(0.9f, 0.85f), 0.62f, Color(0xFF8CAAA7)))),
+        Wash("lavender", "Lavender", Color(0xFFC2C8DA), listOf(Triple(Offset(0.15f, 0.1f), 0.7f, Color(0xFFE1E4EF)), Triple(Offset(0.85f, 0.85f), 0.62f, Color(0xFFA9B2CC)))),
+    )
+
+fun washFor(key: String?): Wash = Washes.firstOrNull { it.key == key } ?: Washes.first()
 
 /**
- * A colour theme: the backgrounds, panels, text and focus colour. The status colours
- * (recording red, commercial amber, watched green, star gold) are the same in every theme.
+ * A colour theme: the backgrounds, panels, text and focus colour, and the status colours
+ * (recording red, commercial amber, watched green, star gold), which a light theme darkens.
  */
 data class Palette(
     val key: String,
@@ -26,6 +49,19 @@ data class Palette(
     val focusFill: Color,
     // Text on the focus colour (a primary button).
     val onFocus: Color,
+    val recording: Color = Color(0xFFE5484D),
+    val amber: Color = Color(0xFFF5A524),
+    // Text on amber (the CS and Partial tags).
+    val onAmber: Color = Color(0xFF1A1206),
+    val green: Color = Color(0xFF2EA36B),
+    val gold: Color = Color(0xFFF2C94C),
+    // Unfocused buttons; a light theme makes them slate tiles with white text.
+    val button: Color? = null,
+    // Panels that open over other things (side panels, dialogs): solid even when panels are frosted.
+    val sheet: Color? = null,
+    val onButton: Color? = null,
+    // Light: a soft wash behind the screens (Settings › Backdrop), white focus, dark text.
+    val light: Boolean = false,
 )
 
 val Palettes =
@@ -51,6 +87,14 @@ val Palettes =
             ink = Color(0xFF130F1A), rail = Color(0xFF17121F), panel = Color(0xFF1C1626), panel2 = Color(0xFF261E33), line = Color(0xFF30263F),
             text = Color(0xFFEDE8F2), muted = Color(0xFFA89DB6), focus = Color(0xFFF06A9E), focusFill = Color(0xFF3A1F34), onFocus = Color(0xFF2A0816),
         ),
+        // Light, after Emby's Apple TV theme: frosted panels on a soft wash, slate tiles, white focus.
+        Palette(
+            "ode", "Ode to Emby's Apple",
+            ink = Color(0xFFBFD0DE), rail = Color(0xFFC9D7E3), panel = Color.White.copy(alpha = 0.42f), panel2 = Color.White.copy(alpha = 0.6f), line = Color(0xFF93A6B8),
+            text = Color(0xFF1F2A33), muted = Color(0xFF4C5B69), focus = Color(0xFF2F4F6B), focusFill = Color.White, onFocus = Color.White,
+            recording = Color(0xFFC62828), amber = Color(0xFF9A4508), onAmber = Color.White, green = Color(0xFF2E7D32), gold = Color(0xFF8A6D00),
+            button = Color(0xFF5F7890), onButton = Color.White, sheet = Color(0xFFDCE6EE), light = true,
+        ),
     )
 
 fun paletteFor(key: String?): Palette = Palettes.firstOrNull { it.key == key } ?: Palettes.first()
@@ -69,23 +113,50 @@ object Jc {
     val Focus get() = palette.focus
     val FocusFill get() = palette.focusFill
     val OnFocus get() = palette.onFocus
-    val Recording = Color(0xFFE5484D)
-    val Amber = Color(0xFFF5A524)
-    val Green = Color(0xFF2EA36B)
-    val Gold = Color(0xFFF2C94C)
+    val Recording get() = palette.recording
+    val Amber get() = palette.amber
+    val OnAmber get() = palette.onAmber
+    val Green get() = palette.green
+    val Gold get() = palette.gold
+    val Button get() = palette.button ?: palette.panel2
+    val Sheet get() = palette.sheet ?: palette.panel
+    val OnButton get() = palette.onButton ?: palette.text
+    val Light get() = palette.light
+
+    // The light themes' backdrop (Settings › Backdrop).
+    var wash by mutableStateOf(Washes.first())
 }
+
+/**
+ * A panel made see-through (over art, a picture or video): [alpha] of the panel's own opacity, so a
+ * light theme's frosted panels get lighter still rather than turning solid white.
+ */
+fun Color.seeThrough(alpha: Float): Color = copy(alpha = this.alpha * alpha)
+
+/** A screen's background: the theme's ink, or for a light theme its soft wash. */
+fun Modifier.screenBackground(): Modifier =
+    drawBehind {
+        if (!Jc.Light) {
+            drawRect(Jc.Ink)
+            return@drawBehind
+        }
+        val w = Jc.wash
+        drawRect(w.base)
+        w.spots.forEach { (c, r, color) ->
+            val centre = Offset(c.x * size.width, c.y * size.height)
+            drawRect(Brush.radialGradient(listOf(color, color.copy(alpha = 0f)), center = centre, radius = r * size.width))
+        }
+    }
 
 @Composable
 fun JdvrTheme(content: @Composable () -> Unit) {
     MaterialTheme(
         colorScheme =
-            darkColorScheme(
-                primary = Jc.Focus,
-                background = Jc.Ink,
-                surface = Jc.Panel,
-                onSurface = Jc.Text,
-                onBackground = Jc.Text,
-            ),
+            if (Jc.Light) {
+                lightColorScheme(primary = Jc.Focus, background = Jc.Ink, surface = Jc.Panel, onSurface = Jc.Text, onBackground = Jc.Text)
+            } else {
+                darkColorScheme(primary = Jc.Focus, background = Jc.Ink, surface = Jc.Panel, onSurface = Jc.Text, onBackground = Jc.Text)
+            },
         content = content,
     )
 }

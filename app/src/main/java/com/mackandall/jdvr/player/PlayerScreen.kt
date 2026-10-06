@@ -58,6 +58,7 @@ import com.mackandall.jdvr.data.plainId
 import com.mackandall.jdvr.data.toUuid
 import com.mackandall.jdvr.ui.Button
 import com.mackandall.jdvr.ui.Jc
+import com.mackandall.jdvr.ui.seeThrough
 import com.mackandall.jdvr.ui.Marks
 import com.mackandall.jdvr.ui.MarkChips
 import com.mackandall.jdvr.ui.rememberMarkSymbols
@@ -66,8 +67,8 @@ import com.mackandall.jdvr.ui.day
 import androidx.compose.ui.text.style.TextOverflow
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import timber.log.Timber
 import java.time.Duration
 import java.time.Instant
@@ -583,7 +584,7 @@ fun PlayerScreen(
         }
         error?.let {
             Column(
-                Modifier.align(Alignment.Center).background(Jc.Panel, RoundedCornerShape(14.dp)).padding(24.dp),
+                Modifier.align(Alignment.Center).background(Jc.Sheet, RoundedCornerShape(14.dp)).padding(24.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 Text(it, color = Jc.Amber, fontSize = 18.sp)
@@ -721,7 +722,7 @@ private fun TopInfoBox(
         modifier.padding(top = 18.dp).fillMaxWidth(0.76f).background(Jc.Ink.copy(alpha = 0.92f), RoundedCornerShape(14.dp)),
     ) {
         Column(
-            Modifier.width(96.dp).background(Jc.Panel2.copy(alpha = 0.9f), RoundedCornerShape(topStart = 14.dp, bottomStart = 14.dp)).padding(vertical = 12.dp),
+            Modifier.width(96.dp).background(Jc.Panel2.seeThrough(0.9f), RoundedCornerShape(topStart = 14.dp, bottomStart = 14.dp)).padding(vertical = 12.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
@@ -830,7 +831,7 @@ private fun TunersBusy(
     val first = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { first.requestFocus() } }
     Column(
-        modifier.width(640.dp).background(Jc.Panel, RoundedCornerShape(16.dp)).padding(24.dp),
+        modifier.width(640.dp).background(Jc.Sheet, RoundedCornerShape(16.dp)).padding(24.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Text("All tuners are busy", color = Jc.Text, fontSize = 26.sp, fontWeight = FontWeight.SemiBold)

@@ -63,7 +63,7 @@ fun ArchivePicker(choices: ArchiveChoices, onPick: (ArchiveChoice) -> Unit, onDi
             Modifier
                 .width(720.dp)
                 .clip(RoundedCornerShape(16.dp))
-                .background(Jc.Panel)
+                .background(Jc.Sheet)
                 .onFocusChanged { hasFocus = it.hasFocus }
                 .padding(28.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),

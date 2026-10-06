@@ -7,6 +7,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.tv.material3.Border
@@ -16,6 +17,17 @@ import androidx.tv.material3.Text
 import com.mackandall.jdvr.data.LiveTvRepository
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
+
+/** Text on a coloured tag: dark on amber; on a light theme, white on the darker status colours. */
+fun badgeText(
+    background: Color,
+    onAmber: Boolean = false,
+): Color =
+    when {
+        onAmber -> Jc.OnAmber
+        Jc.Light && background.luminance() < 0.4f -> Color.White
+        else -> Jc.Text
+    }
 
 fun Modifier.onFocusChangedCompat(onChange: (Boolean) -> Unit): Modifier = onFocusChanged { onChange(it.isFocused) }
 
@@ -34,13 +46,14 @@ fun Button(
         shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(10.dp)),
         colors =
             ClickableSurfaceDefaults.colors(
-                containerColor = if (primary) Jc.Focus else Jc.Panel2,
-                focusedContainerColor = if (primary) Jc.Focus else Jc.FocusFill,
-                contentColor = if (primary) Jc.OnFocus else Jc.Text,
-                focusedContentColor = if (primary) Jc.OnFocus else Jc.Text,
+                containerColor = if (primary) Jc.Focus else Jc.Button,
+                // Light: whatever the button, focus turns it white (as Emby's Apple theme does).
+                focusedContainerColor = if (primary && !Jc.Light) Jc.Focus else Jc.FocusFill,
+                contentColor = if (primary) Jc.OnFocus else Jc.OnButton,
+                focusedContentColor = if (primary && !Jc.Light) Jc.OnFocus else Jc.Text,
             ),
         border = ClickableSurfaceDefaults.border(focusedBorder = Border(BorderStroke(2.dp, Jc.Focus))),
-        scale = ClickableSurfaceDefaults.scale(focusedScale = 1.03f),
+        scale = ClickableSurfaceDefaults.scale(focusedScale = if (Jc.Light) 1.06f else 1.03f),
     ) {
         androidx.compose.foundation.layout.Row(
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),

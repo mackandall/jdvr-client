@@ -91,7 +91,7 @@ fun DetailsPage(
     LaunchedEffect(d != null) { if (d != null) runCatching { play.requestFocus() } }
 
     val det = d
-    Box(Modifier.fillMaxSize().background(Jc.Ink)) {
+    Box(Modifier.fillMaxSize().screenBackground()) {
         if (det == null) {
             Text(error?.let { "Couldn't load this: $it" } ?: "Loading…", color = Jc.Muted, fontSize = 16.sp, modifier = Modifier.padding(36.dp))
             return@Box
@@ -186,7 +186,7 @@ private fun Info(
     label: String,
     value: String,
 ) {
-    Column(Modifier.background(Jc.Panel.copy(alpha = 0.85f), RoundedCornerShape(8.dp)).padding(horizontal = 10.dp, vertical = 6.dp)) {
+    Column(Modifier.background(Jc.Panel.seeThrough(0.85f), RoundedCornerShape(8.dp)).padding(horizontal = 10.dp, vertical = 6.dp)) {
         Text(label.uppercase(), color = Jc.Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold)
         Text(value, color = Jc.Text, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }

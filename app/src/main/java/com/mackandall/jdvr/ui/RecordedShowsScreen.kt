@@ -229,7 +229,7 @@ private fun Badge(
 ) {
     Text(
         text,
-        color = if (dark) androidx.compose.ui.graphics.Color(0xFF1A1206) else Jc.Text,
+        color = badgeText(color, dark),
         fontSize = 12.sp,
         fontWeight = FontWeight.Bold,
         maxLines = 1,

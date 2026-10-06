@@ -370,7 +370,7 @@ fun GuideScreen(
     // Top layout: the actions open as a panel over the right of the grid.
     if (infoOnTop) {
         selected?.let { p ->
-            Box(Modifier.align(Alignment.CenterEnd).width(380.dp).fillMaxHeight().background(Jc.Panel)) { Actions(p) }
+            Box(Modifier.align(Alignment.CenterEnd).width(380.dp).fillMaxHeight().background(Jc.Sheet)) { Actions(p) }
         }
     }
     }
@@ -379,7 +379,7 @@ fun GuideScreen(
 
 /** The guide's panels: see-through when background art is on (Settings), so the picture shows. */
 @Composable
-private fun guidePanel(alpha: Float = 0.78f): Color = if (Jdvr.prefs.guideArtSeconds > 0) Jc.Panel.copy(alpha = alpha) else Jc.Panel
+private fun guidePanel(alpha: Float = 0.78f): Color = if (Jdvr.prefs.guideArtSeconds > 0) Jc.Panel.seeThrough(alpha) else Jc.Panel
 
 /**
  * Behind the guide: the rested-on programme's picture, faded in, darkened where the grid is.
@@ -633,7 +633,7 @@ private fun ProgramCell(
                 // Red for a recording; faint for a live TV buffer (only kept if someone presses Record).
                 if (program.isRecording) Box(Modifier.size(8.dp).background(Jc.Recording.copy(alpha = if (extras.isBuffer(program)) 0.35f else 1f), CircleShape))
                 Text(program.name, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
-                if (extras.scanning(program)) Text("CS", color = Color(0xFF1A1206), fontSize = 10.sp, fontWeight = FontWeight.Bold, modifier = Modifier.background(Jc.Amber, RoundedCornerShape(4.dp)).padding(horizontal = 4.dp))
+                if (extras.scanning(program)) Text("CS", color = Jc.OnAmber, fontSize = 10.sp, fontWeight = FontWeight.Bold, modifier = Modifier.background(Jc.Amber, RoundedCornerShape(4.dp)).padding(horizontal = 4.dp))
             }
             val sub = marks.title ?: if (program.isMovie) "Movie" else null
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -728,7 +728,7 @@ internal fun ProgramPanel(
         modifier =
             modifier
                 .fillMaxHeight()
-                .background(Jc.Panel)
+                .background(Jc.Sheet)
                 .verticalScroll(androidx.compose.foundation.rememberScrollState())
                 .padding(22.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
