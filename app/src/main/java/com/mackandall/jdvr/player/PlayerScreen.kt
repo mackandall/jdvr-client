@@ -67,6 +67,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.isActive
 import timber.log.Timber
 import java.time.Duration
 import java.time.Instant
@@ -183,7 +184,15 @@ fun PlayerScreen(
                         busy = tuners
                         return@launch
                     }
-                    val p = Jdvr.liveTv.startLive(channelId)
+                    // Opening takes 10+ s, and Back, Stop or a channel change meanwhile cancels this, but
+                    // the server opens the stream anyway: wait for it regardless and close what comes back,
+                    // or that tuner input stays taken until Jellyfin restarts (four were, 2026-10-06).
+                    val p = kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) { Jdvr.liveTv.startLive(channelId) }
+                    if (!isActive) {
+                        Timber.i("Channel %s opened after its player left; closing it", channelId)
+                        p.liveStreamId?.let { id -> kotlinx.coroutines.MainScope().launch { runCatching { Jdvr.liveTv.closeLiveStream(id) } } }
+                        return@launch
+                    }
                     current = p
                     playback = p
                     Jdvr.session.lastChannelId = channelId.toString()

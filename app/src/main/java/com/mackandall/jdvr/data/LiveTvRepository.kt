@@ -460,6 +460,9 @@ class LiveTvRepository {
         )
     }
 
+    /** Closes a live stream nobody is playing (its player went away while it opened): frees the tuner. */
+    suspend fun closeLiveStream(id: String) = io { api.mediaInfoApi.closeLiveStream(id) }
+
     /** Must carry the live stream id, or Jellyfin keeps the tuner open (found with Moonfin). */
     suspend fun reportStopped(p: LivePlayback) =
         io {
