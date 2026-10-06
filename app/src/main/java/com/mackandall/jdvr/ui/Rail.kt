@@ -76,20 +76,22 @@ private data class Entry(
 
 /**
  * The left rail, opened over the screen (dimmed behind it); focus starts on the current section.
- * Its entries and their order come from Settings › Menu. Settings and Sign out are icons beside
- * JDVR (or the last entries); the libraries sit under one Libraries entry that opens and closes
- * (OK or ►; ◄ closes it), or each on its own line.
+ * Its entries and their order come from Settings › Menu. Settings, Sign out and Exit are a row of
+ * icons pinned under the list (or its last entries); the libraries sit under one Libraries entry
+ * that opens and closes (OK or ►; ◄ closes it), or each on its own line. Sign out takes a second
+ * press, as getting back in means signing in again.
  */
 @Composable
 fun Rail(
     selected: Screen,
     onSelect: (Screen) -> Unit,
     onSignOut: () -> Unit,
+    onExit: () -> Unit,
     libraries: List<LiveTvRepository.Library> = emptyList(),
     selectedLibrary: UUID? = null,
     onSelectLibrary: (LiveTvRepository.Library) -> Unit = {},
     onDismiss: () -> Unit = {},
-    // True while Right belongs to the rail (to Sign out from Settings, or opening Libraries).
+    // True while Right belongs to the rail (along the icon row, or opening Libraries).
     onKeepsRight: (Boolean) -> Unit = {},
 ) {
     val prefs = Jdvr.prefs
@@ -105,6 +107,16 @@ fun Rail(
     fun setOpen(v: Boolean) {
         open = v
         prefs.changeLibrariesOpen(v)
+    }
+    var signOutArmed by remember { mutableStateOf(false) }
+    LaunchedEffect(signOutArmed) {
+        if (signOutArmed) {
+            kotlinx.coroutines.delay(4000)
+            signOutArmed = false
+        }
+    }
+    fun signOut() {
+        if (signOutArmed) onSignOut() else signOutArmed = true
     }
     val libs = libraries.inMenuOrder()
     val icons = prefs.menuIcons
@@ -130,14 +142,17 @@ fun Rail(
             }
             if (!icons) {
                 add(Entry("settings", Screen.Settings.label, selected == Screen.Settings, Kind.Item, divider = true) { onSelect(Screen.Settings) })
-                add(Entry("signout", "Sign out", false, Kind.Item, click = onSignOut))
+                add(Entry("signout", if (signOutArmed) "Press again to sign out" else "Sign out", false, Kind.Item) { signOut() })
+                add(Entry("exit", "Exit", false, Kind.Item, click = onExit))
             }
         }
     // One focus handle per entry, kept by key, so opening Libraries doesn't lose focus.
     val reqs = remember { mutableMapOf<String, FocusRequester>() }
     fun req(k: String) = reqs.getOrPut(k) { FocusRequester() }
     val gear = req("gear")
+    val user = req("user")
     val power = req("power")
+    val last = entries.lastOrNull()?.let { req(it.key) } ?: FocusRequester.Default
     val current =
         when {
             icons && selected == Screen.Settings -> gear
@@ -145,13 +160,13 @@ fun Rail(
         }
     fun slot(i: Int): Modifier =
         Modifier.focusRequester(req(entries[i].key)).focusProperties {
-            up = if (i > 0) req(entries[i - 1].key) else if (icons) gear else FocusRequester.Cancel
-            down = if (i < entries.size - 1) req(entries[i + 1].key) else FocusRequester.Cancel
+            up = if (i > 0) req(entries[i - 1].key) else FocusRequester.Cancel
+            down = if (i < entries.size - 1) req(entries[i + 1].key) else if (icons) gear else FocusRequester.Cancel
             left = FocusRequester.Cancel
         }
 
     var focusedKey by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(focusedKey, open) { onKeepsRight(focusedKey == "gear" || (focusedKey == "libraries" && !open)) }
+    LaunchedEffect(focusedKey, open) { onKeepsRight(focusedKey == "gear" || focusedKey == "user" || (focusedKey == "libraries" && !open)) }
     DisposableEffect(Unit) { onDispose { onKeepsRight(false) } }
 
     var hadFocus by remember { mutableStateOf(false) }
@@ -187,37 +202,7 @@ fun Rail(
                     .padding(start = 14.dp, end = 14.dp, top = 16.dp, bottom = 12.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            Row(Modifier.height(40.dp).padding(start = 10.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                // An icon's name while it has focus, else the app's.
-                when (focusedKey) {
-                    "gear" -> Text("Settings", color = Jc.Text, fontWeight = FontWeight.SemiBold, fontSize = 17.sp, modifier = Modifier.weight(1f))
-                    "power" -> Text("Sign out", color = Jc.Text, fontWeight = FontWeight.SemiBold, fontSize = 17.sp, modifier = Modifier.weight(1f))
-                    else -> Text("JDVR", color = Jc.Focus, fontWeight = FontWeight.Bold, fontSize = 18.sp, modifier = Modifier.weight(1f))
-                }
-                if (icons) {
-                    val first = entries.firstOrNull()?.let { req(it.key) } ?: FocusRequester.Default
-                    RailIcon(
-                        GEAR,
-                        "Settings",
-                        selected == Screen.Settings,
-                        Modifier.focusRequester(gear).focusProperties {
-                            down = first
-                            up = FocusRequester.Cancel
-                            left = FocusRequester.Cancel
-                        }.onFocusChanged { if (it.isFocused) focusedKey = "gear" },
-                    ) { onSelect(Screen.Settings) }
-                    RailIcon(
-                        SIGN_OUT,
-                        "Sign out",
-                        false,
-                        Modifier.focusRequester(power).focusProperties {
-                            down = first
-                            up = FocusRequester.Cancel
-                        }.onFocusChanged { if (it.isFocused) focusedKey = "power" },
-                        onClick = onSignOut,
-                    )
-                }
-            }
+            Text("JDVR", color = Jc.Focus, fontWeight = FontWeight.Bold, fontSize = 18.sp, modifier = Modifier.height(40.dp).padding(start = 10.dp, top = 8.dp))
             // One scrolling list (no boundary for focus to cross).
             Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 entries.forEachIndexed { i, e ->
@@ -259,6 +244,57 @@ fun Rail(
                     }
                 }
             }
+            if (icons) {
+                Box(Modifier.padding(horizontal = 12.dp, vertical = 2.dp).width(168.dp).height(1.dp).background(Jc.Line))
+                // The focused icon's name (the line keeps its height so the row doesn't move).
+                Text(
+                    when (focusedKey) {
+                        "gear" -> "Settings"
+                        "user" -> if (signOutArmed) "Press again to sign out" else "Sign out"
+                        "power" -> "Exit JDVR"
+                        else -> ""
+                    },
+                    color = if (focusedKey == "user" && signOutArmed) Jc.Recording else Jc.Text,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 15.sp,
+                    maxLines = 1,
+                    modifier = Modifier.height(24.dp).padding(start = 10.dp),
+                )
+                Row(Modifier.padding(start = 6.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    RailIcon(
+                        GEAR,
+                        "Settings",
+                        selected == Screen.Settings,
+                        Modifier.focusRequester(gear).focusProperties {
+                            up = last
+                            down = FocusRequester.Cancel
+                            left = FocusRequester.Cancel
+                        }.onFocusChanged { if (it.isFocused) focusedKey = "gear" },
+                    ) { onSelect(Screen.Settings) }
+                    RailIcon(
+                        USER,
+                        "Sign out",
+                        false,
+                        Modifier.focusRequester(user).focusProperties {
+                            up = last
+                            down = FocusRequester.Cancel
+                        }.onFocusChanged {
+                            if (it.isFocused) focusedKey = "user" else signOutArmed = false
+                        },
+                        onClick = ::signOut,
+                    )
+                    RailIcon(
+                        POWER,
+                        "Exit",
+                        false,
+                        Modifier.focusRequester(power).focusProperties {
+                            up = last
+                            down = FocusRequester.Cancel
+                        }.onFocusChanged { if (it.isFocused) focusedKey = "power" },
+                        onClick = onExit,
+                    )
+                }
+            }
         }
     }
 }
@@ -296,7 +332,7 @@ private fun RailItem(
     }
 }
 
-/** A round icon button in the rail's top line (its name replaces "JDVR" while focused). */
+/** A round icon button in the rail's bottom row (its name shows above the row while focused). */
 @Composable
 private fun RailIcon(
     paths: List<String>,
@@ -345,6 +381,7 @@ private val GEAR =
         "M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z",
         "M15 12a3 3 0 1 1-6 0a3 3 0 1 1 6 0z",
     )
-private val SIGN_OUT = listOf("M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4", "M16 17L21 12L16 7", "M21 12H9")
+private val USER = listOf("M16 8a4 4 0 1 1-8 0a4 4 0 1 1 8 0z", "M4 21a8 8 0 0 1 16 0")
+private val POWER = listOf("M12 2v10", "M18.4 6.6a9 9 0 1 1-12.8 0")
 private val CHEVRON_RIGHT = listOf("M9 18L15 12L9 6")
 private val CHEVRON_DOWN = listOf("M6 9L12 15L18 9")

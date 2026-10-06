@@ -243,6 +243,7 @@ fun AppRoot() {
                     screen = Screen.Library
                     railOpen = false
                 },
+                onExit = { activity?.finish() },
                 onSignOut = {
                     Jdvr.signOut()
                     railOpen = false

@@ -108,7 +108,7 @@ fun SettingsScreen(
         Section("Menu")
         Choice(
             label = "Menu entries",
-            help = "Their order, which are shown, the Libraries group, and where Settings and Sign out go.",
+            help = "Their order, which are shown, the Libraries group, and where Settings, Sign out and Exit go.",
             value = "Arrange…",
             modifier = Modifier.focusRequester(menuButton),
         ) { menuPage = true }
@@ -410,9 +410,9 @@ private fun MenuSettings(libraries: List<com.mackandall.jdvr.data.LiveTvReposito
             }
         }
         Choice(
-            label = "Settings and Sign out",
-            help = "Icons beside JDVR at the top of the menu (▲ from the first entry), or the last two entries.",
-            value = if (prefs.menuIcons) "Icons beside JDVR" else "Last in the list",
+            label = "Settings, Sign out and Exit",
+            help = "A row of icons under the menu (▼ from the last entry), or the last three entries.",
+            value = if (prefs.menuIcons) "Icons under the menu" else "Last in the list",
         ) { prefs.changeMenuIcons(!prefs.menuIcons) }
         var armed by remember { mutableStateOf(false) }
         androidx.compose.runtime.LaunchedEffect(armed) {
