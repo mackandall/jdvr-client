@@ -9,6 +9,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -97,6 +99,7 @@ private fun skipLabel(s: LiveTvRepository.Segment) =
  * from the last one is live).
  */
 @OptIn(UnstableApi::class)
+@kotlin.OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun RecordingPlayerScreen(
     recording: PlayRecording,
@@ -339,6 +342,59 @@ fun RecordingPlayerScreen(
         }
     }
 
+    // Editing the recording (Comskip plugin; users allowed to edit recordings): while paused,
+    // "✂ Edit" opens the actions, and each acts on a second press that says what it will do.
+    val edit = com.mackandall.jdvr.ui.editPermission()
+    var editOpen by remember { mutableStateOf(false) }
+    // Opening or closing the panel removes the focused button: focus goes to the first action,
+    // and back to Edit on Close (otherwise the remote reaches nothing).
+    val editFirst = remember { FocusRequester() }
+    val editButton = remember { FocusRequester() }
+    var editFocus by remember { mutableStateOf<FocusRequester?>(null) }
+    LaunchedEffect(editFocus) {
+        val target = editFocus ?: return@LaunchedEffect
+        repeat(20) {
+            if (runCatching { target.requestFocus() }.isSuccess) {
+                editFocus = null
+                return@LaunchedEffect
+            }
+            delay(50)
+        }
+        editFocus = null
+    }
+    var armed by remember { mutableStateOf<String?>(null) }
+    var startStatus by remember { mutableStateOf<LiveTvRepository.ProgramStartStatus?>(null) }
+    LaunchedEffect(armed) {
+        if (armed != null) {
+            delay(4000)
+            armed = null
+        }
+    }
+    LaunchedEffect(editOpen) { if (editOpen) startStatus = runCatching { Jdvr.liveTv.programStartStatus(itemId) }.getOrNull() }
+    LaunchedEffect(player.isPlaying) {
+        if (player.isPlaying) {
+            editOpen = false
+            armed = null
+        }
+    }
+
+    // An edit action that changed the recording's markers or file: say what happened.
+    fun editDone(r: LiveTvRepository.ProgramStartResult?, fallback: String) {
+        editOpen = false
+        editFocus = playFocus
+        scope.launch {
+            note = when {
+                r == null -> fallback
+                r.trimmed -> r.message + " Start the recording again to see it."
+                else -> r.message
+            }
+            if (r?.ok == true && !r.trimmed) runCatching { segments = Jdvr.liveTv.segments(itemId) }
+            com.mackandall.jdvr.ui.MoveWatcher.kick()
+            delay(7000)
+            note = null
+        }
+    }
+
     // Program start (Comskip plugin): paused on the program's first frame, or on the channel's
     // card before its programs (kept, so later recordings find their start by themselves).
     fun programStart(card: Boolean) {
@@ -354,7 +410,7 @@ fun RecordingPlayerScreen(
             }.getOrNull()
             programStartBusy = false
             note = when {
-                r == null -> "Couldn't do it: something may already be working on this recording (or you're not an administrator)."
+                r == null -> "Couldn't do it: something may already be working on this recording."
                 r.trimmed -> r.message + " Start the recording again to see it."
                 else -> r.message
             }
@@ -511,12 +567,71 @@ fun RecordingPlayerScreen(
                         TrackButtons(player)
                         if (live != null) Button("Back to live") { onBackToLive(live) }
                     }
-                    // Program start (paused): its own line, the labels say what each one covers.
-                    if (!player.isPlaying && live == null && !inProgress && com.mackandall.jdvr.ui.cuttingFor(itemId.toString()) == null) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Text("Program start:", color = Jc.Muted, fontSize = 15.sp)
-                            Button("Starts here (this recording)") { programStart(card = false) }
-                            Button("Remember card (all recordings)") { programStart(card = true) }
+                    // Editing (paused, users allowed to edit recordings): "✂ Edit" opens the actions on
+                    // their own line; each acts on a second press that says what it will do.
+                    if (edit != null && !player.isPlaying && live == null && !inProgress && com.mackandall.jdvr.ui.cuttingFor(itemId.toString()) == null) {
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            if (!editOpen) {
+                                Button("✂ Edit", modifier = Modifier.focusRequester(editButton)) {
+                                    editOpen = true
+                                    editFocus = editFirst
+                                }
+                            } else {
+                                Button(
+                                    modifier = Modifier.focusRequester(editFirst),
+                                    label = when {
+                                        armed != "start" -> "Starts here (this recording)"
+                                        edit.programStartTrims -> "Press again: cut everything before here. ${edit.undoNote}"
+                                        else -> "Press again: skip to here from the start"
+                                    },
+                                ) {
+                                    if (armed != "start") {
+                                        armed = "start"
+                                    } else {
+                                        armed = null
+                                        editOpen = false
+                                        programStart(card = false)
+                                    }
+                                }
+                                Button(if (armed == "card") "Press again: remember this card for this channel's recordings" else "Remember card (all recordings)") {
+                                    if (armed != "card") {
+                                        armed = "card"
+                                    } else {
+                                        armed = null
+                                        editOpen = false
+                                        programStart(card = true)
+                                    }
+                                }
+                                val ps = startStatus
+                                if (ps?.action == "marker" && (ps.startSeconds ?: 0.0) >= 1) {
+                                    Button(if (armed == "clear") "Press again: play from the very start again" else "Remove program start (skips to ${clock((ps.startSeconds!! * 1000).toLong())})") {
+                                        if (armed != "clear") {
+                                            armed = "clear"
+                                        } else {
+                                            armed = null
+                                            scope.launch { editDone(runCatching { Jdvr.liveTv.clearProgramStart(itemId) }.getOrNull(), "Couldn't remove it.") }
+                                        }
+                                    }
+                                }
+                                if (ps?.canUndo == true) {
+                                    Button(if (armed == "undo") "Press again: put the original recording back" else "Undo trim (put the original back)") {
+                                        if (armed != "undo") {
+                                            armed = "undo"
+                                        } else {
+                                            armed = null
+                                            scope.launch {
+                                                val r = runCatching { Jdvr.liveTv.undoTrim(itemId) }.getOrNull()
+                                                editDone(r?.copy(trimmed = r.ok), "Couldn't undo it.")
+                                            }
+                                        }
+                                    }
+                                }
+                                Button("Close") {
+                                    editOpen = false
+                                    armed = null
+                                    editFocus = editButton
+                                }
+                            }
                         }
                     }
                 } else {

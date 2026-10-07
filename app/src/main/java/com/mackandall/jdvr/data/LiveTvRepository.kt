@@ -937,11 +937,11 @@ class LiveTvRepository {
         @SerialName("Message") val message: String = "",
     )
 
-    /** Comskip plugin: "Starts here (this recording)" at [seconds]; admins. */
+    /** Comskip plugin: "Starts here (this recording)" at [seconds]; editors. */
     suspend fun setProgramStart(itemId: UUID, seconds: Double): ProgramStartResult? =
         plugin(HttpMethod.POST, "/ComskipSegments/ProgramStart/$itemId", mapOf("seconds" to seconds))
 
-    /** "Remember card (all recordings)": the frame at [seconds] is the channel's card before its programs; admins. */
+    /** "Remember card (all recordings)": the frame at [seconds] is the channel's card before its programs; editors. */
     suspend fun rememberStartCard(itemId: UUID, seconds: Double): ProgramStartResult? =
         plugin(HttpMethod.POST, "/ComskipSegments/ProgramStart/$itemId/Card", mapOf("seconds" to seconds))
 
@@ -950,18 +950,39 @@ class LiveTvRepository {
         @SerialName("StartSeconds") val startSeconds: Double? = null,
         @SerialName("Action") val action: String? = null,
         @SerialName("CanUndo") val canUndo: Boolean = false,
+        // When the kept original's undo time is up (null: kept for good).
+        @SerialName("UndoUntil") val undoUntil: String? = null,
     )
 
-    /** The recording's program start (a skip marker), and whether a trim's original was kept; admins. */
+    @Serializable
+    data class Editing(
+        @SerialName("CanEdit") val canEdit: Boolean = false,
+        @SerialName("ProgramStartTrims") val programStartTrims: Boolean = false,
+        @SerialName("KeepOriginal") val keepOriginal: Boolean = false,
+        @SerialName("UndoDays") val undoDays: Int = 0,
+    ) {
+        /** How a trim can be taken back, for the confirmations. */
+        val undoNote: String
+            get() = when {
+                keepOriginal -> "Undo trim puts it back."
+                undoDays > 0 -> "Undo trim can put it back for $undoDays day${if (undoDays == 1) "" else "s"}."
+                else -> "This can't be undone."
+            }
+    }
+
+    /** Comskip plugin: whether this user may edit recordings (administrators, and users the plugin allows), and what a trim keeps. */
+    suspend fun editing(): Editing? = plugin(HttpMethod.GET, "/ComskipSegments/Editing")
+
+    /** The recording's program start (a skip marker), and whether a trim's original was kept; editors. */
     suspend fun programStartStatus(itemId: UUID): ProgramStartStatus? = plugin(HttpMethod.GET, "/ComskipSegments/ProgramStart/$itemId")
 
-    /** Remove the program start's skip marker; admins. */
+    /** Remove the program start's skip marker; editors. */
     suspend fun clearProgramStart(itemId: UUID): ProgramStartResult? = plugin(HttpMethod.DELETE, "/ComskipSegments/ProgramStart/$itemId")
 
-    /** Put a trimmed recording's kept original back; admins. */
+    /** Put a trimmed recording's kept original back; editors. */
     suspend fun undoTrim(itemId: UUID): ProgramStartResult? = plugin(HttpMethod.POST, "/ComskipSegments/ProgramStart/$itemId/Undo")
 
-    /** Look for a remembered card in the recording's opening minutes; admins. */
+    /** Look for a remembered card in the recording's opening minutes; editors. */
     suspend fun findProgramStart(itemId: UUID): ProgramStartResult? =
         plugin(HttpMethod.POST, "/ComskipSegments/ProgramStart/$itemId/Find")
 
@@ -979,10 +1000,10 @@ class LiveTvRepository {
         val fraction get() = if (bytes > 0) (doneBytes.toFloat() / bytes).coerceIn(0f, 1f) else 0f
     }
 
-    /** Comskip plugin: recordings being cut right now (program start, audio format), with progress; admins. */
+    /** Comskip plugin: recordings being cut right now (program start, audio format), with progress; everyone. */
     suspend fun cuts(): List<CutJob>? = plugin(HttpMethod.GET, "/ComskipSegments/Cuts")
 
-    /** Stop a cut while the original is still untouched; admins. */
+    /** Stop a cut while the original is still untouched; editors. */
     suspend fun stopCut(itemId: UUID): Message? = plugin(HttpMethod.POST, "/ComskipSegments/Cuts/$itemId/Stop")
 
     /** JellyDVR Space: recordings being moved to the archive right now, with progress; admins. */

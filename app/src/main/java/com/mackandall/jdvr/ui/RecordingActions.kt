@@ -58,11 +58,20 @@ fun RecordingActions(
     var start by remember(itemId) { mutableStateOf<LiveTvRepository.ProgramStartStatus?>(null) }
     var startCheck by remember(itemId) { mutableIntStateOf(0) }
     var armedUndo by remember(itemId) { mutableStateOf(false) }
-    LaunchedEffect(itemId, startCheck) { if (tools) start = runCatching { Jdvr.liveTv.programStartStatus(itemId) }.getOrNull() }
-    LaunchedEffect(armedUndo) {
-        if (armedUndo) {
+    var armedFind by remember(itemId) { mutableStateOf(false) }
+    var armedClearStart by remember(itemId) { mutableStateOf(false) }
+    var armedAudio by remember(itemId) { mutableStateOf(false) }
+    // Comskip's tools change the recording: only for users allowed to edit recordings.
+    val edit = editPermission()
+    val editTools = tools && edit != null
+    LaunchedEffect(itemId, startCheck, editTools) { if (editTools) start = runCatching { Jdvr.liveTv.programStartStatus(itemId) }.getOrNull() }
+    LaunchedEffect(armedUndo, armedFind, armedClearStart, armedAudio) {
+        if (armedUndo || armedFind || armedClearStart || armedAudio) {
             delay(4000)
             armedUndo = false
+            armedFind = false
+            armedClearStart = false
+            armedAudio = false
         }
     }
     LaunchedEffect(itemId, archiveCheck) {
@@ -94,7 +103,7 @@ fun RecordingActions(
     // would work on a file about to be replaced).
     val cut = cuttingFor(itemId.toString())
     if (cut != null) {
-        CuttingBar(cut, onStop = if (cut.stoppable) { { scope.launch { onNote(runCatching { Jdvr.liveTv.stopCut(itemId)?.message }.getOrNull() ?: "Couldn't stop it."); MoveWatcher.kick() } } } else null)
+        CuttingBar(cut, onStop = if (cut.stoppable && edit != null) { { scope.launch { onNote(runCatching { Jdvr.liveTv.stopCut(itemId)?.message }.getOrNull() ?: "Couldn't stop it."); MoveWatcher.kick() } } } else null)
     }
     val f = fav
     if (manage && f != null && !f.isMovie) {
@@ -120,10 +129,10 @@ fun RecordingActions(
             }
         }
     }
-    // Comskip's tools, as in the web client's item menu (administrators).
+    // Comskip's tools, as in the web client's item menu (users allowed to edit recordings).
     // Comskip: scan, or remove what a scan found (in case it shouldn't have run); the button
     // follows the item's status, and while a scan runs it checks back until it's done.
-    if (tools && cut == null) {
+    if (editTools && cut == null) {
         val c = commercials
         when {
             c?.inFlight == true -> Button("Scanning for commercials…") {}
@@ -135,7 +144,7 @@ fun RecordingActions(
                         armedRemove = false
                         scope.launch {
                             val r = runCatching { Jdvr.liveTv.removeCommercials(itemId) }.getOrNull()
-                            onNote(r?.message?.ifEmpty { null } ?: "Couldn't remove them (administrators only).")
+                            onNote(r?.message?.ifEmpty { null } ?: "Couldn't remove them.")
                             commercialsCheck++
                         }
                     }
@@ -143,32 +152,52 @@ fun RecordingActions(
             else ->
                 Button("Scan for commercials") {
                     scope.launch {
-                        onNote(runCatching { Jdvr.liveTv.scanCommercials(itemId)?.message }.getOrNull() ?: "Couldn't start a scan (administrators only).")
+                        onNote(runCatching { Jdvr.liveTv.scanCommercials(itemId)?.message }.getOrNull() ?: "Couldn't start a scan.")
                         commercialsCheck++
                     }
                 }
         }
     }
     // Program start: a remembered channel card (set from the player) found in the opening.
-    if (tools && cut == null) Button("Find program start") {
-        onNote("Looking for a remembered card…")
-        scope.launch {
-            onNote(runCatching { Jdvr.liveTv.findProgramStart(itemId)?.message }.getOrNull() ?: "Couldn't look: something may already be working on it (or you're not an administrator).")
-            MoveWatcher.kick()
-        }
-    }
-    val ps = start
-    if (tools && cut == null && ps?.action == "marker" && (ps.startSeconds ?: 0.0) >= 1) {
-        val s = ps.startSeconds!!.toInt()
-        Button("Remove program start (skips to ${s / 60}:${"%02d".format(s % 60)})") {
-            scope.launch {
-                onNote(runCatching { Jdvr.liveTv.clearProgramStart(itemId)?.message }.getOrNull() ?: "Couldn't remove it.")
-                startCheck++
+    // A found start is marked or trimmed per the plugin's setting: the second press says which.
+    if (editTools && cut == null) {
+        Button(
+            when {
+                !armedFind -> "Find program start"
+                edit!!.programStartTrims -> "Press again: find it and cut before it. ${edit.undoNote}"
+                else -> "Press again: find it and skip to it"
+            },
+        ) {
+            if (!armedFind) {
+                armedFind = true
+            } else {
+                armedFind = false
+                onNote("Looking for a remembered card…")
+                scope.launch {
+                    onNote(runCatching { Jdvr.liveTv.findProgramStart(itemId)?.message }.getOrNull() ?: "Couldn't look: something may already be working on it.")
+                    MoveWatcher.kick()
+                }
             }
         }
     }
-    if (tools && cut == null && ps?.canUndo == true) {
-        Button(if (armedUndo) "Press again: put the original back" else "Undo trim (put the original back)") {
+    val ps = start
+    if (editTools && cut == null && ps?.action == "marker" && (ps.startSeconds ?: 0.0) >= 1) {
+        val s = ps.startSeconds!!.toInt()
+        Button(if (armedClearStart) "Press again: play from the very start again" else "Remove program start (skips to ${s / 60}:${"%02d".format(s % 60)})") {
+            if (!armedClearStart) {
+                armedClearStart = true
+            } else {
+                armedClearStart = false
+                scope.launch {
+                    onNote(runCatching { Jdvr.liveTv.clearProgramStart(itemId)?.message }.getOrNull() ?: "Couldn't remove it.")
+                    startCheck++
+                }
+            }
+        }
+    }
+    if (editTools && cut == null && ps?.canUndo == true) {
+        val until = ps.undoUntil?.let { untilDate(it) }?.let { ", until $it" } ?: ""
+        Button(if (armedUndo) "Press again: put the original back" else "Undo trim (put the original back$until)") {
             if (!armedUndo) {
                 armedUndo = true
             } else {
@@ -180,10 +209,17 @@ fun RecordingActions(
             }
         }
     }
-    if (tools && cut == null) Button("Fix audio format") {
-        scope.launch {
-            onNote(runCatching { Jdvr.liveTv.fixAudioFormat(itemId)?.message }.getOrNull() ?: "Couldn't fix it: something may already be working on it (or you're not an administrator).")
-            MoveWatcher.kick()
+    if (editTools && cut == null) {
+        Button(if (armedAudio) "Press again: cut off audio in the wrong format. ${edit!!.undoNote}" else "Fix audio format") {
+            if (!armedAudio) {
+                armedAudio = true
+            } else {
+                armedAudio = false
+                scope.launch {
+                    onNote(runCatching { Jdvr.liveTv.fixAudioFormat(itemId)?.message }.getOrNull() ?: "Couldn't fix it: something may already be working on it.")
+                    MoveWatcher.kick()
+                }
+            }
         }
     }
     // Episode History's "Forget this episode": delete it and forget it, so it records again.
@@ -251,3 +287,10 @@ fun RecordingActions(
         }
     }
 }
+
+// "Oct 14" from the plugin's UTC timestamp (local date).
+private fun untilDate(utc: String): String? = runCatching {
+    java.time.OffsetDateTime.parse(if (utc.endsWith("Z") || utc.contains('+')) utc else utc + "Z")
+        .atZoneSameInstant(java.time.ZoneId.systemDefault())
+        .format(java.time.format.DateTimeFormatter.ofPattern("MMM d"))
+}.getOrNull()
