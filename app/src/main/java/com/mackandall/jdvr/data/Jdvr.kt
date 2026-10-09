@@ -19,8 +19,6 @@ import java.util.UUID
  * and the Live TV repository. No DI framework: there are only a handful.
  */
 object Jdvr {
-    const val DEFAULT_SERVER = "http://192.168.1.188:8096"
-
     lateinit var session: Session
         private set
     lateinit var prefs: Prefs

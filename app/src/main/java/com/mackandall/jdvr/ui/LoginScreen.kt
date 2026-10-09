@@ -45,12 +45,18 @@ import org.jellyfin.sdk.model.api.QuickConnectDto
 import timber.log.Timber
 
 /**
- * Sign in. Quick Connect first: the TV shows a code to approve from the web client (Profile >
- * Quick Connect), so nobody types a password with a remote. Username and password as a fallback.
+ * Sign in. The server: the last one signed in to, or one found on the network (Jellyfin answers a
+ * local broadcast), or typed. Then Quick Connect: the TV shows a code to approve from the web client
+ * (Profile > Quick Connect), so nobody types a password with a remote. Username and password as a
+ * fallback.
  */
 @Composable
 fun LoginScreen(onSignedIn: () -> Unit) {
-    var server by remember { mutableStateOf(Jdvr.session.serverUrl ?: Jdvr.DEFAULT_SERVER) }
+    var server by remember { mutableStateOf(Jdvr.session.serverUrl ?: "") }
+    // Servers that answered on the network: name and address.
+    var found by remember { mutableStateOf<List<Pair<String, String>>>(emptyList()) }
+    var searching by remember { mutableStateOf(false) }
+    var search by remember { mutableStateOf(0) }
     var code by remember { mutableStateOf<String?>(null) }
     var message by remember { mutableStateOf<String?>(null) }
     var usePassword by remember { mutableStateOf(false) }
@@ -65,9 +71,30 @@ fun LoginScreen(onSignedIn: () -> Unit) {
         onSignedIn()
     }
 
+    // Look for Jellyfin servers on the network; the first to answer fills an empty address.
+    LaunchedEffect(search) {
+        searching = true
+        try {
+            withContext(Dispatchers.IO) {
+                Jdvr.jellyfin.discovery.discoverLocalServers().collect { s ->
+                    val address = s.address.trimEnd('/')
+                    withContext(Dispatchers.Main) {
+                        if (found.none { it.second == address }) found = found + ((s.name ?: address) to address)
+                        if (server.isBlank()) server = address
+                    }
+                }
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Timber.w(e, "Server discovery failed")
+        }
+        searching = false
+    }
+
     // Quick Connect: ask for a code, then poll until someone approves it.
     LaunchedEffect(server, attempt, usePassword) {
-        if (usePassword) return@LaunchedEffect
+        if (usePassword || server.isBlank()) return@LaunchedEffect
         code = null
         try {
             val api = Jdvr.jellyfin.createApi(baseUrl = server.trimEnd('/'))
@@ -95,7 +122,21 @@ fun LoginScreen(onSignedIn: () -> Unit) {
             Text("JDVR", color = Jc.Focus, fontSize = 18.sp, fontWeight = FontWeight.Bold)
             Text("Sign in to Jellyfin", color = Jc.Text, fontSize = 28.sp, fontWeight = FontWeight.SemiBold)
             Field("Server", server, onChange = { server = it }, keyboard = KeyboardType.Uri)
-            if (!usePassword) {
+            // Found on the network: pick one (shown when there's a choice, or the address was changed).
+            val others = found.filter { it.second != server.trimEnd('/') }
+            if (others.isNotEmpty()) {
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    others.take(3).forEach { (name, address) -> Button("Use $name") { server = address } }
+                }
+            }
+            if (server.isBlank()) {
+                Text(
+                    if (searching) "Looking for Jellyfin servers on your network…" else "No server found on the network. Type its address, e.g. http://192.168.1.10:8096",
+                    color = Jc.Muted,
+                    fontSize = 16.sp,
+                )
+                if (!searching) Button("Look again") { search++ }
+            } else if (!usePassword) {
                 if (code != null) {
                     Text("Approve this code from the Jellyfin web client: your profile picture > Quick Connect.", color = Jc.Muted, fontSize = 16.sp)
                     Text(code!!.chunked(3).joinToString(" "), color = Jc.Text, fontSize = 56.sp, fontWeight = FontWeight.Bold)
