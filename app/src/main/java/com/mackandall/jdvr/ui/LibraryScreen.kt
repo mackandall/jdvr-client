@@ -96,6 +96,9 @@ fun LibraryScreen(
     // What was opened (and where in the list), to put focus back on it after Back.
     var lastItem by remember { mutableStateOf<UUID?>(null) }
     var lastIndex by remember { mutableIntStateOf(0) }
+    // Hold OK on a poster: its quick actions; a change there (watched, deleted) reloads the grid.
+    var quick by remember { mutableStateOf<LiveTvRepository.LibItem?>(null) }
+    var changed by remember { mutableIntStateOf(0) }
 
     val m = movie
     val s = show
@@ -112,11 +115,35 @@ fun LibraryScreen(
             ShowPage(s, refresh, onPlay)
         }
         else ->
-            LibraryGrid(library, entry, lastItem, lastIndex, refresh) { it, i ->
+            LibraryGrid(
+                library,
+                entry,
+                lastItem,
+                lastIndex,
+                refresh + changed,
+                onHold = { it, i ->
+                    lastItem = it.id
+                    lastIndex = i
+                    holdOk(menu = { quick = it }, details = { if (it.type == "Series") show = it else movie = it })
+                },
+            ) { it, i ->
                 lastItem = it.id
                 lastIndex = i
                 if (it.type == "Series") show = it else movie = it
             }
+    }
+    quick?.let { q ->
+        QuickActions(
+            itemId = q.id,
+            onPlay = { fromStart -> onPlay(PlayRecording(q.id, startMs = if (fromStart) 0L else null)) },
+            onDetails = { movie = q },
+            onChanged = { changed++ },
+            onDismiss = { quick = null },
+            onOpenShow = if (q.type == "Series") { { show = q } } else null,
+            extra = { det, say, done ->
+                if (q.type != "Series") RecordingActions(det.item.id, say, tools = false, manage = det.location == LIVE_FOLDER, onDeleted = done)
+            },
+        )
     }
 }
 
@@ -127,6 +154,7 @@ private fun LibraryGrid(
     restore: UUID?,
     restoreIndex: Int,
     refresh: Int,
+    onHold: (LiveTvRepository.LibItem, Int) -> Unit,
     onOpen: (LiveTvRepository.LibItem, Int) -> Unit,
 ) {
     // Remembered per library, so it opens the way it was left.
@@ -250,6 +278,7 @@ private fun LibraryGrid(
                                     .onFocusChanged { f -> if (f.isFocused) focusedIndex = i }
                                     // First column: Left goes to this item's letter on the strip.
                                     .then(if (strip && i % 7 == 0) Modifier.focusProperties { left = letterReqs[letter] ?: FocusRequester.Default } else Modifier),
+                                onHold = { onHold(it, i) },
                             ) { onOpen(it, i) }
                         }
                     }
@@ -326,12 +355,14 @@ private fun LetterStrip(
 internal fun Poster(
     item: LiveTvRepository.LibItem,
     modifier: Modifier,
+    onHold: (() -> Unit)? = null,
     onClick: () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
         Surface(
             onClick = onClick,
-            modifier = modifier.fillMaxWidth().aspectRatio(2f / 3f),
+            onLongClick = onHold,
+            modifier = modifier.fillMaxWidth().aspectRatio(2f / 3f).then(onHold?.let { Modifier.onMenuKey(it) } ?: Modifier),
             shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(9.dp)),
             colors = ClickableSurfaceDefaults.colors(containerColor = Jc.Panel2, focusedContainerColor = Jc.Panel2),
             border = ClickableSurfaceDefaults.border(focusedBorder = Border(BorderStroke(3.dp, Jc.Focus))),
@@ -375,6 +406,7 @@ internal fun ShowPage(
     var episodes by remember { mutableStateOf<List<EpisodeEntry>?>(null) }
     var reload by remember { mutableIntStateOf(0) }
     var episodeInfo by remember { mutableStateOf<UUID?>(null) }
+    var quick by remember { mutableStateOf<EpisodeEntry?>(null) }
     val scope = rememberCoroutineScope()
     LaunchedEffect(show.id, refresh, reload) {
         episodes =
@@ -409,5 +441,16 @@ internal fun ShowPage(
                 reload++
             }
         },
+        onHold = { quick = it },
     )
+    quick?.let { q ->
+        QuickActions(
+            itemId = q.id,
+            onPlay = { fromStart -> onPlay(PlayRecording(q.id, startMs = if (fromStart) 0L else null)) },
+            onDetails = { episodeInfo = q.id },
+            onChanged = { reload++ },
+            onDismiss = { quick = null },
+            extra = { det, say, done -> RecordingActions(det.item.id, say, tools = false, manage = det.location == LIVE_FOLDER, onDeleted = done) },
+        )
+    }
 }

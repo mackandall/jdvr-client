@@ -135,6 +135,12 @@ fun SettingsScreen(
             help = "While a recording, show or movie plays: what it is, when it was recorded and aired, and what's next, at the top whenever the info bar shows. The player's Info button opens the full details either way.",
             value = if (prefs.infoBoxTop) "On" else "Off",
         ) { prefs.changeInfoBoxTop(!prefs.infoBoxTop) }
+        Section("Remote")
+        Choice(
+            label = "Hold OK on a poster or episode",
+            help = "Quick actions: play, from the start, details, mark watched, and for recordings favourites, archive and delete. The Menu key, where the remote has one, does the same.",
+            value = if (prefs.holdOk == Prefs.HOLD_DETAILS) "Details page" else "Quick actions menu",
+        ) { prefs.changeHoldOk(if (prefs.holdOk == Prefs.HOLD_DETAILS) Prefs.HOLD_MENU else Prefs.HOLD_DETAILS) }
         Section("About")
         Text(
             "JDVR ${BuildConfig.VERSION_NAME} · signed in as ${Jdvr.session.userName ?: "?"} on ${Jdvr.session.serverUrl ?: "?"}",

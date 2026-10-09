@@ -113,7 +113,10 @@ fun EpisodeBrowser(
     onPlayFromStart: (EpisodeEntry) -> Unit = onPlay,
     // More buttons for the focused episode in the tiles view (Recorded Shows: favourite, delete).
     actions: (@Composable androidx.compose.foundation.layout.RowScope.(EpisodeEntry, (String) -> Unit) -> Unit)? = null,
+    // Hold OK (or Menu) on an episode: its quick actions, or (Settings › Remote) its details.
+    onHold: ((EpisodeEntry) -> Unit)? = null,
 ) {
+    val hold: (EpisodeEntry) -> Unit = { e -> holdOk(menu = { onHold?.invoke(e) ?: onInfo(e) }, details = { onInfo(e) }) }
     val tiles = Jdvr.prefs.episodeView == Prefs.TILES
     var backdrop by remember { mutableStateOf<UUID?>(null) }
     var overview by remember { mutableStateOf<String?>(null) }
@@ -136,9 +139,9 @@ fun EpisodeBrowser(
                 Text(if (list == null) "Loading…" else emptyText, color = Jc.Muted, fontSize = 16.sp)
             }
         } else if (tiles) {
-            TilesView(seriesId, backdrop, title, subtitle, list, entry, { e, fromStart -> if (fromStart) onPlayFromStart(e) else onPlay(e) }, onInfo, onToggleWatched, actions)
+            TilesView(seriesId, backdrop, title, subtitle, list, entry, { e, fromStart -> if (fromStart) onPlayFromStart(e) else onPlay(e) }, onInfo, onToggleWatched, actions, hold)
         } else {
-            ListView(title, subtitle, list, entry, onPlay, onInfo, onToggleWatched)
+            ListView(title, subtitle, list, entry, onPlay, onInfo, onToggleWatched, hold)
         }
     }
 }
@@ -172,6 +175,7 @@ private fun ListView(
     onPlay: (EpisodeEntry) -> Unit,
     onInfo: (EpisodeEntry) -> Unit,
     onToggleWatched: ((EpisodeEntry) -> Unit)?,
+    onHold: (EpisodeEntry) -> Unit,
 ) {
     var focusedId by remember { mutableStateOf(list.first().id) }
     val focused = list.firstOrNull { it.id == focusedId } ?: list.first()
@@ -196,10 +200,12 @@ private fun ListView(
                     Row(Modifier.fillMaxWidth().heightIn(min = 64.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                         Surface(
                             onClick = { onPlay(e) },
+                            onLongClick = { onHold(e) },
                             modifier =
                                 (if (i == 0) Modifier.focusRequester(first).let { m -> entry?.let { m.focusRequester(it) } ?: m } else Modifier)
                                     .weight(1f)
                                     .heightIn(min = 64.dp)
+                                    .onMenuKey { onHold(e) }
                                     .onFocusChanged { if (it.isFocused) focusedId = e.id },
                             shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(10.dp)),
                             colors = ClickableSurfaceDefaults.colors(containerColor = Jc.Panel.seeThrough(0.92f), focusedContainerColor = Jc.FocusFill, contentColor = Jc.Text, focusedContentColor = Jc.Text),
@@ -310,6 +316,7 @@ private fun TilesView(
     onInfo: (EpisodeEntry) -> Unit,
     onToggleWatched: ((EpisodeEntry) -> Unit)?,
     actions: (@Composable androidx.compose.foundation.layout.RowScope.(EpisodeEntry, (String) -> Unit) -> Unit)?,
+    onHold: (EpisodeEntry) -> Unit,
 ) {
     var note by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(note) {
@@ -392,7 +399,7 @@ private fun TilesView(
                         dim = rowHasFocus && e.id != focused.id,
                         modifier = (if (isStart) Modifier.focusRequester(start).let { m -> entry?.let { m.focusRequester(it) } ?: m } else Modifier).onFocusChanged { if (it.isFocused) focusedId = e.id },
                         onClick = { onPlay(e, false) },
-                        onLongClick = { onInfo(e) },
+                        onLongClick = { onHold(e) },
                     )
                 }
             }
@@ -453,7 +460,7 @@ private fun EpisodeCard(
         Surface(
             onClick = onClick,
             onLongClick = onLongClick,
-            modifier = modifier.fillMaxWidth().aspectRatio(16f / 9f).onPreviewKeyMenu(onLongClick),
+            modifier = modifier.fillMaxWidth().aspectRatio(16f / 9f).onMenuKey(onLongClick),
             shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(9.dp)),
             colors = ClickableSurfaceDefaults.colors(containerColor = Jc.Panel2, focusedContainerColor = Jc.Panel2),
             border = ClickableSurfaceDefaults.border(focusedBorder = Border(BorderStroke(3.dp, Jc.Focus))),
@@ -518,14 +525,3 @@ private fun PeopleRow(
 }
 
 /** The remote's Menu key on a card opens its details (OK plays). */
-private fun Modifier.onPreviewKeyMenu(action: () -> Unit) =
-    this.then(
-        Modifier.onPreviewKeyEvent { k ->
-            if (k.type == androidx.compose.ui.input.key.KeyEventType.KeyDown && k.key.nativeKeyCode == android.view.KeyEvent.KEYCODE_MENU) {
-                action()
-                true
-            } else {
-                false
-            }
-        },
-    )

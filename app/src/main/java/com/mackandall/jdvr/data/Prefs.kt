@@ -229,7 +229,18 @@ class Prefs(
         p.edit().putString("introSkip", v).apply()
     }
 
+    /** Holding OK (or Menu) on a poster, card or episode: "menu" (quick actions) or "details" (its details page). */
+    var holdOk by mutableStateOf(p.getString("holdOk", HOLD_MENU) ?: HOLD_MENU)
+        private set
+
+    fun changeHoldOk(v: String) {
+        holdOk = v
+        p.edit().putString("holdOk", v).apply()
+    }
+
     companion object {
+        const val HOLD_MENU = "menu"
+        const val HOLD_DETAILS = "details"
         const val SIDE = "side"
         const val TOP = "top"
         const val ASK = "ask"

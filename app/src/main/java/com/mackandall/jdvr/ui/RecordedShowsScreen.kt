@@ -82,6 +82,8 @@ fun RecordedShowsScreen(
     var cards by remember { mutableStateOf<List<LiveTvRepository.RecordingCard>?>(null) }
     var loaded by remember { mutableStateOf(false) }
     var openShow by remember { mutableStateOf<LiveTvRepository.RecordingCard?>(null) }
+    // Hold OK on a card: its quick actions.
+    var quick by remember { mutableStateOf<LiveTvRepository.RecordingCard?>(null) }
 
     val filter = Jdvr.prefs.recordingsFilter
     // A move to the archive finished: the recording now lives elsewhere.
@@ -196,7 +198,15 @@ fun RecordedShowsScreen(
                         var m: Modifier = Modifier
                         if (i == 0) m = m.focusRequester(entry)
                         if (c.id == returnTo) m = m.focusRequester(back)
-                        RecordingCardView(c, badges[c.id.plainId()], m) {
+                        RecordingCardView(
+                            c,
+                            badges[c.id.plainId()],
+                            m,
+                            onHold = {
+                                returnTo = c.id
+                                holdOk(menu = { quick = c }, details = { if (c.type == "Series") openShow = c else details = c.id.toUuid() })
+                            },
+                        ) {
                             returnTo = c.id
                             if (c.type == "Series") openShow = c else details = c.id.toUuid()
                         }
@@ -205,6 +215,21 @@ fun RecordedShowsScreen(
             }
         }
     }
+    val q = quick
+    val qid = q?.id?.toUuid()
+    if (q != null && qid != null) {
+        QuickActions(
+            itemId = qid,
+            onPlay = { fromStart -> onPlayItem(com.mackandall.jdvr.PlayRecording(qid, startMs = if (fromStart) 0L else null)) },
+            onDetails = { details = qid },
+            onChanged = { reloadCards++ },
+            onDismiss = { quick = null },
+            onOpenShow = if (q.type == "Series") { { openShow = q } } else null,
+            extra = { det, say, done ->
+                if (q.type != "Series") RecordingActions(det.item.id, say, tools = false, manage = det.location == LIVE_FOLDER, onDeleted = done)
+            },
+        )
+    }
 }
 
 @Composable
@@ -212,12 +237,14 @@ private fun RecordingCardView(
     c: LiveTvRepository.RecordingCard,
     commercials: LiveTvRepository.CommercialBadge?,
     modifier: Modifier,
+    onHold: () -> Unit,
     onClick: () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Surface(
             onClick = onClick,
-            modifier = modifier.fillMaxWidth().aspectRatio(2f / 3f),
+            onLongClick = onHold,
+            modifier = modifier.fillMaxWidth().aspectRatio(2f / 3f).onMenuKey(onHold),
             shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(10.dp)),
             colors = ClickableSurfaceDefaults.colors(containerColor = Jc.Panel2, focusedContainerColor = Jc.Panel2),
             border = ClickableSurfaceDefaults.border(focusedBorder = Border(BorderStroke(3.dp, Jc.Focus))),
@@ -276,6 +303,7 @@ private fun ShowEpisodes(
     onPlayItem: (com.mackandall.jdvr.PlayRecording) -> Unit,
 ) {
     var info by remember { mutableStateOf<UUID?>(null) }
+    var quick by remember { mutableStateOf<EpisodeEntry?>(null) }
     var episodes by remember { mutableStateOf<List<EpisodeEntry>?>(null) }
     var reload by remember { mutableStateOf(0) }
     val scope = rememberCoroutineScope()
@@ -324,5 +352,17 @@ private fun ShowEpisodes(
         },
         actions = { e, say -> RecordingActions(e.id, say, onDeleted = { reload++ }, tools = false) },
         emptyText = "No recordings of this show here.",
+        onHold = { quick = it },
     )
+    quick?.let { q ->
+        QuickActions(
+            itemId = q.id,
+            onPlay = { fromStart -> if (fromStart) onPlayItem(com.mackandall.jdvr.PlayRecording(q.id, startMs = 0L)) else onPlay(q.id) },
+            onDetails = { info = q.id },
+            onChanged = { reload++ },
+            onDismiss = { quick = null },
+            // Only a recording in the live folder can be deleted or moved from here (never an archive copy).
+            extra = { det, say, done -> RecordingActions(det.item.id, say, tools = false, manage = det.location == LIVE_FOLDER, onDeleted = done) },
+        )
+    }
 }

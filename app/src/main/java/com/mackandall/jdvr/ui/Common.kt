@@ -1,6 +1,7 @@
 package com.mackandall.jdvr.ui
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
@@ -31,6 +32,9 @@ fun badgeText(
 
 fun Modifier.onFocusChangedCompat(onChange: (Boolean) -> Unit): Modifier = onFocusChanged { onChange(it.isFocused) }
 
+/** Buttons stretch to the full width of what holds them (a menu's column), where this is true. */
+val LocalWideButtons = androidx.compose.runtime.compositionLocalOf { false }
+
 /** A remote-friendly button: blue ring when focused. */
 @Composable
 fun Button(
@@ -42,7 +46,7 @@ fun Button(
 ) {
     Surface(
         onClick = onClick,
-        modifier = modifier,
+        modifier = if (LocalWideButtons.current) modifier.then(Modifier.fillMaxWidth()) else modifier,
         shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(10.dp)),
         colors =
             ClickableSurfaceDefaults.colors(

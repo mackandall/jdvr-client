@@ -59,6 +59,7 @@ fun ArchivePicker(choices: ArchiveChoices, onPick: (ArchiveChoice) -> Unit, onDi
     var hasFocus by remember { mutableStateOf(false) }
     val usable = choices.targets.map { it.problem == null && choices.blocked == null }
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        androidx.compose.runtime.CompositionLocalProvider(LocalWideButtons provides false) {
         Column(
             Modifier
                 .width(720.dp)
@@ -95,6 +96,7 @@ fun ArchivePicker(choices: ArchiveChoices, onPick: (ArchiveChoice) -> Unit, onDi
                     Button("Cancel", modifier = cancelFocus.padding(top = 4.dp), onClick = onDismiss)
                 }
             }
+        }
         }
     }
     LaunchedEffect(Unit) {
