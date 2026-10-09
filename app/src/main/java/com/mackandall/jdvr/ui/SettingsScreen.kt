@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.foundation.border
 import androidx.compose.foundation.background
 import kotlinx.coroutines.launch
@@ -24,6 +25,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -208,45 +210,99 @@ private fun Choice(
     }
 }
 
-/** The weather's town: type it (on-screen keyboard), Find looks it up and keeps the best match. */
+/**
+ * The weather's town: OK on the box opens the on-screen keyboard to type it, Find (or the
+ * keyboard's Done) looks it up and keeps the best match. The box only takes typing after OK, so
+ * moving past it doesn't pop the keyboard up (which would then take the arrow keys).
+ */
 @Composable
 private fun TownRow() {
     val prefs = Jdvr.prefs
     var text by remember { mutableStateOf("") }
     var note by remember { mutableStateOf<String?>(null) }
+    var editing by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
+    val field = remember { FocusRequester() }
+    val box = remember { FocusRequester() }
+    fun find() {
+        val q = text.trim()
+        if (q.isEmpty()) return
+        scope.launch {
+            note =
+                runCatching { com.mackandall.jdvr.data.Weather.find(q) }.getOrNull()?.let {
+                    prefs.changeWeatherPlace(it)
+                    text = ""
+                    "Weather for ${it.name}"
+                } ?: "Couldn't find \"$q\" (check the spelling, or add the state: Springfield, IL)"
+        }
+    }
     Column(Modifier.fillMaxWidth(0.8f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text("Town: " + (prefs.weatherPlace?.name ?: "not set"), color = Jc.Text, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            androidx.compose.foundation.text.BasicTextField(
-                value = text,
-                onValueChange = { text = it },
-                singleLine = true,
-                textStyle = androidx.compose.ui.text.TextStyle(color = Jc.Text, fontSize = 16.sp),
-                cursorBrush = androidx.compose.ui.graphics.SolidColor(Jc.Focus),
-                modifier =
-                    Modifier
-                        .weight(1f)
-                        .border(BorderStroke(2.dp, Jc.Line), RoundedCornerShape(10.dp))
-                        .background(Jc.Panel2, RoundedCornerShape(10.dp))
-                        .padding(horizontal = 12.dp, vertical = 11.dp),
-                decorationBox = { inner ->
-                    if (text.isEmpty()) Text("Town, e.g. Atlanta or Springfield, IL", color = Jc.Muted, fontSize = 16.sp)
-                    inner()
-                },
-            )
-            Button("Find", primary = true) {
-                val q = text.trim()
-                if (q.isEmpty()) return@Button
-                scope.launch {
-                    note =
-                        runCatching { com.mackandall.jdvr.data.Weather.find(q) }.getOrNull()?.let {
-                            prefs.changeWeatherPlace(it)
-                            text = ""
-                            "Weather for ${it.name}"
-                        } ?: "Couldn't find \"$q\" (check the spelling, or add the state: Springfield, IL)"
+            val boxLook =
+                Modifier
+                    .border(BorderStroke(2.dp, if (editing) Jc.Focus else Jc.Line), RoundedCornerShape(10.dp))
+                    .background(Jc.Panel2, RoundedCornerShape(10.dp))
+            if (!editing) {
+                Surface(
+                    onClick = { editing = true },
+                    modifier = Modifier.weight(1f).focusRequester(box),
+                    shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(10.dp)),
+                    colors = ClickableSurfaceDefaults.colors(containerColor = Jc.Panel2, focusedContainerColor = Jc.FocusFill, contentColor = Jc.Text, focusedContentColor = Jc.Text),
+                    border = ClickableSurfaceDefaults.border(border = Border(BorderStroke(2.dp, Jc.Line)), focusedBorder = Border(BorderStroke(2.dp, Jc.Focus))),
+                    scale = ClickableSurfaceDefaults.scale(focusedScale = 1f),
+                ) {
+                    Text(text.ifEmpty { "Town, e.g. Atlanta or Springfield, IL (OK to type)" }, color = if (text.isEmpty()) Jc.Muted else Jc.Text, fontSize = 16.sp, modifier = Modifier.padding(horizontal = 12.dp, vertical = 11.dp))
+                }
+            } else {
+                androidx.compose.foundation.text.BasicTextField(
+                    value = text,
+                    onValueChange = { text = it },
+                    singleLine = true,
+                    textStyle = androidx.compose.ui.text.TextStyle(color = Jc.Text, fontSize = 16.sp),
+                    cursorBrush = androidx.compose.ui.graphics.SolidColor(Jc.Focus),
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Search),
+                    keyboardActions =
+                        androidx.compose.foundation.text.KeyboardActions(onSearch = {
+                            find()
+                            editing = false
+                        }),
+                    modifier =
+                        Modifier
+                            .weight(1f)
+                            .focusRequester(field)
+                            // Leaving the box (Back, or ▲▼ out of it) ends typing.
+                            .onFocusChanged { if (!it.isFocused && editing) editing = false }
+                            .onPreviewKeyEvent { e ->
+                                val dir =
+                                    when (e.key) {
+                                        Key.DirectionDown -> androidx.compose.ui.focus.FocusDirection.Down
+                                        Key.DirectionUp -> androidx.compose.ui.focus.FocusDirection.Up
+                                        else -> null
+                                    }
+                                if (dir != null && e.type == KeyEventType.KeyDown) {
+                                    focusManager.moveFocus(dir)
+                                    true
+                                } else {
+                                    false
+                                }
+                            }
+                            .then(boxLook)
+                            .padding(horizontal = 12.dp, vertical = 11.dp),
+                    decorationBox = { inner ->
+                        if (text.isEmpty()) Text("Town, e.g. Atlanta or Springfield, IL", color = Jc.Muted, fontSize = 16.sp)
+                        inner()
+                    },
+                )
+                LaunchedEffect(Unit) {
+                    repeat(20) {
+                        if (runCatching { field.requestFocus() }.isSuccess) return@LaunchedEffect
+                        kotlinx.coroutines.delay(30)
+                    }
                 }
             }
+            Button("Find", primary = true) { find() }
         }
         note?.let { Text(it, color = Jc.Muted, fontSize = 14.sp) }
     }
