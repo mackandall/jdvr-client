@@ -197,7 +197,13 @@ private fun ListView(
                     if (list.any { it.season != list.first().season } && (i == 0 || list[i - 1].season != e.season)) {
                         Text(seasonTitle(e.season), color = Jc.Muted, fontSize = 14.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = if (i == 0) 0.dp else 8.dp, bottom = 2.dp))
                     }
-                    Row(Modifier.fillMaxWidth().heightIn(min = 64.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    // Focus anywhere in the row (the episode, or its Info / Watched buttons) shows
+                    // that episode on the right.
+                    Row(
+                        Modifier.fillMaxWidth().heightIn(min = 64.dp).onFocusChanged { if (it.hasFocus) focusedId = e.id },
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
                         Surface(
                             onClick = { onPlay(e) },
                             onLongClick = onHold?.let { h -> { h(e) } },
@@ -205,8 +211,7 @@ private fun ListView(
                                 (if (i == 0) Modifier.focusRequester(first).let { m -> entry?.let { m.focusRequester(it) } ?: m } else Modifier)
                                     .weight(1f)
                                     .heightIn(min = 64.dp)
-                                    .then(onHold?.let { h -> Modifier.onMenuKey { h(e) } } ?: Modifier)
-                                    .onFocusChanged { if (it.isFocused) focusedId = e.id },
+                                    .then(onHold?.let { h -> Modifier.onMenuKey { h(e) } } ?: Modifier),
                             shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(10.dp)),
                             colors = ClickableSurfaceDefaults.colors(containerColor = Jc.Panel.seeThrough(0.92f), focusedContainerColor = Jc.FocusFill, contentColor = Jc.Text, focusedContentColor = Jc.Text),
                             border = ClickableSurfaceDefaults.border(focusedBorder = Border(BorderStroke(2.dp, Jc.Focus))),
