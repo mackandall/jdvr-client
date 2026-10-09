@@ -18,14 +18,29 @@ android {
         versionName = "0.1.0"
     }
 
+    // Release key: its location and passwords come from ~/.gradle/gradle.properties (JDVR_KEYSTORE,
+    // JDVR_KEYSTORE_PASSWORD, JDVR_KEY_ALIAS, JDVR_KEY_PASSWORD), never from the repo. Every release
+    // must be signed with the same key, or it won't install over the one before.
+    val releaseKey = providers.gradleProperty("JDVR_KEYSTORE").orNull?.let { file(it) }?.takeIf { it.exists() }
+    signingConfigs {
+        if (releaseKey != null) {
+            create("release") {
+                storeFile = releaseKey
+                storePassword = providers.gradleProperty("JDVR_KEYSTORE_PASSWORD").get()
+                keyAlias = providers.gradleProperty("JDVR_KEY_ALIAS").get()
+                keyPassword = providers.gradleProperty("JDVR_KEY_PASSWORD").get()
+            }
+        }
+    }
+
     buildTypes {
         debug {
             applicationIdSuffix = ".debug"
         }
         release {
             isMinifyEnabled = false
-            // Side-loaded on the household's TVs: signed with the local debug key (as Wholphin is here).
-            signingConfig = signingConfigs.getByName("debug")
+            // Without the release key on this machine, the local debug key (installs, but not as an update).
+            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
         }
     }
 
