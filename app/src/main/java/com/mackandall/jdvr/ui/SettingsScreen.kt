@@ -221,6 +221,8 @@ private fun TownRow() {
     var text by remember { mutableStateOf("") }
     var note by remember { mutableStateOf<String?>(null) }
     var editing by remember { mutableStateOf(false) }
+    // Typing ends when the box loses focus, but only once it has had it (it starts unfocused).
+    var hadFocus by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
     val field = remember { FocusRequester() }
@@ -246,7 +248,10 @@ private fun TownRow() {
                     .background(Jc.Panel2, RoundedCornerShape(10.dp))
             if (!editing) {
                 Surface(
-                    onClick = { editing = true },
+                    onClick = {
+                        hadFocus = false
+                        editing = true
+                    },
                     modifier = Modifier.weight(1f).focusRequester(box),
                     shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(10.dp)),
                     colors = ClickableSurfaceDefaults.colors(containerColor = Jc.Panel2, focusedContainerColor = Jc.FocusFill, contentColor = Jc.Text, focusedContentColor = Jc.Text),
@@ -273,7 +278,7 @@ private fun TownRow() {
                             .weight(1f)
                             .focusRequester(field)
                             // Leaving the box (Back, or ▲▼ out of it) ends typing.
-                            .onFocusChanged { if (!it.isFocused && editing) editing = false }
+                            .onFocusChanged { if (it.isFocused) hadFocus = true else if (hadFocus && editing) editing = false }
                             .onPreviewKeyEvent { e ->
                                 val dir =
                                     when (e.key) {

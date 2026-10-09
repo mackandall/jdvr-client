@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -212,6 +213,8 @@ private fun Field(
     secret: Boolean = false,
 ) {
     var editing by remember { mutableStateOf(false) }
+    // Typing ends when the box loses focus, but only once it has had it (it starts unfocused).
+    var hadFocus by remember { mutableStateOf(false) }
     val field = remember { androidx.compose.ui.focus.FocusRequester() }
     val box = remember { androidx.compose.ui.focus.FocusRequester() }
     val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
@@ -219,8 +222,11 @@ private fun Field(
         Text(label, color = Jc.Muted, fontSize = 14.sp)
         if (!editing) {
             androidx.tv.material3.Surface(
-                onClick = { editing = true },
-                modifier = Modifier.focusRequester(box),
+                onClick = {
+                    hadFocus = false
+                    editing = true
+                },
+                modifier = Modifier.fillMaxWidth().focusRequester(box),
                 shape = androidx.tv.material3.ClickableSurfaceDefaults.shape(RoundedCornerShape(10.dp)),
                 colors = androidx.tv.material3.ClickableSurfaceDefaults.colors(containerColor = Jc.Panel2, focusedContainerColor = Jc.Panel2, contentColor = Jc.Text, focusedContentColor = Jc.Text),
                 border =
@@ -248,8 +254,11 @@ private fun Field(
                 visualTransformation = if (secret) PasswordVisualTransformation() else VisualTransformation.None,
                 modifier =
                     Modifier
+                        .fillMaxWidth()
                         .focusRequester(field)
-                        .onFocusChanged { if (!it.isFocused && editing) editing = false }
+                        .onFocusChanged {
+                            if (it.isFocused) hadFocus = true else if (hadFocus && editing) editing = false
+                        }
                         .onPreviewKeyEvent { e ->
                             val dir =
                                 when (e.key) {
