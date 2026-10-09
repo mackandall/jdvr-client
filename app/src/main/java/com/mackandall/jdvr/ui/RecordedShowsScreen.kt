@@ -202,10 +202,10 @@ fun RecordedShowsScreen(
                             c,
                             badges[c.id.plainId()],
                             m,
-                            onHold = {
+                            onHold = if (!holdEnabled) null else { {
                                 returnTo = c.id
                                 holdOk(menu = { quick = c }, details = { if (c.type == "Series") openShow = c else details = c.id.toUuid() })
-                            },
+                            } },
                         ) {
                             returnTo = c.id
                             if (c.type == "Series") openShow = c else details = c.id.toUuid()
@@ -237,14 +237,14 @@ private fun RecordingCardView(
     c: LiveTvRepository.RecordingCard,
     commercials: LiveTvRepository.CommercialBadge?,
     modifier: Modifier,
-    onHold: () -> Unit,
+    onHold: (() -> Unit)?,
     onClick: () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Surface(
             onClick = onClick,
             onLongClick = onHold,
-            modifier = modifier.fillMaxWidth().aspectRatio(2f / 3f).onMenuKey(onHold),
+            modifier = modifier.fillMaxWidth().aspectRatio(2f / 3f).then(onHold?.let { Modifier.onMenuKey(it) } ?: Modifier),
             shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(10.dp)),
             colors = ClickableSurfaceDefaults.colors(containerColor = Jc.Panel2, focusedContainerColor = Jc.Panel2),
             border = ClickableSurfaceDefaults.border(focusedBorder = Border(BorderStroke(3.dp, Jc.Focus))),

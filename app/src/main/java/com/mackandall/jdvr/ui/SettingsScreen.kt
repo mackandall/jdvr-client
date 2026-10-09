@@ -138,9 +138,22 @@ fun SettingsScreen(
         Section("Remote")
         Choice(
             label = "Hold OK on a poster or episode",
-            help = "Quick actions: play, from the start, details, mark watched, and for recordings favourites, archive and delete. The Menu key, where the remote has one, does the same.",
-            value = if (prefs.holdOk == Prefs.HOLD_DETAILS) "Details page" else "Quick actions menu",
-        ) { prefs.changeHoldOk(if (prefs.holdOk == Prefs.HOLD_DETAILS) Prefs.HOLD_MENU else Prefs.HOLD_DETAILS) }
+            help = "Off: holding OK is just a press. Quick actions: play, from the start, details, mark watched, and for recordings favourites, archive and delete. The Menu key, where the remote has one, does the same.",
+            value =
+                when (prefs.holdOk) {
+                    Prefs.HOLD_MENU -> "Quick actions menu"
+                    Prefs.HOLD_DETAILS -> "Details page"
+                    else -> "Off"
+                },
+        ) {
+            prefs.changeHoldOk(
+                when (prefs.holdOk) {
+                    Prefs.HOLD_OFF -> Prefs.HOLD_MENU
+                    Prefs.HOLD_MENU -> Prefs.HOLD_DETAILS
+                    else -> Prefs.HOLD_OFF
+                },
+            )
+        }
         Section("About")
         Text(
             "JDVR ${BuildConfig.VERSION_NAME} · signed in as ${Jdvr.session.userName ?: "?"} on ${Jdvr.session.serverUrl ?: "?"}",

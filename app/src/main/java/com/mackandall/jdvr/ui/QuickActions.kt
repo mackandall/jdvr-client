@@ -42,6 +42,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.UUID
 
+/** Holding OK does something of its own (Settings › Remote); off, a hold is just a press. */
+val holdEnabled: Boolean get() = Jdvr.prefs.holdOk != Prefs.HOLD_OFF
+
 /**
  * What holding OK (or the Menu key) on a poster, card or episode does: the quick actions menu, or
  * the details page, as chosen in Settings › Remote.
@@ -84,6 +87,9 @@ fun QuickActions(
     var failed by remember(itemId) { mutableStateOf(false) }
     var note by remember { mutableStateOf<String?>(null) }
     var hasFocus by remember { mutableStateOf(false) }
+    // The OK that opened the menu is still held: its repeats and its release would press the
+    // button that just took focus (Play). OK does nothing here until a fresh press.
+    var okFresh by remember { mutableStateOf(false) }
     val first = remember { FocusRequester() }
     val scope = rememberCoroutineScope()
     LaunchedEffect(itemId) {
@@ -108,6 +114,19 @@ fun QuickActions(
                 .heightIn(max = 620.dp)
                 .clip(RoundedCornerShape(16.dp))
                 .background(Jc.Sheet)
+                .onPreviewKeyEvent { k ->
+                    val ok = k.key == Key.DirectionCenter || k.key == Key.Enter || k.key == Key.NumPadEnter
+                    when {
+                        !ok || okFresh -> false
+                        // A new press (not a repeat of the held one): from now on OK works.
+                        k.type == KeyEventType.KeyDown && k.nativeKeyEvent.repeatCount == 0 -> {
+                            okFresh = true
+                            false
+                        }
+                        // The held press's repeats, and its release: swallowed.
+                        else -> true
+                    }
+                }
                 .onFocusChanged { hasFocus = it.hasFocus }
                 .verticalScroll(rememberScrollState())
                 .padding(28.dp),

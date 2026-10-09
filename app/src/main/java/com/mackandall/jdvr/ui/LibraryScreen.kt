@@ -278,7 +278,7 @@ private fun LibraryGrid(
                                     .onFocusChanged { f -> if (f.isFocused) focusedIndex = i }
                                     // First column: Left goes to this item's letter on the strip.
                                     .then(if (strip && i % 7 == 0) Modifier.focusProperties { left = letterReqs[letter] ?: FocusRequester.Default } else Modifier),
-                                onHold = { onHold(it, i) },
+                                onHold = if (holdEnabled) { { onHold(it, i) } } else null,
                             ) { onOpen(it, i) }
                         }
                     }
