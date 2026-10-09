@@ -22,7 +22,14 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -92,19 +99,28 @@ fun LoginScreen(onSignedIn: () -> Unit) {
         searching = false
     }
 
-    // Quick Connect: ask for a code, then poll until someone approves it.
+    // Quick Connect: ask for a code, then poll until someone approves it. A code asked for in the
+    // last few minutes is kept (the screen can be rebuilt, e.g. when the app is opened again from
+    // the home screen), so the one someone is typing in the web client stays the one shown.
     LaunchedEffect(server, attempt, usePassword) {
         if (usePassword || server.isBlank()) return@LaunchedEffect
         code = null
         try {
-            val api = Jdvr.jellyfin.createApi(baseUrl = server.trimEnd('/'))
-            var state = withContext(Dispatchers.IO) { api.quickConnectApi.initiateQuickConnect().content }
+            val base = server.trimEnd('/')
+            val api = Jdvr.jellyfin.createApi(baseUrl = base)
+            val kept = PendingCode.takeIf { it?.server == base && it.attempt == attempt && System.currentTimeMillis() - it.at < 9 * 60_000 }
+            var state =
+                kept?.let { k -> runCatching { withContext(Dispatchers.IO) { api.quickConnectApi.getQuickConnectState(secret = k.secret).content } }.getOrNull() }
+                    ?: withContext(Dispatchers.IO) { api.quickConnectApi.initiateQuickConnect().content }.also {
+                        PendingCode = PendingQuickConnect(base, attempt, it.secret, System.currentTimeMillis())
+                    }
             code = state.code
             message = null
             while (!state.authenticated) {
                 delay(3000)
                 state = withContext(Dispatchers.IO) { api.quickConnectApi.getQuickConnectState(secret = state.secret).content }
             }
+            PendingCode = null
             finish(withContext(Dispatchers.IO) { api.userApi.authenticateWithQuickConnect(QuickConnectDto(secret = state.secret)).content })
         } catch (e: CancellationException) {
             throw e
@@ -172,6 +188,21 @@ fun LoginScreen(onSignedIn: () -> Unit) {
     }
 }
 
+// The Quick Connect code being shown, kept across a rebuilt screen (see LoginScreen).
+private data class PendingQuickConnect(
+    val server: String,
+    val attempt: Int,
+    val secret: String,
+    val at: Long,
+)
+
+private var PendingCode: PendingQuickConnect? = null
+
+/**
+ * A text box that takes typing only after OK (then the on-screen keyboard opens); otherwise it's a
+ * plain focusable box, so landing on it or moving past it doesn't pop the keyboard up over the
+ * screen. Leaving it (Back, ▲▼) ends typing.
+ */
 @Composable
 private fun Field(
     label: String,
@@ -180,23 +211,78 @@ private fun Field(
     keyboard: KeyboardType = KeyboardType.Text,
     secret: Boolean = false,
 ) {
-    var focused by remember { mutableStateOf(false) }
+    var editing by remember { mutableStateOf(false) }
+    val field = remember { androidx.compose.ui.focus.FocusRequester() }
+    val box = remember { androidx.compose.ui.focus.FocusRequester() }
+    val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(label, color = Jc.Muted, fontSize = 14.sp)
-        BasicTextField(
-            value = value,
-            onValueChange = onChange,
-            singleLine = true,
-            textStyle = TextStyle(color = Jc.Text, fontSize = 18.sp),
-            cursorBrush = SolidColor(Jc.Focus),
-            keyboardOptions = KeyboardOptions(keyboardType = keyboard),
-            visualTransformation = if (secret) PasswordVisualTransformation() else VisualTransformation.None,
-            modifier =
-                Modifier
-                    .border(BorderStroke(2.dp, if (focused) Jc.Focus else Jc.Line), RoundedCornerShape(10.dp))
-                    .background(Jc.Panel2, RoundedCornerShape(10.dp))
-                    .padding(horizontal = 14.dp, vertical = 12.dp)
-                    .onFocusChangedCompat { focused = it },
-        )
+        if (!editing) {
+            androidx.tv.material3.Surface(
+                onClick = { editing = true },
+                modifier = Modifier.focusRequester(box),
+                shape = androidx.tv.material3.ClickableSurfaceDefaults.shape(RoundedCornerShape(10.dp)),
+                colors = androidx.tv.material3.ClickableSurfaceDefaults.colors(containerColor = Jc.Panel2, focusedContainerColor = Jc.Panel2, contentColor = Jc.Text, focusedContentColor = Jc.Text),
+                border =
+                    androidx.tv.material3.ClickableSurfaceDefaults.border(
+                        border = androidx.tv.material3.Border(BorderStroke(2.dp, Jc.Line)),
+                        focusedBorder = androidx.tv.material3.Border(BorderStroke(2.dp, Jc.Focus)),
+                    ),
+                scale = androidx.tv.material3.ClickableSurfaceDefaults.scale(focusedScale = 1f),
+            ) {
+                Text(
+                    if (secret) "•".repeat(value.length) else value.ifEmpty { " " },
+                    fontSize = 18.sp,
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                )
+            }
+        } else {
+            BasicTextField(
+                value = value,
+                onValueChange = onChange,
+                singleLine = true,
+                textStyle = TextStyle(color = Jc.Text, fontSize = 18.sp),
+                cursorBrush = SolidColor(Jc.Focus),
+                keyboardOptions = KeyboardOptions(keyboardType = keyboard, imeAction = androidx.compose.ui.text.input.ImeAction.Done),
+                keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = { editing = false }),
+                visualTransformation = if (secret) PasswordVisualTransformation() else VisualTransformation.None,
+                modifier =
+                    Modifier
+                        .focusRequester(field)
+                        .onFocusChanged { if (!it.isFocused && editing) editing = false }
+                        .onPreviewKeyEvent { e ->
+                            val dir =
+                                when (e.key) {
+                                    Key.DirectionDown -> androidx.compose.ui.focus.FocusDirection.Down
+                                    Key.DirectionUp -> androidx.compose.ui.focus.FocusDirection.Up
+                                    else -> null
+                                }
+                            if (dir != null && e.type == KeyEventType.KeyDown) {
+                                focusManager.moveFocus(dir)
+                                true
+                            } else {
+                                false
+                            }
+                        }
+                        .border(BorderStroke(2.dp, Jc.Focus), RoundedCornerShape(10.dp))
+                        .background(Jc.Panel2, RoundedCornerShape(10.dp))
+                        .padding(horizontal = 14.dp, vertical = 12.dp),
+            )
+            LaunchedEffect(Unit) {
+                repeat(20) {
+                    if (runCatching { field.requestFocus() }.isSuccess) return@LaunchedEffect
+                    delay(30)
+                }
+            }
+        }
+        // Done on the keyboard puts focus back on the box (only after typing, not when the screen opens).
+        var typed by remember { mutableStateOf(false) }
+        LaunchedEffect(editing) {
+            if (editing) {
+                typed = true
+            } else if (typed) {
+                runCatching { box.requestFocus() }
+            }
+        }
     }
 }
