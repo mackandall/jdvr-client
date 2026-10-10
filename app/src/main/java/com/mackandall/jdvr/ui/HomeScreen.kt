@@ -309,6 +309,14 @@ private fun NoLiveTvCard(
         Text(NO_LIVE_TV, color = Jc.Text, fontSize = 16.sp)
         Box(Modifier.weight(1f))
         Button("Search your libraries", primary = true, modifier = Modifier.focusRequester(entry), onClick = onSearch)
+        // This card replaces the live card once Home knows there's no Live TV; the focus that was
+        // on its Watch live button went with it, so it comes here.
+        LaunchedEffect(Unit) {
+            repeat(20) {
+                if (runCatching { entry.requestFocus() }.isSuccess) return@LaunchedEffect
+                kotlinx.coroutines.delay(50)
+            }
+        }
     }
 }
 

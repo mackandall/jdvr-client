@@ -34,6 +34,9 @@ fun RecordingActions(
     var fav by remember(itemId) { mutableStateOf<LiveTvRepository.FavouriteFor?>(null) }
     var reload by remember { mutableIntStateOf(0) }
     var armedDelete by remember(itemId) { mutableStateOf(false) }
+    // Forget needs Episode History; on a server without it the button isn't offered.
+    var canForget by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { canForget = Jdvr.liveTv.hasEpisodeHistory() }
     var armedUnfav by remember(itemId) { mutableStateOf(false) }
     var armedForget by remember(itemId) { mutableStateOf(false) }
     var armedRemove by remember(itemId) { mutableStateOf(false) }
@@ -223,7 +226,7 @@ fun RecordingActions(
         }
     }
     // Episode History's "Forget this episode": delete it and forget it, so it records again.
-    if (tools && manage && cut == null) {
+    if (tools && manage && cut == null && canForget) {
         Button(if (armedForget) "Press again: delete and forget" else if (fav?.isMovie == true) "Forget this movie" else "Forget this episode") {
             if (!armedForget) {
                 armedForget = true

@@ -732,6 +732,12 @@ class LiveTvRepository {
     /** Episode History's guide mark symbols (to show its marks as coloured chips). */
     suspend fun markSymbols(): MarkSymbols? = plugin(HttpMethod.GET, "/EpisodeHistory/Symbols")
 
+    // Whether the Episode History plugin answers on this server (asked once; a failed call is
+    // asked again next time).
+    private var episodeHistory: Boolean? = null
+
+    suspend fun hasEpisodeHistory(): Boolean = episodeHistory ?: (markSymbols() != null).also { if (it) episodeHistory = true }
+
     @Serializable
     data class Outcome(
         @SerialName("Kind") val kind: String = "",
@@ -1204,6 +1210,36 @@ class LiveTvRepository {
                     recordingNow = t.status == org.jellyfin.sdk.model.api.RecordingStatus.IN_PROGRESS,
                 )
             }.sortedBy { it.start }
+        }.getOrNull()
+
+    /**
+     * Jellyfin's own list of recordings, newest first, one card per recording (no grouping into
+     * shows): Recorded Shows on a server without Episode History.
+     */
+    suspend fun jellyfinRecordings(): List<RecordingCard>? =
+        runCatching {
+            io {
+                api.liveTvApi.getRecordings(
+                    userId = Jdvr.userId,
+                    fields = listOf(org.jellyfin.sdk.model.api.ItemFields.DATE_CREATED),
+                ).content.items
+            }.sortedByDescending { it.dateCreated }
+                .map { d ->
+                    RecordingCard(
+                        type = d.type.serialName,
+                        id = d.id.toString(),
+                        imageId = d.seriesId?.toString(),
+                        name = d.seriesName ?: d.name ?: "",
+                        subtitle =
+                            if (d.seriesName != null) {
+                                listOfNotNull(d.parentIndexNumber?.let { s -> d.indexNumber?.let { "S$s:E$it" } }, d.episodeTitle ?: d.name).joinToString(" · ")
+                            } else {
+                                d.productionYear?.toString()
+                            },
+                        count = 1,
+                        unplayedCount = if (d.userData?.played == true) 0 else 1,
+                    )
+                }
         }.getOrNull()
 
     /**

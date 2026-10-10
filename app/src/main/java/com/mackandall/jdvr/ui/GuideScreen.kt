@@ -303,7 +303,7 @@ fun GuideScreen(
     if (infoOnTop) {
         Box(Modifier.fillMaxWidth().height(170.dp).background(guidePanel())) {
             focused?.let { TopInfo(it, channels?.firstOrNull { c -> c.id == it.channelId }, symbols) }
-                ?: Text("Move through the guide to see a programme here; OK for what you can do with it.", color = Jc.Muted, fontSize = 15.sp, modifier = Modifier.padding(22.dp))
+                ?: if (channels?.isEmpty() != true) Text("Move through the guide to see a programme here; OK for what you can do with it.", color = Jc.Muted, fontSize = 15.sp, modifier = Modifier.padding(22.dp)) else Unit
         }
     }
     Row(Modifier.fillMaxSize()) {
@@ -364,7 +364,7 @@ fun GuideScreen(
                 val p = selected
                 if (p == null) {
                     focused?.let { InfoPanel(it, channels?.firstOrNull { c -> c.id == it.channelId }, symbols) }
-                        ?: Text("Move through the guide to see a programme here; OK for what you can do with it.", color = Jc.Muted, fontSize = 15.sp, modifier = Modifier.padding(22.dp))
+                        ?: if (channels?.isEmpty() != true) Text("Move through the guide to see a programme here; OK for what you can do with it.", color = Jc.Muted, fontSize = 15.sp, modifier = Modifier.padding(22.dp)) else Unit
                 } else {
                     Actions(p)
                 }

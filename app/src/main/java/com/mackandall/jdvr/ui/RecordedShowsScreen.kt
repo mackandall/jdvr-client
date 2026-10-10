@@ -80,6 +80,8 @@ fun RecordedShowsScreen(
     // Opened on a show from elsewhere (Home): Back from it goes back there, not to the grid.
     val cameForShow = remember { openShowId != null }
     var cards by remember { mutableStateOf<List<LiveTvRepository.RecordingCard>?>(null) }
+    // Without Episode History: Jellyfin's own recordings, one card each (no live folder / archive).
+    var plain by remember { mutableStateOf(false) }
     var loaded by remember { mutableStateOf(false) }
     var openShow by remember { mutableStateOf<LiveTvRepository.RecordingCard?>(null) }
     // Hold OK on a card: its quick actions.
@@ -90,7 +92,9 @@ fun RecordedShowsScreen(
     val movesFinished by MoveWatcher.finished.collectAsState()
     LaunchedEffect(filter, reloadCards, movesFinished) {
         loaded = false
-        cards = Jdvr.liveTv.recordedShows(filter)
+        val shows = Jdvr.liveTv.recordedShows(filter)
+        plain = shows == null
+        cards = shows ?: Jdvr.liveTv.jellyfinRecordings()
         // Comskip's badges for the cards (a show's: how many of its recordings are scanned).
         badges = cards?.mapNotNull { it.id.toUuid() }?.let { ids -> runCatching { Jdvr.liveTv.commercialBadges(ids) }.getOrNull() }.orEmpty()
         loaded = true
@@ -130,7 +134,7 @@ fun RecordedShowsScreen(
             Column(Modifier.weight(1f)) {
                 Text("Recorded Shows", color = Jc.Text, fontSize = 28.sp, fontWeight = FontWeight.SemiBold)
                 Text(
-                    when (filter) {
+                    if (plain) "Jellyfin's recordings · newest first" else when (filter) {
                         Prefs.ARCHIVED -> "Moved to the archive · newest first"
                         Prefs.ALL -> "Recordings folder and archive · newest first"
                         else -> "Recordings folder · newest first"
@@ -139,8 +143,8 @@ fun RecordedShowsScreen(
                     fontSize = 15.sp,
                 )
             }
-            // Live folder → Archive → Both.
-            Button(
+            // Live folder → Archive → Both (Episode History's; not on a plain server).
+            if (!plain) Button(
                 when (filter) {
                     Prefs.ARCHIVED -> "Showing: Archive"
                     Prefs.ALL -> "Showing: Both"
@@ -160,7 +164,7 @@ fun RecordedShowsScreen(
         val list = cards
         when {
             !loaded -> Text("Loading…", color = Jc.Muted, fontSize = 16.sp)
-            list == null -> Text("Couldn't load Recorded Shows (the Episode History plugin answers this).", color = Jc.Amber, fontSize = 16.sp)
+            list == null -> Text("Couldn't load the recordings from the server.", color = Jc.Amber, fontSize = 16.sp)
             list.isEmpty() -> Text(if (filter == Prefs.ARCHIVED) "Nothing has been moved to the archive." else "Nothing recorded yet.", color = Jc.Muted, fontSize = 16.sp)
             else -> {
                 LaunchedEffect(Unit) {
