@@ -110,8 +110,11 @@ fun AppRoot() {
         lifecycle.addObserver(o)
         onDispose { lifecycle.removeObserver(o) }
     }
+    // Recorded Shows is offered only on a server with Live TV or recordings (asked with the libraries).
+    var hasDvr by remember { mutableStateOf(true) }
     LaunchedEffect(signedIn, librariesLoad) {
         if (signedIn) runCatching { Jdvr.liveTv.libraries() }.getOrNull()?.let { libraries = it }
+        if (signedIn) hasDvr = Jdvr.liveTv.hasDvr()
     }
     val shownLibraries = libraries.filter { it.id.toString() !in Jdvr.prefs.hiddenLibraries }
     val currentLibrary = shownLibraries.firstOrNull { it.id == libraryId }
@@ -236,6 +239,7 @@ fun AppRoot() {
                     railOpen = false
                 },
                 libraries = shownLibraries,
+                showRecorded = hasDvr,
                 selectedLibrary = libraryId,
                 onSelectLibrary = {
                     backStack.clear()

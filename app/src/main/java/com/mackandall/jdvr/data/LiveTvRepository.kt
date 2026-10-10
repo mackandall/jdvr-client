@@ -1194,6 +1194,17 @@ class LiveTvRepository {
      */
     suspend fun schedule(): List<Upcoming>? = upcoming() ?: jellyfinTimers()
 
+    /**
+     * Whether this server is a DVR: it has Live TV channels, or has recorded something. False only
+     * when both answers say no; an unanswered call counts as yes (keep what's shown).
+     */
+    suspend fun hasDvr(): Boolean {
+        val channels = runCatching { io { api.liveTvApi.getLiveTvChannels(userId = Jdvr.userId, limit = 1).content.totalRecordCount } }.getOrNull() ?: return true
+        if (channels > 0) return true
+        val recordings = runCatching { io { api.liveTvApi.getRecordings(userId = Jdvr.userId, limit = 1).content.totalRecordCount } }.getOrNull() ?: return true
+        return recordings > 0
+    }
+
     private suspend fun jellyfinTimers(): List<Upcoming>? =
         runCatching {
             io { api.liveTvApi.getTimers().content.items }.mapNotNull { t ->

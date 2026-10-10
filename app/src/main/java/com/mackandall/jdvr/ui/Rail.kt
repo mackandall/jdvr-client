@@ -93,6 +93,8 @@ fun Rail(
     onDismiss: () -> Unit = {},
     // True while Right belongs to the rail (along the icon row, or opening Libraries).
     onKeepsRight: (Boolean) -> Unit = {},
+    // Recorded Shows: only on a server that has Live TV or recordings.
+    showRecorded: Boolean = true,
 ) {
     val prefs = Jdvr.prefs
     var open by remember {
@@ -135,6 +137,7 @@ fun Rail(
                     }
                 } else {
                     val s = Screen.entries.firstOrNull { it.key == k } ?: return@forEach
+                    if (s == Screen.RecordedShows && !showRecorded) return@forEach
                     // A line under the libraries when they're listed one by one.
                     val afterLibs = lastOrNull()?.let { it.kind == Kind.Item && it.key.startsWith("lib:") } == true
                     add(Entry(k, s.label, s == selected, Kind.Item, divider = afterLibs) { onSelect(s) })
