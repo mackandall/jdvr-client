@@ -60,6 +60,7 @@ import com.mackandall.jdvr.data.LiveTvRepository
 import com.mackandall.jdvr.data.Prefs
 import java.time.LocalDateTime
 import java.util.UUID
+import kotlinx.coroutines.launch
 
 /** One episode as both episode lists show it (a recording, or a library episode). */
 data class EpisodeEntry(
@@ -141,7 +142,7 @@ fun EpisodeBrowser(
         } else if (tiles) {
             TilesView(seriesId, backdrop, title, subtitle, list, entry, { e, fromStart -> if (fromStart) onPlayFromStart(e) else onPlay(e) }, onInfo, onToggleWatched, actions, hold)
         } else {
-            ListView(title, subtitle, list, entry, onPlay, onInfo, onToggleWatched, hold)
+            ListView(seriesId?.toString() ?: title, title, subtitle, list, entry, onPlay, onInfo, onToggleWatched, hold)
         }
     }
 }
@@ -166,8 +167,17 @@ private fun Header(
 
 // ---- List: rows on the left, the focused episode on the right ----------------------------------
 
+/**
+ * The episode last pressed in each show's list (by series id or title): a details page replaces the
+ * list, so on Back the list is new and would start at the top. Kept while the app runs.
+ */
+private object ListReturn {
+    val last = mutableMapOf<String, UUID>()
+}
+
 @Composable
 private fun ListView(
+    showKey: String,
     title: String,
     subtitle: String?,
     list: List<EpisodeEntry>,
@@ -177,10 +187,55 @@ private fun ListView(
     onToggleWatched: ((EpisodeEntry) -> Unit)?,
     onHold: ((EpisodeEntry) -> Unit)?,
 ) {
-    var focusedId by remember { mutableStateOf(list.first().id) }
+    // Back from an episode's page (a new list): the episode that was pressed, else the first.
+    val remembered = ListReturn.last[showKey]?.takeIf { id -> list.any { it.id == id } }
+    var focusedId by remember { mutableStateOf(remembered ?: list.first().id) }
     val focused = list.firstOrNull { it.id == focusedId } ?: list.first()
     val first = remember { FocusRequester() }
-    LaunchedEffect(Unit) { runCatching { first.requestFocus() } }
+    // The episode just played (or opened): back from the player or its page, the list reloads and
+    // focus goes to that row again, scrolled into view. (Focus asked for the first row before,
+    // which in a long list isn't on screen, so Android dropped it on a row nearby.)
+    var returnTo by remember { mutableStateOf(remembered) }
+    val back = remember { FocusRequester() }
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    // Focus coming back into the list (the player or a page over it closed): Android puts it on
+    // whatever row is under the spot the closed screen's button was, so move it to the row that
+    // was pressed.
+    var listHasFocus by remember { mutableStateOf(false) }
+    fun backToPressed() {
+        val id = returnTo ?: return
+        val index = list.indexOfFirst { it.id == id }
+        if (index < 0) return
+        scope.launch {
+            if (listState.layoutInfo.visibleItemsInfo.none { it.key == id }) runCatching { listState.scrollToItem(index) }
+            repeat(40) {
+                if (runCatching { back.requestFocus() }.isSuccess) return@launch
+                kotlinx.coroutines.delay(50)
+            }
+        }
+    }
+    // First showing: the remembered episode (scrolled to), or the first.
+    LaunchedEffect(Unit) {
+        if (returnTo == null) {
+            runCatching { first.requestFocus() }
+        } else {
+            backToPressed()
+        }
+    }
+    LaunchedEffect(list) {
+        val id = returnTo ?: return@LaunchedEffect
+        val index = list.indexOfFirst { it.id == id }
+        if (index < 0) {
+            returnTo = null
+            return@LaunchedEffect
+        }
+        if (listState.layoutInfo.visibleItemsInfo.none { it.key == id }) runCatching { listState.scrollToItem(index) }
+        repeat(40) {
+            if (runCatching { back.requestFocus() }.isSuccess) return@LaunchedEffect
+            kotlinx.coroutines.delay(50)
+        }
+    }
     // Descriptions the list didn't come with (recordings), fetched as episodes get focus.
     val more = remember { mutableStateMapOf<UUID, LiveTvRepository.LibItem>() }
     LaunchedEffect(focused.id) {
@@ -191,7 +246,26 @@ private fun ListView(
         Header(title, subtitle, null, tiles = false)
         Spacer(12)
         Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-            LazyColumn(Modifier.weight(0.6f), verticalArrangement = Arrangement.spacedBy(6.dp), contentPadding = PaddingValues(bottom = 40.dp)) {
+            LazyColumn(
+                Modifier
+                    .weight(0.6f)
+                    .onFocusChanged { f ->
+                        if (f.hasFocus && !listHasFocus) backToPressed()
+                        listHasFocus = f.hasFocus
+                    }
+                    // Moving with the arrows ends the "return here" (the row pressed stays the
+                    // return point while the player or its page is up, whatever Android does with
+                    // focus meanwhile).
+                    .onPreviewKeyEvent { k ->
+                        if (k.type == androidx.compose.ui.input.key.KeyEventType.KeyDown &&
+                            k.key in setOf(androidx.compose.ui.input.key.Key.DirectionUp, androidx.compose.ui.input.key.Key.DirectionDown)
+                        ) {
+                            returnTo = null
+                        }
+                        false
+                    },
+                state = listState,
+                verticalArrangement = Arrangement.spacedBy(6.dp), contentPadding = PaddingValues(bottom = 40.dp)) {
                 itemsIndexed(list, key = { _, e -> e.id }) { i, e ->
                     // A season heading where the season changes (when there's more than one).
                     if (list.any { it.season != list.first().season } && (i == 0 || list[i - 1].season != e.season)) {
@@ -205,10 +279,17 @@ private fun ListView(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Surface(
-                            onClick = { onPlay(e) },
+                            onClick = {
+                                returnTo = e.id
+                                ListReturn.last[showKey] = e.id
+                                onPlay(e)
+                            },
                             onLongClick = onHold?.let { h -> { h(e) } },
                             modifier =
-                                (if (i == 0) Modifier.focusRequester(first).let { m -> entry?.let { m.focusRequester(it) } ?: m } else Modifier)
+                                (if (i == 0) Modifier.focusRequester(first) else Modifier)
+                                    // The screen's entry (asked for after the player closes) and this
+                                    // list's own return point: the row last focused.
+                                    .then(if (e.id == (returnTo ?: focusedId)) Modifier.focusRequester(back).let { m -> entry?.let { m.focusRequester(it) } ?: m } else Modifier)
                                     .weight(1f)
                                     .heightIn(min = 64.dp)
                                     .then(onHold?.let { h -> Modifier.onMenuKey { h(e) } } ?: Modifier),
@@ -227,7 +308,11 @@ private fun ListView(
                                 }
                             }
                         }
-                        Button("Info") { onInfo(e) }
+                        Button("Info") {
+                            returnTo = e.id
+                            ListReturn.last[showKey] = e.id
+                            onInfo(e)
+                        }
                         onToggleWatched?.let { t -> Button(if (e.played) "Unwatch" else "Watched") { t(e) } }
                     }
                 }
