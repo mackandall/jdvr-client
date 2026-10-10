@@ -311,7 +311,18 @@ fun MiniGuide(
                             verticalArrangement = Arrangement.Center,
                         ) {
                             Text((if (recording(p)) "● " else "") + p.name, color = Jc.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Marks.parse(p.rawEpisodeTitle, symbols).title?.let { Text(it, color = Jc.Muted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                            // Episode History's marks, as in the guide: ■ skipped, ↪ other airing,
+                            // ● in the library, ✓ watched, then the episode title.
+                            val marks = Marks.parse(p.rawEpisodeTitle, symbols)
+                            if (marks.any || marks.title != null) {
+                                androidx.compose.foundation.layout.Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                                    if (marks.skipped) Text("■", color = Jc.Amber, fontSize = 11.sp)
+                                    if (marks.otherAiring) Text("↪", color = Jc.Focus, fontSize = 11.sp)
+                                    if (marks.inLibrary) Text("●", color = Jc.Green, fontSize = 11.sp)
+                                    if (marks.watched) Text("✓", color = Jc.Green, fontSize = 11.sp)
+                                    marks.title?.let { Text(it, color = Jc.Muted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                                }
+                            }
                         }
                     }
                     if (programs[ch.id] == null) Text("…", color = Jc.Muted, fontSize = 13.sp, modifier = Modifier.align(Alignment.CenterStart).padding(start = 8.dp))
