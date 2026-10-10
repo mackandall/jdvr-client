@@ -48,6 +48,7 @@ import com.mackandall.jdvr.data.LiveTvRepository
 import com.mackandall.jdvr.data.Program
 import com.mackandall.jdvr.ui.Jc
 import com.mackandall.jdvr.ui.seeThrough
+import androidx.compose.ui.graphics.compositeOver
 import com.mackandall.jdvr.ui.Marks
 import com.mackandall.jdvr.ui.time
 import kotlinx.coroutines.delay
@@ -287,8 +288,14 @@ fun MiniGuide(
                     Text(ch.name, color = Jc.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 BoxWithConstraints(Modifier.weight(1f).fillMaxHeight()) {
+                    // A light theme's frosted cells would let the now line show through: solid there.
+                    val cellColour = if (Jc.Light) Jc.Panel2.compositeOver(Jc.Sheet) else Jc.Panel2.seeThrough(0.9f)
                     val w = maxWidth
                     val windowEnd = windowStart.plusMinutes(WINDOW_MIN)
+                    // Now: behind the cells (as in the guide), so it shows in the gaps between them,
+                    // never across a title.
+                    val nowFrac = Duration.between(windowStart, LocalDateTime.now()).toMinutes().toFloat() / WINDOW_MIN
+                    if (nowFrac in 0f..1f) Box(Modifier.offset(x = w * nowFrac).width(2.dp).fillMaxHeight().background(Jc.Focus.copy(alpha = 0.8f)))
                     rowPrograms(i).filter { it.end.isAfter(windowStart) && it.start.isBefore(windowEnd) }.forEach { p ->
                         val from = (Duration.between(windowStart, maxOf(p.start, windowStart)).toMinutes().toFloat() / WINDOW_MIN).coerceIn(0f, 1f)
                         val to = (Duration.between(windowStart, minOf(p.end, windowEnd)).toMinutes().toFloat() / WINDOW_MIN).coerceIn(0f, 1f)
@@ -298,7 +305,7 @@ fun MiniGuide(
                                 .offset(x = w * from)
                                 .width((w * (to - from) - 4.dp).coerceAtLeast(6.dp))
                                 .fillMaxHeight()
-                                .background(if (isSel) Jc.FocusFill else Jc.Panel2.seeThrough(0.9f), RoundedCornerShape(7.dp))
+                                .background(if (isSel) Jc.FocusFill else cellColour, RoundedCornerShape(7.dp))
                                 .then(if (isSel) Modifier.border(2.dp, Jc.Focus, RoundedCornerShape(7.dp)) else Modifier)
                                 .padding(horizontal = 8.dp),
                             verticalArrangement = Arrangement.Center,
@@ -308,9 +315,6 @@ fun MiniGuide(
                         }
                     }
                     if (programs[ch.id] == null) Text("…", color = Jc.Muted, fontSize = 13.sp, modifier = Modifier.align(Alignment.CenterStart).padding(start = 8.dp))
-                    // Now.
-                    val nowFrac = Duration.between(windowStart, LocalDateTime.now()).toMinutes().toFloat() / WINDOW_MIN
-                    if (nowFrac in 0f..1f) Box(Modifier.offset(x = w * nowFrac).width(2.dp).fillMaxHeight().background(Jc.Focus.copy(alpha = 0.8f)))
                 }
             }
         }
