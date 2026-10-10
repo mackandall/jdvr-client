@@ -732,11 +732,16 @@ class LiveTvRepository {
     /** Episode History's guide mark symbols (to show its marks as coloured chips). */
     suspend fun markSymbols(): MarkSymbols? = plugin(HttpMethod.GET, "/EpisodeHistory/Symbols")
 
-    // Whether the Episode History plugin answers on this server (asked once; a failed call is
-    // asked again next time).
-    private var episodeHistory: Boolean? = null
+    // Whether the Episode History plugin answers on this server: a yes is reused for 5 minutes (so
+    // a plugin removed meanwhile stops being offered soon after); a no is asked again next time.
+    private var episodeHistoryAt = 0L
 
-    suspend fun hasEpisodeHistory(): Boolean = episodeHistory ?: (markSymbols() != null).also { if (it) episodeHistory = true }
+    suspend fun hasEpisodeHistory(): Boolean {
+        if (System.currentTimeMillis() - episodeHistoryAt < 5 * 60_000) return true
+        val yes = markSymbols() != null
+        episodeHistoryAt = if (yes) System.currentTimeMillis() else 0L
+        return yes
+    }
 
     @Serializable
     data class Outcome(

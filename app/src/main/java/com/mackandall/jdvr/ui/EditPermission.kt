@@ -10,8 +10,10 @@ import com.mackandall.jdvr.data.LiveTvRepository
 
 /**
  * Whether the signed-in user may edit recordings (Comskip plugin: administrators, and the users
- * its config page allows), and what a trim keeps. Asked once per user, again after 5 minutes so a
- * change on the server shows up. Until the answer arrives nobody gets edit buttons.
+ * its config page allows), and what a trim keeps. An answer is reused for 5 minutes, so a change on
+ * the server shows up. No answer (Comskip removed, or the server unreachable) means no edit
+ * buttons, and it's asked again on the next page rather than after 5 minutes, so the buttons come
+ * back as soon as the plugin does.
  */
 object EditPermission {
     var info by mutableStateOf<LiveTvRepository.Editing?>(null)
@@ -27,10 +29,9 @@ object EditPermission {
         }
         if (System.currentTimeMillis() - at < 5 * 60_000) return
         val got = runCatching { Jdvr.liveTv.editing() }.getOrNull()
-        // A failed answer keeps the last one (or none: no buttons).
-        if (got != null || user != forUser) info = got
+        info = got
         forUser = user
-        at = System.currentTimeMillis()
+        at = if (got != null) System.currentTimeMillis() else 0L
     }
 }
 
