@@ -156,6 +156,8 @@ fun SettingsScreen(
                 },
             )
         }
+        Section("Server features")
+        ServerFeaturesList()
         Section("About")
         Text(
             "JDVR ${BuildConfig.VERSION_NAME} · signed in as ${Jdvr.session.userName ?: "?"} on ${Jdvr.session.serverUrl ?: "?"}",
@@ -511,6 +513,67 @@ private fun MenuSettings(libraries: List<com.mackandall.jdvr.data.LiveTvReposito
                 armed = false
             } else {
                 armed = true
+            }
+        }
+    }
+}
+
+/**
+ * The server plugins JDVR does more with: ✓ installed, ○ not installed (with where to get it), or
+ * "ask an administrator" when this user can't tell.
+ */
+@Composable
+private fun ServerFeaturesList() {
+    var state by remember { mutableStateOf<Map<java.util.UUID, Boolean?>?>(null) }
+    LaunchedEffect(Unit) { state = com.mackandall.jdvr.data.ServerFeatures.check() }
+    Text(
+        "JDVR works with any Jellyfin server; these optional plugins on the server add more. Add one in Jellyfin's dashboard: Plugins › Repositories (the address below), then Plugins › Catalog.",
+        color = Jc.Muted,
+        fontSize = 14.sp,
+        modifier = Modifier.fillMaxWidth(0.8f),
+    )
+    val s = state
+    if (s == null) {
+        Text("Checking the server…", color = Jc.Muted, fontSize = 15.sp)
+        return
+    }
+    com.mackandall.jdvr.data.ServerFeatures.plugins.forEach { p ->
+        val has = s[p.id]
+        // Focusable, so the list scrolls with the remote like the rest of Settings.
+        Surface(
+            onClick = {},
+            modifier = Modifier.fillMaxWidth(0.8f),
+            shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(10.dp)),
+            colors = ClickableSurfaceDefaults.colors(containerColor = Jc.Panel, focusedContainerColor = Jc.FocusFill, contentColor = Jc.Text, focusedContentColor = Jc.Text),
+            border = ClickableSurfaceDefaults.border(focusedBorder = Border(BorderStroke(2.dp, Jc.Focus))),
+            scale = ClickableSurfaceDefaults.scale(focusedScale = 1.01f),
+        ) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                Text(
+                    when (has) {
+                        true -> "✓"
+                        false -> "○"
+                        null -> "?"
+                    },
+                    color = if (has == true) Jc.Green else Jc.Muted,
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.width(22.dp),
+                )
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Text(p.name, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+                    Text(p.adds, color = Jc.Muted, fontSize = 14.sp)
+                    when (has) {
+                        true -> Text("Installed", color = Jc.Green, fontSize = 13.sp)
+                        null -> Text("Only an administrator's account can tell whether the server has it.", color = Jc.Muted, fontSize = 13.sp)
+                        false ->
+                            Text(
+                                p.repository?.let { "Not installed. Repository: $it" } ?: "Not installed. Not published yet.",
+                                color = if (p.repository != null) Jc.Focus else Jc.Muted,
+                                fontSize = 13.sp,
+                            )
+                    }
+                }
             }
         }
     }

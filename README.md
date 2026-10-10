@@ -1,7 +1,26 @@
 # JDVR — a Jellyfin DVR client for Android TV
 
-A TV client built around the JellyDVR server plugins (Schedule, Live, Episode History, Comskip):
-live TV and a guide first, recordings next.
+A TV client for Jellyfin's live TV and DVR: live TV and a guide first, recordings next. It works
+with any Jellyfin server (10.11 or 12), and does more with a few optional server plugins (below).
+
+## Works best with
+
+All optional: without one, JDVR falls back to Jellyfin's own features or says what's missing.
+**Settings › Server features** in the app shows which ones your server has. To add one: Jellyfin
+dashboard › Plugins › Repositories › add the repository address, then Plugins › Catalog › install,
+and restart Jellyfin.
+
+| Plugin | What it adds in JDVR | Repository |
+|---|---|---|
+| Comskip Commercial Segments | Commercials found and skipped (also while recording), ✂ badges, program start, recording edits | `https://raw.githubusercontent.com/mackandall/jellyfin-plugin-comskip-segments/main/manifest.json` |
+| Intro Skipper | Intros, recaps and previews found and skipped | `https://intro-skipper.org/manifest.json` |
+| Episode History | New recordings on Home, Recorded Shows by show, watched / in library / recorded marks in the guide, Forget this episode | not published yet |
+| JellyDVR Schedule | Tuners in use, "all tuners are busy" before tuning, conflicts and priorities, Recording Favourites | not published yet |
+| JellyDVR Live | Pause and rewind live TV past when you tuned in; keep what you're watching | not published yet |
+| JellyDVR Space | Move to archive…, keeping the recordings drive from filling up | not published yet |
+| XMLTV Guide Cleaner | Cleaner movie titles in the guide (for guides that put the year in the title) | not published yet |
+
+## What's in it
 
 - Kotlin, Compose for TV, Media3, Jellyfin SDK. No DI framework.
 - Sign in with Quick Connect (approve the code from the web client) or a password.
