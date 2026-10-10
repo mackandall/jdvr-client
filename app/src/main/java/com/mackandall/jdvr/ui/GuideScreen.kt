@@ -671,6 +671,8 @@ internal fun ProgramPanel(
     var p by remember(program.id) { mutableStateOf(program) }
     // Episode History (watched mark, a copy to play, forget) and JellyDVR Live (is this only a buffer).
     var eh by remember(program.id) { mutableStateOf<LiveTvRepository.EhProgram?>(null) }
+    // What "Forget this show" would forget (administrators, a show with history).
+    var showForget by remember(program.id) { mutableStateOf<LiveTvRepository.ShowForget?>(null) }
     var buffer by remember(program.id) { mutableStateOf<LiveTvRepository.Buffer?>(null) }
     var isBuffer by remember(program.id) { mutableStateOf(false) }
     var armed by remember(program.id) { mutableStateOf<String?>(null) }
@@ -695,11 +697,13 @@ internal fun ProgramPanel(
         Jdvr.liveTv.program(p.id)?.let { p = it }
         schedule = Jdvr.liveTv.scheduleState(p.id)
         eh = Jdvr.liveTv.ehProgram(p.id)
+        showForget = if (p.isSeries) Jdvr.liveTv.forgetShow(p.id, dryRun = true) else null
         isBuffer = p.id.toString().plainId() in Jdvr.liveTv.bufferPrograms()
         buffer = Jdvr.liveTv.buffers(p.channelId).lastOrNull { it.programId?.plainId() == p.id.toString().plainId() }
     }
     LaunchedEffect(program.id) {
         eh = Jdvr.liveTv.ehProgram(program.id)
+        if (program.isSeries) showForget = Jdvr.liveTv.forgetShow(program.id, dryRun = true)
         isBuffer = program.id.toString().plainId() in Jdvr.liveTv.bufferPrograms()
         if (isBuffer) buffer = Jdvr.liveTv.buffers(program.channelId).lastOrNull { it.programId?.plainId() == program.id.toString().plainId() }
         schedule = Jdvr.liveTv.scheduleState(program.id)
@@ -850,6 +854,19 @@ internal fun ProgramPanel(
                             Jdvr.liveTv.forgetProgram(p.id)
                             "Forgotten: it can be recorded again."
                         }
+                    }
+                }
+            }
+        }
+        showForget?.takeIf { it.episodes > 0 }?.let { sf ->
+            Button(if (armed == "forgetShow") "Press again: forget all of ${sf.show ?: "this show"}" else "Forget this show (${sf.episodes} episode${if (sf.episodes == 1) "" else "s"})", modifier = Modifier.fillMaxWidth()) {
+                if (armed != "forgetShow") {
+                    armed = "forgetShow"
+                } else {
+                    armed = null
+                    act {
+                        val r = Jdvr.liveTv.forgetShow(p.id, dryRun = false)
+                        if (r == null) "Couldn't forget it." else "Forgot ${sf.show ?: "the show"}: its episodes can be recorded again" + if (r.keptInLibrary > 0) " (copies still in the library still count)." else "."
                     }
                 }
             }

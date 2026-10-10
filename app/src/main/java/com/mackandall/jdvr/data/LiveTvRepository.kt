@@ -857,6 +857,23 @@ class LiveTvRepository {
      * "Forget this episode" from a recording: deletes it (a copy in the library would count it as
      * recorded again) and what the history remembers, so it records again (admins).
      */
+    @Serializable
+    data class ShowForget(
+        @SerialName("Show") val show: String? = null,
+        @SerialName("Rows") val rows: Int = 0,
+        @SerialName("Episodes") val episodes: Int = 0,
+        @SerialName("Forgotten") val forgotten: Int = 0,
+        @SerialName("KeptInLibrary") val keptInLibrary: Int = 0,
+    )
+
+    /**
+     * "Forget this show": Episode History forgets every episode of the show [itemId] belongs to (a
+     * show, an episode or a guide entry), so a series recording records them again ([dryRun]
+     * counts). Administrators; null otherwise or without the plugin.
+     */
+    suspend fun forgetShow(itemId: UUID, dryRun: Boolean): ShowForget? =
+        plugin(HttpMethod.DELETE, "/EpisodeHistory/Item/${itemId.toString().replace("-", "")}/ShowHistory", if (dryRun) mapOf("dryRun" to "true") else emptyMap())
+
     suspend fun forgetRecording(itemId: UUID): Forgot? =
         plugin(HttpMethod.DELETE, "/EpisodeHistory/Item/${itemId.toString().replace("-", "")}/History", mapOf("deleteRecording" to true))
 

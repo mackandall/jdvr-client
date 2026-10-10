@@ -317,7 +317,18 @@ fun ShowActions(
     var archive by remember(seriesId) { mutableStateOf<LiveTvRepository.ArchiveChoices?>(null) }
     var archiveCheck by remember(seriesId) { mutableIntStateOf(0) }
     var picking by remember(seriesId) { mutableStateOf(false) }
-    LaunchedEffect(seriesId) { delete = runCatching { Jdvr.liveTv.deleteShowRecordings(seriesId, dryRun = true) }.getOrNull() }
+    var forget by remember(seriesId) { mutableStateOf<LiveTvRepository.ShowForget?>(null) }
+    var armedForget by remember(seriesId) { mutableStateOf(false) }
+    LaunchedEffect(seriesId) {
+        delete = runCatching { Jdvr.liveTv.deleteShowRecordings(seriesId, dryRun = true) }.getOrNull()
+        forget = runCatching { Jdvr.liveTv.forgetShow(seriesId, dryRun = true) }.getOrNull()
+    }
+    LaunchedEffect(armedForget) {
+        if (armedForget) {
+            delay(4000)
+            armedForget = false
+        }
+    }
     LaunchedEffect(seriesId, archiveCheck) {
         archive = runCatching { Jdvr.liveTv.archiveChoices(seriesId) }.getOrNull()
         // Moves under way: check back until they're done.
@@ -362,6 +373,22 @@ fun ShowActions(
                 },
                 onDismiss = { picking = false },
             )
+        }
+    }
+    // Episode History's "Forget this show": its episodes record again (watched ones too).
+    val f = forget
+    if (f != null && f.episodes > 0) {
+        Button(if (armedForget) "Press again: forget all of ${f.show ?: "this show"}" else "Forget this show (${f.episodes} episode${if (f.episodes == 1) "" else "s"})") {
+            if (!armedForget) {
+                armedForget = true
+            } else {
+                armedForget = false
+                scope.launch {
+                    val r = runCatching { Jdvr.liveTv.forgetShow(seriesId, dryRun = false) }.getOrNull()
+                    onNote(if (r == null) "Couldn't forget it." else "Forgotten: its episodes can be recorded again")
+                    forget = runCatching { Jdvr.liveTv.forgetShow(seriesId, dryRun = true) }.getOrNull()
+                }
+            }
         }
     }
     val d = delete
