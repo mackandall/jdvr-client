@@ -230,7 +230,11 @@ fun RecordedShowsScreen(
             onDismiss = { quick = null },
             onOpenShow = if (q.type == "Series") { { openShow = q } } else null,
             extra = { det, say, done ->
-                if (q.type != "Series") RecordingActions(det.item.id, say, tools = false, manage = det.location == LIVE_FOLDER, onDeleted = done)
+                if (q.type != "Series") {
+                    RecordingActions(det.item.id, say, tools = false, manage = det.location == LIVE_FOLDER, onDeleted = done)
+                } else {
+                    ShowActions(qid, say, onDeleted = done)
+                }
             },
         )
     }

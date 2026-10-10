@@ -297,3 +297,102 @@ private fun untilDate(utc: String): String? = runCatching {
         .atZoneSameInstant(java.time.ZoneId.systemDefault())
         .format(java.time.format.DateTimeFormatter.ofPattern("MMM d"))
 }.getOrNull()
+
+/**
+ * What a whole show offers in its quick actions: move all its recordings to the archive
+ * (JellyDVR Space; administrators), and delete all of them (Episode History; those the user may
+ * delete, in the recordings folders, so archived copies stay). Deleting asks for a second press
+ * and says how many and how much first. [onDeleted] follows a delete or a finished move.
+ */
+@Composable
+fun ShowActions(
+    seriesId: UUID,
+    onNote: (String) -> Unit,
+    onDeleted: () -> Unit,
+) {
+    val scope = rememberCoroutineScope()
+    var delete by remember(seriesId) { mutableStateOf<LiveTvRepository.ShowDelete?>(null) }
+    var armedDelete by remember(seriesId) { mutableStateOf(false) }
+    var deleting by remember(seriesId) { mutableStateOf(false) }
+    var archive by remember(seriesId) { mutableStateOf<LiveTvRepository.ArchiveChoices?>(null) }
+    var archiveCheck by remember(seriesId) { mutableIntStateOf(0) }
+    var picking by remember(seriesId) { mutableStateOf(false) }
+    LaunchedEffect(seriesId) { delete = runCatching { Jdvr.liveTv.deleteShowRecordings(seriesId, dryRun = true) }.getOrNull() }
+    LaunchedEffect(seriesId, archiveCheck) {
+        archive = runCatching { Jdvr.liveTv.archiveChoices(seriesId) }.getOrNull()
+        // Moves under way: check back until they're done.
+        while (archive?.inFlight != null) {
+            delay(5000)
+            archive = runCatching { Jdvr.liveTv.archiveChoices(seriesId) }.getOrNull()
+        }
+    }
+    LaunchedEffect(armedDelete) {
+        if (armedDelete) {
+            delay(4000)
+            armedDelete = false
+        }
+    }
+
+    val a = archive
+    if (a != null && a.isRecording) {
+        if (a.inFlight != null) {
+            Button("Moving to archive… (${a.inFlight})") {}
+        } else {
+            Button(if (a.count > 1) "Move all ${a.count} recordings to archive…" else "Move to archive…") {
+                scope.launch {
+                    // Ask again: free space may have changed since the menu opened.
+                    archive = runCatching { Jdvr.liveTv.archiveChoices(seriesId) }.getOrNull() ?: archive
+                    picking = true
+                }
+            }
+        }
+    }
+    if (picking) {
+        archive?.let { choices ->
+            ArchivePicker(
+                choices,
+                onPick = { t ->
+                    picking = false
+                    scope.launch {
+                        val r = runCatching { Jdvr.liveTv.archive(seriesId, t.path) }.getOrNull()
+                        onNote(r?.message?.ifEmpty { null } ?: "Couldn't move them (administrators only, needs JellyDVR Space).")
+                        MoveWatcher.kick()
+                        archiveCheck++
+                    }
+                },
+                onDismiss = { picking = false },
+            )
+        }
+    }
+    val d = delete
+    if (d != null && d.count > 0) {
+        val what = "${d.count} recording${if (d.count == 1) "" else "s"}"
+        val size = "%.1f GB".format(d.bytes / (1024.0 * 1024 * 1024))
+        Button(
+            when {
+                deleting -> "Deleting…"
+                armedDelete -> "Press again: delete $what ($size) for good"
+                else -> "Delete all $what"
+            },
+            leading = { Dot(Jc.Recording) },
+        ) {
+            if (deleting) return@Button
+            if (!armedDelete) {
+                armedDelete = true
+            } else {
+                armedDelete = false
+                deleting = true
+                scope.launch {
+                    val r = runCatching { Jdvr.liveTv.deleteShowRecordings(seriesId, dryRun = false) }.getOrNull()
+                    deleting = false
+                    if (r == null) {
+                        onNote("Couldn't delete them.")
+                    } else {
+                        onNote("Deleted ${r.deleted} recording${if (r.deleted == 1) "" else "s"}" + if (r.skipped > 0) " (${r.skipped} left: recording now, or not yours to delete)" else "")
+                        onDeleted()
+                    }
+                }
+            }
+        }
+    }
+}

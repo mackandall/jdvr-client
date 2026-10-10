@@ -51,7 +51,8 @@ private fun gb(bytes: Long): String = (bytes / GB).let { if (it >= 100) "%.0f GB
 /**
  * JellyDVR Space's "Move to archive…", as in the web client's item menu: the archive locations
  * that take this recording's kind, each with a bar of its space (used, this recording, free;
- * the tick is the location's keep-free floor). Back closes it.
+ * the tick is the location's keep-free floor). For a show, all its recordings go together into
+ * the show's folder there. Back closes it.
  */
 @Composable
 fun ArchivePicker(choices: ArchiveChoices, onPick: (ArchiveChoice) -> Unit, onDismiss: () -> Unit) {
@@ -69,13 +70,15 @@ fun ArchivePicker(choices: ArchiveChoices, onPick: (ArchiveChoice) -> Unit, onDi
                 .padding(28.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text("Move to archive", fontSize = 26.sp, color = Jc.Text)
+            val many = choices.count > 1
+            Text(if (many) "Move all to archive" else "Move to archive", fontSize = 26.sp, color = Jc.Text)
             Text(
-                "${choices.name} · ${KindLabels[choices.kind] ?: choices.kind} · ${gb(choices.bytes)}",
+                "${choices.name}${if (many) " · ${choices.count} recordings" else ""} · ${KindLabels[choices.kind] ?: choices.kind} · ${gb(choices.bytes)}",
                 fontSize = 16.sp,
                 color = Jc.Muted,
             )
-            if (choices.targets.any { it.totalBytes != null }) Legend()
+            choices.note?.let { Text(it, fontSize = 16.sp, color = Jc.Amber) }
+            if (choices.targets.any { it.totalBytes != null }) Legend(if (many) "these ${choices.count} recordings" else "this recording")
             choices.blocked?.let { Text("It can't be moved while it's $it.", fontSize = 16.sp, color = Jc.Amber) }
             if (choices.targets.isEmpty()) {
                 Text(
@@ -170,9 +173,9 @@ private fun SpaceBar(t: ArchiveChoice, free: Long, total: Long, bytes: Long) {
 }
 
 @Composable
-private fun Legend() {
+private fun Legend(mine: String) {
     Row(horizontalArrangement = Arrangement.spacedBy(18.dp), verticalAlignment = Alignment.CenterVertically) {
-        listOf(UsedColour to "used", MineColour to "this recording", Jc.Text.copy(alpha = 0.12f) to "free").forEach { (c, label) ->
+        listOf(UsedColour to "used", MineColour to mine, Jc.Text.copy(alpha = 0.12f) to "free").forEach { (c, label) ->
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.size(12.dp).clip(RoundedCornerShape(2.dp)).background(c))
                 Text(label, fontSize = 13.sp, color = Jc.Muted)

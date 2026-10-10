@@ -804,6 +804,28 @@ class LiveTvRepository {
         plugin<DeletedRecording>(HttpMethod.DELETE, "/EpisodeHistory/Item/${itemId.toString().replace("-", "")}/Recording")
             ?: deleteItem(itemId).let { DeletedRecording(deleted = 1) }
 
+    @Serializable
+    data class ShowDelete(
+        @SerialName("Count") val count: Int = 0,
+        @SerialName("Bytes") val bytes: Long = 0,
+        @SerialName("Skipped") val skipped: Int = 0,
+        @SerialName("Deleted") val deleted: Int = 0,
+    )
+
+    /**
+     * A show's recordings in the recordings folders (archived copies stay): what deleting them
+     * all would remove ([dryRun]), or delete them. Episode History only; null without it.
+     */
+    suspend fun deleteShowRecordings(
+        seriesId: UUID,
+        dryRun: Boolean,
+    ): ShowDelete? =
+        plugin(
+            HttpMethod.DELETE,
+            "/EpisodeHistory/Recordings/Series/${seriesId.toString().replace("-", "")}",
+            if (dryRun) mapOf("dryRun" to "true") else emptyMap(),
+        )
+
     // ---- Episode History on a guide programme --------------------------------------------------
 
     @Serializable
@@ -921,6 +943,9 @@ class LiveTvRepository {
         @SerialName("IsRecording") val isRecording: Boolean = false,
         @SerialName("Kind") val kind: String = "",
         @SerialName("Bytes") val bytes: Long = 0,
+        // A show: how many of its recordings move together, and which of them can't move now.
+        @SerialName("Count") val count: Int = 1,
+        @SerialName("Note") val note: String? = null,
         @SerialName("Blocked") val blocked: String? = null,
         @SerialName("InFlight") val inFlight: String? = null,
         @SerialName("Targets") val targets: List<ArchiveChoice> = emptyList(),
