@@ -3,6 +3,7 @@ package com.mackandall.jdvr.ui
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -48,6 +49,7 @@ import kotlinx.coroutines.launch
 import org.jellyfin.sdk.api.client.extensions.authenticateUserByName
 import org.jellyfin.sdk.api.client.extensions.quickConnectApi
 import org.jellyfin.sdk.api.client.extensions.userApi
+import org.jellyfin.sdk.api.client.extensions.systemApi
 import org.jellyfin.sdk.model.api.AuthenticationResult
 import org.jellyfin.sdk.model.api.QuickConnectDto
 import timber.log.Timber
@@ -68,6 +70,10 @@ fun LoginScreen(onSignedIn: () -> Unit) {
     var code by remember { mutableStateOf<String?>(null) }
     var message by remember { mutableStateOf<String?>(null) }
     var usePassword by remember { mutableStateOf(false) }
+    // Who answers at the address: its name, so a password goes only where the user means it to.
+    var serverName by remember { mutableStateOf<String?>(null) }
+    var serverChecked by remember { mutableStateOf(false) }
+    var armedInsecure by remember { mutableStateOf(false) }
     var user by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var attempt by remember { mutableStateOf(0) }
@@ -103,6 +109,20 @@ fun LoginScreen(onSignedIn: () -> Unit) {
     // Quick Connect: ask for a code, then poll until someone approves it. A code asked for in the
     // last few minutes is kept (the screen can be rebuilt, e.g. when the app is opened again from
     // the home screen), so the one someone is typing in the web client stays the one shown.
+    LaunchedEffect(server) {
+        serverName = null
+        serverChecked = false
+        armedInsecure = false
+        if (server.isBlank()) return@LaunchedEffect
+        delay(400)
+        serverName =
+            runCatching {
+                val api = Jdvr.jellyfin.createApi(baseUrl = server.trimEnd('/'))
+                withContext(Dispatchers.IO) { api.systemApi.getPublicSystemInfo().content.serverName }
+            }.getOrNull()
+        serverChecked = true
+    }
+
     LaunchedEffect(server, attempt, usePassword) {
         if (usePassword || server.isBlank()) return@LaunchedEffect
         code = null
@@ -133,12 +153,28 @@ fun LoginScreen(onSignedIn: () -> Unit) {
 
     Box(Modifier.fillMaxSize().screenBackground(), contentAlignment = Alignment.Center) {
         Column(
-            modifier = Modifier.width(620.dp).background(Jc.Panel, RoundedCornerShape(16.dp)).padding(32.dp),
+            // Scrolls when the warnings and the password boxes make it taller than the screen.
+            modifier = Modifier.width(620.dp).verticalScroll(androidx.compose.foundation.rememberScrollState()).background(Jc.Panel, RoundedCornerShape(16.dp)).padding(32.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             Text("JDVR", color = Jc.Focus, fontSize = 18.sp, fontWeight = FontWeight.Bold)
             Text("Sign in to Jellyfin", color = Jc.Text, fontSize = 28.sp, fontWeight = FontWeight.SemiBold)
             Field("Server", server, onChange = { server = it }, keyboard = KeyboardType.Uri)
+            // Which server this is, and a warning for an unencrypted address outside the home network.
+            if (server.isNotBlank() && serverChecked) {
+                Text(
+                    serverName?.let { "Server: $it" } ?: "No Jellyfin server answers at this address.",
+                    color = if (serverName != null) Jc.Muted else Jc.Amber,
+                    fontSize = 15.sp,
+                )
+            }
+            if (insecureRemote(server)) {
+                Text(
+                    "This address isn't on your home network and uses http, so your sign-in and everything you watch would cross the internet unencrypted. Use the server's https address instead.",
+                    color = Jc.Amber,
+                    fontSize = 15.sp,
+                )
+            }
             // Found on the network: pick one (shown when there's a choice, or the address was changed).
             val others = found.filter { it.second != server.trimEnd('/') }
             if (others.isNotEmpty()) {
@@ -166,10 +202,24 @@ fun LoginScreen(onSignedIn: () -> Unit) {
                     Button("Use a password instead") { usePassword = true }
                 }
             } else {
+                // Say where the password is going (discovery trusts whoever answers on the network).
+                Text("Your password goes to ${serverName ?: "the server"} at ${server.trimEnd('/')}.", color = Jc.Muted, fontSize = 15.sp)
                 Field("User", user, onChange = { user = it })
                 Field("Password", password, onChange = { password = it }, keyboard = KeyboardType.Password, secret = true)
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Button("Sign in", primary = true) {
+                    Button(
+                        if (insecureRemote(server) && !armedInsecure) "Sign in anyway (unencrypted)" else "Sign in",
+                        primary = true,
+                    ) {
+                        // Unencrypted over the internet: a second press, after reading the warning.
+                        if (insecureRemote(server) && !armedInsecure) {
+                            armedInsecure = true
+                            return@Button
+                        }
+                        if (serverName == null) {
+                            message = "No Jellyfin server answers at ${server.trimEnd('/')}: check the address."
+                            return@Button
+                        }
                         scope.launch {
                             try {
                                 val api = Jdvr.jellyfin.createApi(baseUrl = server.trimEnd('/'))
@@ -294,4 +344,30 @@ private fun Field(
             }
         }
     }
+}
+
+/**
+ * An http address outside the home network: a hostname with a dot that isn't a local name, or an
+ * IP address that isn't private, loopback or link-local. https, and anything on the home network,
+ * is fine.
+ */
+internal fun insecureRemote(address: String): Boolean {
+    val url = address.trim()
+    if (!url.startsWith("http://", ignoreCase = true)) return false
+    val host = url.removePrefix("http://").removePrefix("HTTP://").substringBefore('/').let { h ->
+        if (h.startsWith("[")) h.substringAfter('[').substringBefore(']') else h.substringBefore(':')
+    }.lowercase()
+    if (host.isEmpty()) return false
+    val ipv4 = host.split('.').mapNotNull { it.toIntOrNull() }.takeIf { it.size == 4 && host.count { c -> c == '.' } == 3 }
+    if (ipv4 != null) {
+        val (a, b) = ipv4[0] to ipv4[1]
+        val private = a == 10 || a == 127 || (a == 172 && b in 16..31) || (a == 192 && b == 168) || (a == 169 && b == 254) || (a == 100 && b in 64..127)
+        return !private
+    }
+    if (host.contains(':')) {
+        // IPv6: loopback, unique local (fc00::/7) and link-local (fe80::/10) are home.
+        return !(host == "::1" || host.startsWith("fc") || host.startsWith("fd") || host.startsWith("fe8") || host.startsWith("fe9") || host.startsWith("fea") || host.startsWith("feb"))
+    }
+    val localName = !host.contains('.') || host.endsWith(".local") || host.endsWith(".lan") || host.endsWith(".home") || host.endsWith(".home.arpa") || host.endsWith(".internal")
+    return !localName
 }
