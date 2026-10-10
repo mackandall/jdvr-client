@@ -317,7 +317,12 @@ fun GuideScreen(
             val list = channels
             if (list == null) {
                 Spacer(12)
-                Text("Loading the guide…", color = Jc.Muted, fontSize = 16.sp)
+                if (error == null) Text("Loading the guide…", color = Jc.Muted, fontSize = 16.sp)
+                return@Column
+            }
+            if (list.isEmpty()) {
+                Spacer(12)
+                Text(NO_LIVE_TV, color = Jc.Muted, fontSize = 16.sp, modifier = Modifier.fillMaxWidth(0.8f))
                 return@Column
             }
             androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize()) {

@@ -60,9 +60,12 @@ fun SeriesScreen(entry: FocusRequester) {
     var editing by remember { mutableStateOf<SeriesTimerInfoDto?>(null) }
     val scope = rememberCoroutineScope()
 
+    // Recording Favourites answered (or didn't: the JellyDVR Schedule plugin isn't on this server).
+    var favouritesLoaded by remember { mutableStateOf(false) }
     LaunchedEffect(reload) {
         series = runCatching { Jdvr.liveTv.seriesTimers() }.getOrNull()
         favourites = Jdvr.liveTv.favourites()
+        favouritesLoaded = true
     }
 
     fun act(block: suspend () -> String?) {
@@ -155,7 +158,8 @@ fun SeriesScreen(entry: FocusRequester) {
                     Spacer(10)
                 }
                 when {
-                    fav == null -> Text("Loading… (needs the JellyDVR Schedule plugin)", color = Jc.Muted, fontSize = 15.sp)
+                    fav == null && !favouritesLoaded -> Text("Loading…", color = Jc.Muted, fontSize = 15.sp)
+                    fav == null -> Text("Recording Favourites need the JellyDVR Schedule plugin on the server.", color = Jc.Muted, fontSize = 15.sp)
                     fav.favourites.isEmpty() -> Text("No recording favourites yet.", color = Jc.Muted, fontSize = 15.sp)
                     else ->
                         LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(bottom = 40.dp)) {

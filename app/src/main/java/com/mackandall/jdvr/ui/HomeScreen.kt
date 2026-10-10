@@ -78,6 +78,11 @@ fun HomeScreen(
     var fromStart by remember { mutableStateOf<UUID?>(null) }
     var upcoming by remember { mutableStateOf<List<LiveTvRepository.Upcoming>>(emptyList()) }
     var fresh by remember { mutableStateOf<List<LiveTvRepository.RecordingCard>?>(null) }
+    // Without Episode History, the new-recordings row is Jellyfin's "recently added" instead.
+    var freshFromLibrary by remember { mutableStateOf(false) }
+    // The first round has answered: until then, empty means "not yet", not "none".
+    var loaded by remember { mutableStateOf(false) }
+    var hasLiveTv by remember { mutableStateOf(true) }
     var tuners by remember { mutableStateOf<LiveTvRepository.TunerStatus?>(null) }
     var bufferIds by remember { mutableStateOf<Set<String>>(emptySet()) }
     var now by remember { mutableStateOf(LocalDateTime.now()) }
@@ -99,13 +104,20 @@ fun HomeScreen(
     LaunchedEffect(Unit) {
         while (true) {
             now = LocalDateTime.now()
-            val channels = runCatching { Jdvr.liveTv.channels() }.getOrDefault(emptyList())
-            last = channels.firstOrNull { it.id.toString() == Jdvr.session.lastChannelId } ?: channels.firstOrNull()
+            val channels = runCatching { Jdvr.liveTv.channels() }.getOrNull()
+            // A failed call isn't "no Live TV": keep what was shown.
+            if (channels != null) {
+                hasLiveTv = channels.isNotEmpty()
+                last = channels.firstOrNull { it.id.toString() == Jdvr.session.lastChannelId } ?: channels.firstOrNull()
+            }
             fromStart = last?.now?.takeIf { it.isRecording }?.let { Jdvr.liveTv.recordingOfProgram(it.id) }
-            upcoming = Jdvr.liveTv.upcoming().orEmpty()
+            upcoming = Jdvr.liveTv.schedule().orEmpty()
             bufferIds = Jdvr.liveTv.bufferPrograms()
-            fresh = Jdvr.liveTv.recordedShows()?.filter { it.unplayedCount > 0 }?.take(5)
+            val shows = Jdvr.liveTv.recordedShows()
+            freshFromLibrary = shows == null
+            fresh = shows?.filter { it.unplayedCount > 0 }?.take(5) ?: Jdvr.liveTv.recentlyAdded(5).orEmpty()
             tuners = Jdvr.liveTv.tuners(null)
+            loaded = true
             delay(60_000)
         }
     }
@@ -150,7 +162,11 @@ fun HomeScreen(
 
         // Back to live, and what's recording now.
         Row(Modifier.fillMaxWidth().height(196.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            LiveCard(last, fromStart, symbols, entry, Modifier.weight(1f).fillMaxHeight(), onPlayChannel, onPlayRecording, onGuide = { onOpenScreen(com.mackandall.jdvr.Screen.Guide) })
+            if (loaded && !hasLiveTv) {
+                NoLiveTvCard(entry, Modifier.weight(1f).fillMaxHeight(), onSearch = { onOpenScreen(com.mackandall.jdvr.Screen.Search) })
+            } else {
+                LiveCard(last, fromStart, symbols, entry, Modifier.weight(1f).fillMaxHeight(), onPlayChannel, onPlayRecording, onGuide = { onOpenScreen(com.mackandall.jdvr.Screen.Guide) })
+            }
             Column(
                 Modifier.width(300.dp).fillMaxHeight().background(homePanel(), RoundedCornerShape(14.dp)).padding(14.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -176,12 +192,12 @@ fun HomeScreen(
         // New recordings.
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("New recordings", color = Jc.Text, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
-                Text("unwatched · newest first", color = Jc.Muted, fontSize = 13.sp)
+                Text(if (freshFromLibrary) "Recently added" else "New recordings", color = Jc.Text, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+                Text(if (freshFromLibrary) "unwatched · newest first · from your libraries" else "unwatched · newest first", color = Jc.Muted, fontSize = 13.sp)
             }
             val list = fresh
             when {
-                list == null -> Text("Loading…", color = Jc.Muted, fontSize = 14.sp)
+                list == null || !loaded -> Text("Loading…", color = Jc.Muted, fontSize = 14.sp)
                 list.isEmpty() -> Text("All caught up.", color = Jc.Muted, fontSize = 14.sp)
                 else ->
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -275,6 +291,24 @@ private fun LiveCard(
             }
             Button("Guide", onClick = onGuide)
         }
+    }
+}
+
+/** Home's first card on a server with no Live TV: says so, and offers Search (focus starts here). */
+@Composable
+private fun NoLiveTvCard(
+    entry: FocusRequester,
+    modifier: Modifier,
+    onSearch: () -> Unit,
+) {
+    Column(
+        modifier.background(homePanel(), RoundedCornerShape(14.dp)).padding(horizontal = 20.dp, vertical = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text("LIVE TV", color = Jc.Muted, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+        Text(NO_LIVE_TV, color = Jc.Text, fontSize = 16.sp)
+        Box(Modifier.weight(1f))
+        Button("Search your libraries", primary = true, modifier = Modifier.focusRequester(entry), onClick = onSearch)
     }
 }
 

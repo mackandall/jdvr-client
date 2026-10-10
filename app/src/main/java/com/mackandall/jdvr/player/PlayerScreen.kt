@@ -123,6 +123,8 @@ fun PlayerScreen(
     var playback by remember { mutableStateOf<LivePlayback?>(null) }
     var busy by remember { mutableStateOf<LiveTvRepository.TunerStatus?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
+    // Try again: a fresh start of the same channel (a new stream from the server).
+    var attempt by remember(channelId) { mutableIntStateOf(0) }
     var osdUntil by remember { mutableStateOf(System.currentTimeMillis() + 6000) }
     var typed by remember { mutableStateOf("") }
     var typedAt by remember { mutableStateOf(0L) }
@@ -134,7 +136,10 @@ fun PlayerScreen(
             val extractors = DefaultExtractorsFactory().setTsExtractorTimestampSearchBytes(TS_SEARCH_BYTES)
             ExoPlayer
                 .Builder(context, renderersFactory(context))
-                .setMediaSourceFactory(DefaultMediaSourceFactory(OkHttpDataSource.Factory(Jdvr.http), extractors))
+                .setMediaSourceFactory(
+                    DefaultMediaSourceFactory(OkHttpDataSource.Factory(Jdvr.http), extractors)
+                        .setLoadErrorHandlingPolicy(NoRetryOnServerError),
+                )
                 .build()
                 .apply {
                     playWhenReady = true
@@ -149,7 +154,7 @@ fun PlayerScreen(
             object : Player.Listener {
                 override fun onPlayerError(e: PlaybackException) {
                     Timber.w(e, "Playback error")
-                    error = "Playback stopped: ${e.errorCodeName}"
+                    error = liveErrorText(e)
                     tuning = false
                 }
 
@@ -170,7 +175,7 @@ fun PlayerScreen(
     }
 
     // Start the channel: tuner check, open the stream, play, tell Jellyfin; stop it when leaving.
-    DisposableEffect(channelId) {
+    DisposableEffect(channelId, attempt) {
         var current: LivePlayback? = null
         val job =
             kotlinx.coroutines.MainScope().launch {
@@ -218,7 +223,8 @@ fun PlayerScreen(
                     throw e
                 } catch (e: Exception) {
                     Timber.w(e, "Couldn't start channel %s", channelId)
-                    error = "Couldn't start this channel: ${e.message}"
+                    error = "The server couldn't start this channel. It may be off the air, or its tuner may be busy or not working."
+                    tuning = false
                 }
             }
         onDispose {
@@ -589,7 +595,10 @@ fun PlayerScreen(
             ) {
                 Text(it, color = Jc.Amber, fontSize = 18.sp)
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Button("Try again", primary = true) { onChannelChange(channelId) }
+                    Button("Try again", primary = true) {
+                        error = null
+                        attempt++
+                    }
                     Button("Back", onClick = onExit)
                 }
             }
@@ -870,3 +879,31 @@ private fun TunersBusy(
         }
     }
 }
+
+/**
+ * A live channel's errors: a server error (the stream couldn't be opened or broke off) won't get
+ * better by asking again a few seconds later, so the player gives up at once and says so, instead
+ * of retrying for half a minute behind the tuning spinner. Other errors keep the usual retries.
+ */
+private object NoRetryOnServerError : androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy() {
+    override fun getRetryDelayMsFor(info: androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy.LoadErrorInfo): Long {
+        val e = info.exception
+        if (e is androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException && e.responseCode >= 500) return androidx.media3.common.C.TIME_UNSET
+        return super.getRetryDelayMsFor(info)
+    }
+}
+
+/** What went wrong with a live channel, in words. */
+private fun liveErrorText(e: PlaybackException): String =
+    when (e.errorCode) {
+        PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS, PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND ->
+            "The server couldn't start this channel. It may be off the air, or its tuner may be busy or not working."
+        PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED, PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT ->
+            "Lost the connection to the server."
+        PlaybackException.ERROR_CODE_DECODER_INIT_FAILED, PlaybackException.ERROR_CODE_DECODING_FAILED,
+        PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED, PlaybackException.ERROR_CODE_DECODING_FORMAT_EXCEEDS_CAPABILITIES ->
+            "This TV couldn't play this channel's picture or sound."
+        PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED, PlaybackException.ERROR_CODE_PARSING_MANIFEST_MALFORMED ->
+            "The channel's stream came through damaged."
+        else -> "Playback stopped (${e.errorCodeName})."
+    }

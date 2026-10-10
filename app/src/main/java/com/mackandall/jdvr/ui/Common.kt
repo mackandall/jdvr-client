@@ -32,6 +32,10 @@ fun badgeText(
 
 fun Modifier.onFocusChangedCompat(onChange: (Boolean) -> Unit): Modifier = onFocusChanged { onChange(it.isFocused) }
 
+/** Shown where channels or the guide would be, on a server with no Live TV. */
+const val NO_LIVE_TV =
+    "This server has no Live TV channels. Once a tuner is set up in Jellyfin's dashboard (Live TV), its channels and guide show here."
+
 /** Buttons stretch to the full width of what holds them (a menu's column), where this is true. */
 val LocalWideButtons = androidx.compose.runtime.compositionLocalOf { false }
 

@@ -85,7 +85,11 @@ fun ChannelsScreen(
         error?.let { Text(it, color = Jc.Amber, fontSize = 16.sp) }
         val list = channels
         if (list == null) {
-            Text("Loading channels…", color = Jc.Muted, fontSize = 16.sp)
+            if (error == null) Text("Loading channels…", color = Jc.Muted, fontSize = 16.sp)
+            return@Column
+        }
+        if (list.isEmpty()) {
+            Text(NO_LIVE_TV, color = Jc.Muted, fontSize = 16.sp, modifier = Modifier.fillMaxWidth(0.7f))
             return@Column
         }
         LazyColumn(

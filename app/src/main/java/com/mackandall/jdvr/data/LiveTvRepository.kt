@@ -1176,6 +1176,67 @@ class LiveTvRepository {
 
     suspend fun upcoming(): List<Upcoming>? = plugin(HttpMethod.GET, "/JellyDvrSchedule/Upcoming")
 
+    /**
+     * What will record: JellyDVR Schedule's list, or, on a server without it, Jellyfin's own
+     * scheduled recordings in the same shape (no Recording Favourites there). Null only when
+     * neither answers.
+     */
+    suspend fun schedule(): List<Upcoming>? = upcoming() ?: jellyfinTimers()
+
+    private suspend fun jellyfinTimers(): List<Upcoming>? =
+        runCatching {
+            io { api.liveTvApi.getTimers().content.items }.mapNotNull { t ->
+                val start = t.startDate ?: return@mapNotNull null
+                val end = t.endDate ?: return@mapNotNull null
+                val p = t.programInfo
+                Upcoming(
+                    timerId = t.id ?: return@mapNotNull null,
+                    programId = t.programId,
+                    name = t.name ?: p?.name ?: "",
+                    episodeTitle = p?.episodeTitle,
+                    seasonEpisode = if (p?.parentIndexNumber != null && p.indexNumber != null) "S${p.parentIndexNumber}:E${p.indexNumber}" else null,
+                    isRepeat = p?.isRepeat == true,
+                    start = start.atZone(java.time.ZoneId.systemDefault()).toInstant().toString(),
+                    end = end.atZone(java.time.ZoneId.systemDefault()).toInstant().toString(),
+                    channelNumber = p?.channelNumber,
+                    channelName = t.channelName,
+                    kind = if (t.seriesTimerId != null) "series" else "oneoff",
+                    recordingNow = t.status == org.jellyfin.sdk.model.api.RecordingStatus.IN_PROGRESS,
+                )
+            }.sortedBy { it.start }
+        }.getOrNull()
+
+    /**
+     * Jellyfin's "recently added" (newest first, episodes and movies, not grouped), as cards: Home's
+     * row on a server without Episode History.
+     */
+    suspend fun recentlyAdded(limit: Int = 5): List<RecordingCard>? =
+        runCatching {
+            io {
+                api.userLibraryApi.getLatestMedia(
+                    userId = Jdvr.userId,
+                    limit = limit,
+                    groupItems = false,
+                    isPlayed = false,
+                ).content
+            }.map { d ->
+                RecordingCard(
+                    type = d.type.serialName,
+                    id = d.id.toString(),
+                    imageId = (if (d.type == org.jellyfin.sdk.model.api.BaseItemKind.EPISODE) d.seriesId else null)?.toString(),
+                    name = d.seriesName ?: d.name ?: "",
+                    subtitle =
+                        if (d.seriesName != null) {
+                            listOfNotNull(d.parentIndexNumber?.let { s -> d.indexNumber?.let { "S$s:E$it" } }, d.name).joinToString(" · ")
+                        } else {
+                            d.productionYear?.toString()
+                        },
+                    count = 1,
+                    unplayedCount = 1,
+                )
+            }
+        }.getOrNull()
+
     // ---- commercial / intro segments ----------------------------------------------------------
 
     /** A stretch to skip: "Commercial", "Intro", "Recap", "Preview" or "Outro". */

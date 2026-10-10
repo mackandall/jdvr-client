@@ -60,7 +60,7 @@ fun ScheduledScreen(entry: FocusRequester) {
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(reload) {
-        items = Jdvr.liveTv.upcoming()
+        items = Jdvr.liveTv.schedule()
         bufferIds = Jdvr.liveTv.bufferPrograms()
         loaded = true
     }
@@ -75,7 +75,7 @@ fun ScheduledScreen(entry: FocusRequester) {
         val list = items
         when {
             !loaded -> Text("Loading…", color = Jc.Muted, fontSize = 16.sp)
-            list == null -> Text("Couldn't load the schedule (the JellyDVR Schedule plugin answers this).", color = Jc.Amber, fontSize = 16.sp)
+            list == null -> Text("Couldn't load the schedule from the server.", color = Jc.Amber, fontSize = 16.sp)
             list.isEmpty() -> Text("Nothing scheduled.", color = Jc.Muted, fontSize = 16.sp)
             else -> {
                 val byDay = list.groupBy { localTime(it.start)?.toLocalDate() }
