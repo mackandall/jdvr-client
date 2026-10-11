@@ -270,6 +270,7 @@ private fun RecordingCardView(
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
+                    if (c.recordingCount > 0) Badge("● Recording", Jc.Recording)
                     // The plain count only when it says something "N new" doesn't: some are watched.
                     if (c.count > 1 && c.unplayedCount != c.count) Badge("${c.count}", Jc.Panel)
                     if (c.unplayedCount > 0 && c.count > 1) Badge("${c.unplayedCount} new", Jc.FocusFill)
@@ -330,6 +331,7 @@ private fun ShowEpisodes(
                         inArchive = e.archived,
                         partial = e.partial,
                         partialMinutes = e.minutes,
+                        recording = e.recording,
                     )
                 }
             }?.sortedWith(compareBy<EpisodeEntry>({ it.season ?: Int.MAX_VALUE }, { it.episode ?: Int.MAX_VALUE }, { it.recordedAt }))?.let { withCommercialBadges(it) } ?: emptyList()

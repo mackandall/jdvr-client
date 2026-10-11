@@ -1136,6 +1136,8 @@ class LiveTvRepository {
         @SerialName("PartialCount") val partialCount: Int = 0,
         @SerialName("PartialMinutes") val partialMinutes: Int? = null,
         @SerialName("RecordedUtc") val recordedUtc: String? = null,
+        // How many of them are still being recorded.
+        @SerialName("RecordingCount") val recordingCount: Int = 0,
     )
 
     @Serializable
@@ -1159,6 +1161,8 @@ class LiveTvRepository {
         @SerialName("RecordedUtc") val recordedUtc: String? = null,
         @SerialName("Partial") val partial: Boolean = false,
         @SerialName("Minutes") val minutes: Int? = null,
+        // Still being recorded.
+        @SerialName("Recording") val recording: Boolean = false,
     )
 
     @Serializable

@@ -78,6 +78,8 @@ data class EpisodeEntry(
     val inArchive: Boolean = false,
     val partial: Boolean = false,
     val partialMinutes: Int? = null,
+    // Still being recorded.
+    val recording: Boolean = false,
     // Comskip's badge ("4m ads", "scanning", "no ads"…), when it has scanned this recording.
     val commercials: String? = null,
 ) {
@@ -391,6 +393,7 @@ private fun Badges(e: EpisodeEntry) {
     movingFor(e.id.toString())?.let { MovingTag(it) }
     cuttingFor(e.id.toString())?.let { CuttingTag(it) }
     e.commercials?.let { Tag("✂ $it", if (it.startsWith("scan failed")) Jc.Recording else Jc.Panel2) }
+    if (e.recording) Tag("● Recording", Jc.Recording)
     if (e.archived) Tag("Archive", Jc.Panel2)
     if (e.partial) Tag("Partial" + (e.partialMinutes?.let { " · $it min" } ?: ""), Jc.Amber, dark = true)
     if (e.resumeMs > 0 && !e.played) Tag("${e.resumeMs / 60_000} min in", Jc.FocusFill)
@@ -590,6 +593,9 @@ private fun EpisodeCard(
                 }
                 if (e.played) {
                     Text("✓", color = Jc.Text, fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.align(Alignment.TopStart).padding(6.dp).background(Jc.Green, RoundedCornerShape(5.dp)).padding(horizontal = 6.dp, vertical = 1.dp))
+                }
+                if (e.recording) {
+                    Text("● Recording", color = badgeText(Jc.Recording), fontSize = 10.sp, fontWeight = FontWeight.Bold, modifier = Modifier.align(Alignment.BottomStart).padding(6.dp).background(Jc.Recording, RoundedCornerShape(5.dp)).padding(horizontal = 5.dp, vertical = 1.dp))
                 }
                 if (e.partial) {
                     Text("Partial", color = Jc.OnAmber, fontSize = 10.sp, fontWeight = FontWeight.Bold, modifier = Modifier.align(Alignment.BottomStart).padding(6.dp).background(Jc.Amber, RoundedCornerShape(5.dp)).padding(horizontal = 5.dp, vertical = 1.dp))
