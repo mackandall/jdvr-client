@@ -115,7 +115,7 @@ fun RecordedShowsScreen(
     details?.let { id ->
         BackHandler { details = null }
         DetailsPage(id, refresh, onPlay = onPlayItem, actions = { det, say ->
-            RecordingActions(det.item.id, say) {
+            RecordingActions(det.item.id, say, manage = det.location == LIVE_FOLDER, canDelete = det.canDelete, place = det.location) {
                 details = null
                 reloadCards++
             }
@@ -231,7 +231,7 @@ fun RecordedShowsScreen(
             onOpenShow = if (q.type == "Series") { { openShow = q } } else null,
             extra = { det, say, done ->
                 if (q.type != "Series") {
-                    RecordingActions(det.item.id, say, tools = false, manage = det.location == LIVE_FOLDER, onDeleted = done)
+                    RecordingActions(det.item.id, say, tools = false, manage = det.location == LIVE_FOLDER, canDelete = det.canDelete, place = det.location, onDeleted = done)
                 } else {
                     ShowActions(qid, say, onDeleted = done)
                 }
@@ -327,6 +327,7 @@ private fun ShowEpisodes(
                         played = e.played,
                         recordedAt = local(e.recordedUtc),
                         archived = e.archived && filter == Prefs.ALL,
+                        inArchive = e.archived,
                         partial = e.partial,
                         partialMinutes = e.minutes,
                     )
@@ -336,7 +337,7 @@ private fun ShowEpisodes(
     info?.let { id ->
         BackHandler { info = null }
         DetailsPage(id, refresh, onPlay = onPlayItem, actions = { det, say ->
-            RecordingActions(det.item.id, say) {
+            RecordingActions(det.item.id, say, manage = det.location == LIVE_FOLDER, canDelete = det.canDelete, place = det.location) {
                 info = null
                 reload++
             }
@@ -358,7 +359,7 @@ private fun ShowEpisodes(
                 reload++
             }
         },
-        actions = { e, say -> RecordingActions(e.id, say, onDeleted = { reload++ }, tools = false) },
+        actions = { e, say -> RecordingActions(e.id, say, onDeleted = { reload++ }, tools = false, manage = !e.inArchive) },
         emptyText = "No recordings of this show here.",
         onHold = { quick = it },
     )
@@ -370,7 +371,7 @@ private fun ShowEpisodes(
             onChanged = { reload++ },
             onDismiss = { quick = null },
             // Only a recording in the live folder can be deleted or moved from here (never an archive copy).
-            extra = { det, say, done -> RecordingActions(det.item.id, say, tools = false, manage = det.location == LIVE_FOLDER, onDeleted = done) },
+            extra = { det, say, done -> RecordingActions(det.item.id, say, tools = false, manage = det.location == LIVE_FOLDER, canDelete = det.canDelete, place = det.location, onDeleted = done) },
         )
     }
 }

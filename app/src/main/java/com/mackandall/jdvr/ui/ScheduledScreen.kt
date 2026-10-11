@@ -160,7 +160,8 @@ private fun ScheduleRow(
         }
         if (expanded) {
             Row(Modifier.padding(start = 14.dp, top = 6.dp, bottom = 6.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Button(if (r.recordingNow) "Stop this recording" else "Don't record this", leading = { Dot(Jc.Recording) }, onClick = onCancel)
+                // Only on a TV allowed to record (JellyDVR Space's device rights).
+                if (deviceRights().record) Button(if (r.recordingNow) "Stop this recording" else "Don't record this", leading = { Dot(Jc.Recording) }, onClick = onCancel)
                 Button("Keep it", onClick = onToggle)
             }
         }

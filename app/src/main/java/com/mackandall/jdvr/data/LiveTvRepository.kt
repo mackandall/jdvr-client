@@ -645,6 +645,8 @@ class LiveTvRepository {
         // When it was recorded: only for a file still in the live recordings folder (an archive
         // or library copy's file date is when it was copied, not recorded).
         val recordedAt: java.time.LocalDateTime? = null,
+        // Whether Jellyfin lets the signed-in user delete it.
+        val canDelete: Boolean = true,
     ) {
         val directors get() = people.filter { it.kind == "Director" }
         val writers get() = people.filter { it.kind == "Writer" }
@@ -686,6 +688,7 @@ class LiveTvRepository {
                     },
                 // The SDK already gives local time; the file's creation is when recording started.
                 recordedAt = d.dateCreated?.takeIf { source?.path?.startsWith("/mnt/Internal/JellyFinRecordings") == true },
+                canDelete = d.canDelete != false,
             )
         }
 
@@ -810,21 +813,45 @@ class LiveTvRepository {
         @SerialName("Bytes") val bytes: Long = 0,
         @SerialName("Skipped") val skipped: Int = 0,
         @SerialName("Deleted") val deleted: Int = 0,
+        // The shares the files are on, for the confirmation.
+        @SerialName("Places") val places: List<String> = emptyList(),
     )
 
     /**
      * A show's recordings in the recordings folders (archived copies stay): what deleting them
-     * all would remove ([dryRun]), or delete them. Episode History only; null without it.
+     * all would remove ([dryRun]), or delete them. With [archive] it's the archived copies
+     * instead, and the recordings stay. Episode History only; null without it.
      */
     suspend fun deleteShowRecordings(
         seriesId: UUID,
         dryRun: Boolean,
+        archive: Boolean = false,
     ): ShowDelete? =
         plugin(
             HttpMethod.DELETE,
             "/EpisodeHistory/Recordings/Series/${seriesId.toString().replace("-", "")}",
-            if (dryRun) mapOf("dryRun" to "true") else emptyMap(),
+            buildMap {
+                if (dryRun) put("dryRun", "true")
+                if (archive) put("archive", "true")
+            },
         )
+
+    /**
+     * What this TV may do, set per device on JellyDVR Space's settings page. These only narrow
+     * what the signed-in user may do; the server refuses the rest whatever the app shows.
+     */
+    @Serializable
+    data class DeviceRights(
+        @SerialName("LiveTv") val liveTv: Boolean = true,
+        @SerialName("Record") val record: Boolean = true,
+        @SerialName("Delete") val delete: Boolean = true,
+        @SerialName("DeleteArchive") val deleteArchive: Boolean = false,
+        @SerialName("Archive") val archive: Boolean = true,
+        @SerialName("Edit") val edit: Boolean = true,
+    )
+
+    /** This device's rights; null without JellyDVR Space (or one too old to have them). */
+    suspend fun deviceRights(): DeviceRights? = plugin(HttpMethod.GET, "/JellyDvrSpace/Rights")
 
     // ---- Episode History on a guide programme --------------------------------------------------
 

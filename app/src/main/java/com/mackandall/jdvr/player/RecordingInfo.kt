@@ -184,7 +184,7 @@ fun RecordingInfoPanel(
         d.item.overview?.let { Text(it, color = Jc.Text, fontSize = 14.sp, maxLines = 6, overflow = TextOverflow.Ellipsis) }
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(if (d.item.type == "Episode") "Back to the episode" else if (d.item.type == "Movie") "Back to the movie" else "Back to the video", primary = true, modifier = Modifier.focusRequester(first).onFocusChanged { if (it.isFocused) scope.launch { scroll.animateScrollTo(0) } }, onClick = onClose)
-            RecordingActions(d.item.id, onNote, manage = d.location == com.mackandall.jdvr.ui.LIVE_FOLDER, onDeleted = onDeleted)
+            RecordingActions(d.item.id, onNote, manage = d.location == com.mackandall.jdvr.ui.LIVE_FOLDER, canDelete = d.canDelete, place = d.location, onDeleted = onDeleted)
         }
         note?.let { Text(it, color = Jc.Focus, fontSize = 13.sp) }
         Column(

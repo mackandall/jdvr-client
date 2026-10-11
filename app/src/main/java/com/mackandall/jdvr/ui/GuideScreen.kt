@@ -765,7 +765,16 @@ internal fun ProgramPanel(
             )
         }
         Spacer(4)
-        if (p.isOn()) Button("Watch live", modifier = Modifier.fillMaxWidth().focusRequester(first), onClick = onWatch)
+        // What this TV may not do (JellyDVR Space's device rights) is named, not offered; the
+        // line keeps the panel's first focus.
+        val rights = deviceRights()
+        if (p.isOn()) {
+            if (rights.liveTv) {
+                Button("Watch live", modifier = Modifier.fillMaxWidth().focusRequester(first), onClick = onWatch)
+            } else {
+                Button("Live TV is off for this TV", modifier = Modifier.fillMaxWidth().focusRequester(first)) {}
+            }
+        }
         recordingItem?.let { id -> Button("Watch from start", modifier = Modifier.fillMaxWidth(), leading = { Text("⏮", color = Jc.Text) }) { onWatchFromStart(id) } }
         // A copy Episode History knows about (recorded before, or in a library).
         eh?.libraryItemId?.toUuid()?.let { lib ->
@@ -776,7 +785,9 @@ internal fun ProgramPanel(
         }
         val recordModifier = if (p.isOn()) Modifier.fillMaxWidth() else Modifier.fillMaxWidth().focusRequester(first)
         val bufferNow = buffer
-        if (isBuffer && bufferNow != null && !bufferNow.kept) {
+        if (!rights.record) {
+            Button("Recording is off for this TV", modifier = recordModifier) {}
+        } else if (isBuffer && bufferNow != null && !bufferNow.kept) {
             // Only a buffer so far: Record keeps it (recorded from when it started).
             Button("Record (keep the live buffer)", modifier = recordModifier, leading = { Dot(Jc.Recording) }) {
                 act {
@@ -799,7 +810,7 @@ internal fun ProgramPanel(
                 }
             }
         }
-        if (p.isSeries) {
+        if (p.isSeries && rights.record) {
             if (p.seriesTimerId != null) {
                 Button("Cancel series recording", modifier = Modifier.fillMaxWidth()) {
                     act {
@@ -816,12 +827,12 @@ internal fun ProgramPanel(
                 }
             }
         }
-        if (schedule?.outcome != null) {
+        if (schedule?.outcome != null && rights.record) {
             Button("Record this instead", modifier = Modifier.fillMaxWidth(), leading = { Dot(Jc.Amber) }) {
                 act { Jdvr.liveTv.recordInstead(p.id)?.message }
             }
         }
-        if (schedule != null) {
+        if (schedule != null && rights.record) {
             val fav = schedule?.favourite
             Button(
                 if (fav == null) "Add to Recording Favourites" else "Remove from Recording Favourites",

@@ -550,7 +550,7 @@ fun PlayerScreen(
                             next = TransportAction(TransportIcon.Next, behind) { toLive() },
                             playFocus = playFocus,
                             record =
-                                channel?.now?.let { now ->
+                                channel?.now?.takeIf { com.mackandall.jdvr.ui.DeviceRights.info.record }?.let { now ->
                                     val recording = b?.kept == true || (now.timerId != null && now.id.toString().plainId() !in bufferIds)
                                     TransportAction(TransportIcon.Record, active = recording) { record() }
                                 },

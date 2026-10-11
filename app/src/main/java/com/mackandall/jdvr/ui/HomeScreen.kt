@@ -285,7 +285,9 @@ private fun LiveCard(
         }
         Box(Modifier.weight(1f))
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Button("Watch live", primary = true, modifier = Modifier.focusRequester(entry)) { channel?.let { onPlayChannel(it.id) } }
+            // A TV not allowed live TV (JellyDVR Space's device rights) keeps the button for focus, and says so.
+            val live = deviceRights().liveTv
+            Button(if (live) "Watch live" else "Live TV is off for this TV", primary = live, modifier = Modifier.focusRequester(entry)) { if (live) channel?.let { onPlayChannel(it.id) } }
             if (fromStart != null) {
                 Button("Watch from start") { onPlayRecording(PlayRecording(fromStart, startMs = 0L, liveChannelId = channel?.id)) }
             }

@@ -97,6 +97,7 @@ fun Rail(
     showRecorded: Boolean = true,
 ) {
     val prefs = Jdvr.prefs
+    val rights = deviceRights()
     var open by remember {
         mutableStateOf(
             when (prefs.librariesStart) {
@@ -138,6 +139,9 @@ fun Rail(
                 } else {
                     val s = Screen.entries.firstOrNull { it.key == k } ?: return@forEach
                     if (s == Screen.RecordedShows && !showRecorded) return@forEach
+                    // What this TV may not do (JellyDVR Space's device rights) isn't in its menu.
+                    if (s == Screen.LiveTv && !rights.liveTv) return@forEach
+                    if (s == Screen.Series && !rights.record) return@forEach
                     // A line under the libraries when they're listed one by one.
                     val afterLibs = lastOrNull()?.let { it.kind == Kind.Item && it.key.startsWith("lib:") } == true
                     add(Entry(k, s.label, s == selected, Kind.Item, divider = afterLibs) { onSelect(s) })

@@ -107,7 +107,7 @@ fun LibraryScreen(
             BackHandler { movie = null }
             DetailsPage(m.id, refresh, onPlay, actions = { det, say ->
                 // Live-folder recordings can be managed; archive copies get the tools only.
-                RecordingActions(det.item.id, say, manage = det.location == LIVE_FOLDER) { movie = null }
+                RecordingActions(det.item.id, say, manage = det.location == LIVE_FOLDER, canDelete = det.canDelete, place = det.location) { movie = null }
             })
         }
         s != null -> {
@@ -141,7 +141,11 @@ fun LibraryScreen(
             onDismiss = { quick = null },
             onOpenShow = if (q.type == "Series") { { show = q } } else null,
             extra = { det, say, done ->
-                if (q.type != "Series") RecordingActions(det.item.id, say, tools = false, manage = det.location == LIVE_FOLDER, onDeleted = done)
+                if (q.type != "Series") {
+                    RecordingActions(det.item.id, say, tools = false, manage = det.location == LIVE_FOLDER, canDelete = det.canDelete, place = det.location, onDeleted = done)
+                } else {
+                    ShowActions(q.id, say, onDeleted = done)
+                }
             },
         )
     }
@@ -419,7 +423,7 @@ internal fun ShowPage(
     episodeInfo?.let { id ->
         BackHandler { episodeInfo = null }
         DetailsPage(id, refresh, onPlay, actions = { det, say ->
-            RecordingActions(det.item.id, say, manage = det.location == LIVE_FOLDER) {
+            RecordingActions(det.item.id, say, manage = det.location == LIVE_FOLDER, canDelete = det.canDelete, place = det.location) {
                 episodeInfo = null
                 reload++
             }
@@ -450,7 +454,7 @@ internal fun ShowPage(
             onDetails = { episodeInfo = q.id },
             onChanged = { reload++ },
             onDismiss = { quick = null },
-            extra = { det, say, done -> RecordingActions(det.item.id, say, tools = false, manage = det.location == LIVE_FOLDER, onDeleted = done) },
+            extra = { det, say, done -> RecordingActions(det.item.id, say, tools = false, manage = det.location == LIVE_FOLDER, canDelete = det.canDelete, place = det.location, onDeleted = done) },
         )
     }
 }

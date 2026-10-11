@@ -74,6 +74,8 @@ data class EpisodeEntry(
     val overview: String? = null,
     val recordedAt: LocalDateTime? = null,
     val archived: Boolean = false,
+    // Whether the file is an archive copy, whatever the list shows as a tag.
+    val inArchive: Boolean = false,
     val partial: Boolean = false,
     val partialMinutes: Int? = null,
     // Comskip's badge ("4m ads", "scanning", "no ads"…), when it has scanned this recording.

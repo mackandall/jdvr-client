@@ -112,7 +112,7 @@ fun SearchScreen(
     movie?.let { m ->
         BackHandler { movie = null }
         DetailsPage(m.id, refresh, onPlay, actions = { det, say ->
-            RecordingActions(det.item.id, say, manage = det.location == LIVE_FOLDER) { movie = null }
+            RecordingActions(det.item.id, say, manage = det.location == LIVE_FOLDER, canDelete = det.canDelete, place = det.location) { movie = null }
         })
         return
     }

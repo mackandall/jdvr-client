@@ -26,10 +26,14 @@ fun RecordingActions(
     // Comskip's tools (scan, audio fix): on the details page, not in the show page's short row.
     tools: Boolean = true,
     // Favourites, Forget and Delete: for recordings in the live folder. Archive copies (on the
-    // NAS) get only the tools, so nothing deletes them from the TV.
+    // NAS) get the tools, and Delete only on a TV allowed to delete from the archive.
     manage: Boolean = true,
+    // Whether Jellyfin lets the user delete it, and the share it's on (for an archive copy).
+    canDelete: Boolean = true,
+    place: String? = null,
     onDeleted: () -> Unit,
 ) {
+    val rights = deviceRights()
     val scope = rememberCoroutineScope()
     var fav by remember(itemId) { mutableStateOf<LiveTvRepository.FavouriteFor?>(null) }
     var reload by remember { mutableIntStateOf(0) }
@@ -66,7 +70,7 @@ fun RecordingActions(
     var armedAudio by remember(itemId) { mutableStateOf(false) }
     // Comskip's tools change the recording: only for users allowed to edit recordings.
     val edit = editPermission()
-    val editTools = tools && edit != null
+    val editTools = tools && edit != null && rights.edit
     LaunchedEffect(itemId, startCheck, editTools) { if (editTools) start = runCatching { Jdvr.liveTv.programStartStatus(itemId) }.getOrNull() }
     LaunchedEffect(armedUndo, armedFind, armedClearStart, armedAudio) {
         if (armedUndo || armedFind || armedClearStart || armedAudio) {
@@ -77,8 +81,8 @@ fun RecordingActions(
             armedAudio = false
         }
     }
-    LaunchedEffect(itemId, archiveCheck) {
-        if (!manage) return@LaunchedEffect
+    LaunchedEffect(itemId, archiveCheck, rights.archive) {
+        if (!manage || !rights.archive) return@LaunchedEffect
         archive = runCatching { Jdvr.liveTv.archiveChoices(itemId) }.getOrNull()
         var wasMoving = false
         while (archive?.inFlight != null) {
@@ -109,7 +113,7 @@ fun RecordingActions(
         CuttingBar(cut, onStop = if (cut.stoppable && edit != null) { { scope.launch { onNote(runCatching { Jdvr.liveTv.stopCut(itemId)?.message }.getOrNull() ?: "Couldn't stop it."); MoveWatcher.kick() } } } else null)
     }
     val f = fav
-    if (manage && f != null && !f.isMovie) {
+    if (manage && rights.record && f != null && !f.isMovie) {
         val rule = f.favourite
         if (rule == null) {
             Button("★ Add to Recording Favourites") {
@@ -226,7 +230,7 @@ fun RecordingActions(
         }
     }
     // Episode History's "Forget this episode": delete it and forget it, so it records again.
-    if (tools && manage && cut == null && canForget) {
+    if (tools && manage && rights.delete && canDelete && cut == null && canForget) {
         Button(if (armedForget) "Press again: delete and forget" else if (fav?.isMovie == true) "Forget this movie" else "Forget this episode") {
             if (!armedForget) {
                 armedForget = true
@@ -245,7 +249,7 @@ fun RecordingActions(
         }
     }
     val a = archive
-    if (manage && a != null && a.isRecording && cut == null) {
+    if (manage && rights.archive && a != null && a.isRecording && cut == null) {
         if (a.inFlight != null) {
             MovingBar(movingFor(itemId.toString()) ?: a.progress)
         } else {
@@ -275,7 +279,14 @@ fun RecordingActions(
             )
         }
     }
-    if (manage && cut == null) Button(if (armedDelete) "Press again to delete" else "Delete recording", leading = { Dot(Jc.Recording) }) {
+    // An archive copy: only where this TV may delete from the archive, and it says where from.
+    val from = place?.let { " from $it" } ?: " from the archive"
+    val deleteLabel = when {
+        manage -> if (armedDelete) "Press again to delete" else "Delete recording"
+        armedDelete -> "Press again: delete$from for good"
+        else -> "Delete$from"
+    }
+    if (canDelete && (if (manage) rights.delete else rights.deleteArchive) && cut == null) Button(deleteLabel, leading = { Dot(Jc.Recording) }) {
         if (!armedDelete) {
             armedDelete = true
         } else {
@@ -283,7 +294,7 @@ fun RecordingActions(
             scope.launch {
                 runCatching { Jdvr.liveTv.deleteRecording(itemId) }
                     .onSuccess {
-                        onNote(if (it.deleted > 1) "Partial recording deleted, with its ${it.deleted - 1} other partial piece${if (it.deleted > 2) "s" else ""}" else "Recording deleted")
+                        onNote(if (it.deleted > 1) "Partial recording deleted, with its ${it.deleted - 1} other partial piece${if (it.deleted > 2) "s" else ""}" else if (manage) "Recording deleted" else "Deleted$from")
                         onDeleted()
                     }.onFailure { onNote("Couldn't delete it: ${it.message}") }
             }
@@ -319,9 +330,22 @@ fun ShowActions(
     var picking by remember(seriesId) { mutableStateOf(false) }
     var forget by remember(seriesId) { mutableStateOf<LiveTvRepository.ShowForget?>(null) }
     var armedForget by remember(seriesId) { mutableStateOf(false) }
+    // The show's archived copies: only on a TV allowed to delete from the archive.
+    var archived by remember(seriesId) { mutableStateOf<LiveTvRepository.ShowDelete?>(null) }
+    var armedArchived by remember(seriesId) { mutableStateOf(false) }
+    val rights = deviceRights()
+    LaunchedEffect(seriesId, rights) {
+        delete = if (rights.delete) runCatching { Jdvr.liveTv.deleteShowRecordings(seriesId, dryRun = true) }.getOrNull() else null
+        archived = if (rights.deleteArchive) runCatching { Jdvr.liveTv.deleteShowRecordings(seriesId, dryRun = true, archive = true) }.getOrNull() else null
+    }
     LaunchedEffect(seriesId) {
-        delete = runCatching { Jdvr.liveTv.deleteShowRecordings(seriesId, dryRun = true) }.getOrNull()
         forget = runCatching { Jdvr.liveTv.forgetShow(seriesId, dryRun = true) }.getOrNull()
+    }
+    LaunchedEffect(armedArchived) {
+        if (armedArchived) {
+            delay(4000)
+            armedArchived = false
+        }
     }
     LaunchedEffect(armedForget) {
         if (armedForget) {
@@ -329,7 +353,11 @@ fun ShowActions(
             armedForget = false
         }
     }
-    LaunchedEffect(seriesId, archiveCheck) {
+    LaunchedEffect(seriesId, archiveCheck, rights.archive) {
+        if (!rights.archive) {
+            archive = null
+            return@LaunchedEffect
+        }
         archive = runCatching { Jdvr.liveTv.archiveChoices(seriesId) }.getOrNull()
         // Moves under way: check back until they're done.
         while (archive?.inFlight != null) {
@@ -416,6 +444,39 @@ fun ShowActions(
                         onNote("Couldn't delete them.")
                     } else {
                         onNote("Deleted ${r.deleted} recording${if (r.deleted == 1) "" else "s"}" + if (r.skipped > 0) " (${r.skipped} left: recording now, or not yours to delete)" else "")
+                        onDeleted()
+                    }
+                }
+            }
+        }
+    }
+    val ad = archived
+    if (ad != null && ad.count > 0) {
+        // Files, not episodes: an episode can have several (the pieces of an interrupted recording).
+        val what = "${ad.count} archived episode file${if (ad.count == 1) "" else "s"}"
+        val size = "%.1f GB".format(ad.bytes / (1024.0 * 1024 * 1024))
+        val from = if (ad.places.isEmpty()) "the archive" else ad.places.joinToString(", ")
+        Button(
+            when {
+                deleting -> "Deleting…"
+                armedArchived -> "Press again: delete $what ($size) from $from for good"
+                else -> "Delete all $what"
+            },
+            leading = { Dot(Jc.Recording) },
+        ) {
+            if (deleting) return@Button
+            if (!armedArchived) {
+                armedArchived = true
+            } else {
+                armedArchived = false
+                deleting = true
+                scope.launch {
+                    val r = runCatching { Jdvr.liveTv.deleteShowRecordings(seriesId, dryRun = false, archive = true) }.getOrNull()
+                    deleting = false
+                    if (r == null) {
+                        onNote("Couldn't delete them.")
+                    } else {
+                        onNote("Deleted ${r.deleted} archived episode file${if (r.deleted == 1) "" else "s"}" + if (r.skipped > 0) " (${r.skipped} left: not yours to delete)" else "")
                         onDeleted()
                     }
                 }
