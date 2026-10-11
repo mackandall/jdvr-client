@@ -439,6 +439,7 @@ internal fun ShowPage(
         onPlay = { onPlay(PlayRecording(it.id)) },
         onPlayFromStart = { onPlay(PlayRecording(it.id, startMs = 0L)) },
         onInfo = { episodeInfo = it.id },
+        onShowChanged = { reload++ },
         onToggleWatched = { e ->
             scope.launch {
                 runCatching { Jdvr.liveTv.setPlayed(e.id, !e.played) }

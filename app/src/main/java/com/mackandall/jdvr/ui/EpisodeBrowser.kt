@@ -118,7 +118,24 @@ fun EpisodeBrowser(
     actions: (@Composable androidx.compose.foundation.layout.RowScope.(EpisodeEntry, (String) -> Unit) -> Unit)? = null,
     // Hold OK (or Menu) on an episode: its quick actions, or (Settings › Remote) its details.
     onHold: ((EpisodeEntry) -> Unit)? = null,
+    // After the show's own actions changed something (watched, deleted, moved): reload.
+    onShowChanged: () -> Unit = {},
 ) {
+    // The show's actions (mark all watched, move or delete all of it, forget it) behind a button
+    // of their own, so they don't depend on holding OK.
+    var showMenu by remember { mutableStateOf(false) }
+    if (showMenu && seriesId != null) {
+        QuickActions(
+            itemId = seriesId,
+            onPlay = {},
+            onDetails = {},
+            onChanged = onShowChanged,
+            onDismiss = { showMenu = false },
+            extra = { _, say, done -> ShowActions(seriesId, say, onDeleted = done) },
+            onShowPage = true,
+        )
+    }
+    val openShowMenu: (() -> Unit)? = if (seriesId != null) { { showMenu = true } } else null
     val hold: ((EpisodeEntry) -> Unit)? = if (!holdEnabled) null else { e -> holdOk(menu = { onHold?.invoke(e) ?: onInfo(e) }, details = { onInfo(e) }) }
     val tiles = Jdvr.prefs.episodeView == Prefs.TILES
     var backdrop by remember { mutableStateOf<UUID?>(null) }
@@ -135,6 +152,7 @@ fun EpisodeBrowser(
                 Box(Modifier.fillMaxSize().background(Jc.Ink.copy(alpha = 0.88f)))
             }
         }
+        androidx.compose.runtime.CompositionLocalProvider(LocalShowActions provides openShowMenu) {
         if (list == null || list.isEmpty()) {
             Column(Modifier.padding(start = 28.dp, top = 22.dp)) {
                 Header(title, subtitle, null, tiles)
@@ -146,8 +164,12 @@ fun EpisodeBrowser(
         } else {
             ListView(seriesId?.toString() ?: title, title, subtitle, list, entry, onPlay, onInfo, onToggleWatched, hold)
         }
+        }
     }
 }
+
+/** Opens the show's actions menu from a show page's header; null where there's no show to act on. */
+private val LocalShowActions = androidx.compose.runtime.compositionLocalOf<(() -> Unit)?> { null }
 
 @Composable
 private fun Header(
@@ -161,6 +183,7 @@ private fun Header(
             Text(title, color = Jc.Text, fontSize = 26.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
             subtitle?.let { Text(it, color = Jc.Muted, fontSize = 14.sp, maxLines = 1) }
             Box(Modifier.weight(0.01f))
+            LocalShowActions.current?.let { Button("Show actions", onClick = it) }
             Button(if (tiles) "View: Tiles" else "View: List") { Jdvr.prefs.changeEpisodeView(if (tiles) Prefs.LIST else Prefs.TILES) }
         }
         overview?.let { Text(it, color = Jc.Text, fontSize = 13.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.fillMaxWidth(0.8f)) }
@@ -454,6 +477,7 @@ private fun TilesView(
                 }
                 Box(Modifier.weight(1f))
                 subtitle?.let { Text(it, color = Jc.Muted, fontSize = 13.sp, modifier = Modifier.padding(end = 8.dp)) }
+                LocalShowActions.current?.let { Button("Show actions", onClick = it) }
                 Button("View: Tiles") { Jdvr.prefs.changeEpisodeView(Prefs.LIST) }
             }
             Text(title, color = Jc.Text, fontSize = 32.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = 36.dp))

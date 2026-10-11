@@ -82,6 +82,8 @@ fun QuickActions(
     // A show: Open show instead of play and details.
     onOpenShow: (() -> Unit)? = null,
     extra: (@Composable (LiveTvRepository.ItemDetails, (String) -> Unit, () -> Unit) -> Unit)? = null,
+    // Opened from the show's own page (its Show actions button): no Open show.
+    onShowPage: Boolean = false,
 ) {
     var d by remember(itemId) { mutableStateOf<LiveTvRepository.ItemDetails?>(null) }
     var failed by remember(itemId) { mutableStateOf(false) }
@@ -139,7 +141,9 @@ fun QuickActions(
             note?.let { Text(it, color = Jc.Focus, fontSize = 15.sp) }
             if (item != null) {
                 val firstMod = Modifier.fillMaxWidth().focusRequester(first)
-                if (onOpenShow != null) {
+                if (onShowPage) {
+                    // Mark watched, below, is the first button.
+                } else if (onOpenShow != null) {
                     Button("Open show", primary = true, modifier = firstMod) {
                         onDismiss()
                         onOpenShow()
@@ -163,7 +167,7 @@ fun QuickActions(
                 }
                 // A show: every episode of it (in any library), as Jellyfin marks a series.
                 val all = if (item.type == "Series") " (all episodes)" else ""
-                Button(if (item.played) "Mark unwatched$all" else "Mark watched$all", modifier = Modifier.fillMaxWidth()) {
+                Button(if (item.played) "Mark unwatched$all" else "Mark watched$all", modifier = if (onShowPage) firstMod else Modifier.fillMaxWidth()) {
                     scope.launch {
                         runCatching { Jdvr.liveTv.setPlayed(item.id, !item.played) }
                             .onSuccess {

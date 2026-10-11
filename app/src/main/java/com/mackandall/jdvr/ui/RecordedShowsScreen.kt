@@ -353,6 +353,7 @@ private fun ShowEpisodes(
         onPlay = { onPlay(it.id) },
         onPlayFromStart = { onPlayItem(com.mackandall.jdvr.PlayRecording(it.id, startMs = 0L)) },
         onInfo = { info = it.id },
+        onShowChanged = { reload++ },
         onToggleWatched = { e ->
             scope.launch {
                 runCatching { Jdvr.liveTv.setPlayed(e.id, !e.played) }
