@@ -207,9 +207,17 @@ class LiveTvRepository {
         }
     }
 
+    /**
+     * Cancels a recording (stops it when it is under way). Takes either Jellyfin's API id or the
+     * DVR's own id, which JellyDVR Schedule's list gives (its timers.json); Jellyfin's API only
+     * knows the first ("Timer … not found"), so the second is looked up among its timers.
+     */
     suspend fun cancelRecording(timerId: String) =
         io {
-        api.liveTvApi.cancelTimer(timerId)
+        val apiId = runCatching {
+            api.liveTvApi.getTimers().content.items.firstOrNull { it.id == timerId || it.externalId == timerId }?.id
+        }.getOrNull() ?: timerId
+        api.liveTvApi.cancelTimer(apiId)
     }
 
     suspend fun cancelSeries(seriesTimerId: String) =
@@ -811,6 +819,8 @@ class LiveTvRepository {
     data class ActiveRecording(
         @SerialName("Id") val id: String,
         @SerialName("Name") val name: String = "",
+        // The Live TV channel it is recorded from (Episode History since 2026-10-14).
+        @SerialName("ChannelId") val channelId: String? = null,
     )
 
     @Serializable

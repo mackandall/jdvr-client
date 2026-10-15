@@ -36,6 +36,12 @@ fun Modifier.onFocusChangedCompat(onChange: (Boolean) -> Unit): Modifier = onFoc
 const val NO_LIVE_TV =
     "This server has no Live TV channels. Once a tuner is set up in Jellyfin's dashboard (Live TV), its channels and guide show here."
 
+/**
+ * Tunes a Live TV channel in the player ("Watch live" on a recording in progress). Provided around
+ * the screens; null in the players (they have their own Back to live).
+ */
+val LocalWatchLive = androidx.compose.runtime.compositionLocalOf<((java.util.UUID) -> Unit)?> { null }
+
 /** Buttons stretch to the full width of what holds them (a menu's column), where this is true. */
 val LocalWideButtons = androidx.compose.runtime.compositionLocalOf { false }
 

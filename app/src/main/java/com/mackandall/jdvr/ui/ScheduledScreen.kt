@@ -36,6 +36,7 @@ import androidx.tv.material3.Text
 import com.mackandall.jdvr.data.Jdvr
 import com.mackandall.jdvr.data.LiveTvRepository
 import com.mackandall.jdvr.data.plainId
+import com.mackandall.jdvr.data.toUuid
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.time.Instant
@@ -50,7 +51,11 @@ private fun localTime(iso: String): LocalDateTime? = runCatching { LocalDateTime
  * "Don't record this".
  */
 @Composable
-fun ScheduledScreen(entry: FocusRequester) {
+fun ScheduledScreen(
+    entry: FocusRequester,
+    onPlayRecording: (com.mackandall.jdvr.PlayRecording) -> Unit = {},
+) {
+    val watchLive = LocalWatchLive.current
     var items by remember { mutableStateOf<List<LiveTvRepository.Upcoming>?>(null) }
     var loaded by remember { mutableStateOf(false) }
     var reload by remember { mutableIntStateOf(0) }
@@ -97,6 +102,18 @@ fun ScheduledScreen(entry: FocusRequester) {
                                 buffer = r.programId?.plainId() in bufferIds,
                                 modifier = if (r == list.first()) Modifier.focusRequester(entry) else Modifier,
                                 onToggle = { open = if (open == r.timerId) null else r.timerId },
+                                // Recording now: its file so far (Back to live in the player), or its channel.
+                                onWatch = { fromStart ->
+                                    scope.launch {
+                                        val program = r.programId?.toUuid()?.let { runCatching { Jdvr.liveTv.program(it) }.getOrNull() }
+                                        val item = if (fromStart) program?.id?.let { runCatching { Jdvr.liveTv.recordingOfProgram(it) }.getOrNull() } else null
+                                        when {
+                                            fromStart && item != null -> onPlayRecording(com.mackandall.jdvr.PlayRecording(item, startMs = 0L, liveChannelId = program?.channelId))
+                                            !fromStart && program != null && watchLive != null -> watchLive(program.channelId)
+                                            else -> note = "Couldn't find it on the server (it may have just ended)."
+                                        }
+                                    }
+                                },
                                 onCancel = {
                                     scope.launch {
                                         note =
@@ -126,6 +143,7 @@ private fun ScheduleRow(
     modifier: Modifier,
     onToggle: () -> Unit,
     onCancel: () -> Unit,
+    onWatch: (fromStart: Boolean) -> Unit,
 ) {
     val start = localTime(r.start)
     val end = localTime(r.end)
@@ -160,8 +178,38 @@ private fun ScheduleRow(
         }
         if (expanded) {
             Row(Modifier.padding(start = 14.dp, top = 6.dp, bottom = 6.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                // Only a recording in progress has something to watch.
+                if (r.recordingNow) {
+                    Button(if (buffer) "Watch the buffer from the start" else "Watch from the start") { onWatch(true) }
+                    Button("Watch live") { onWatch(false) }
+                }
                 // Only on a TV allowed to record (JellyDVR Space's device rights).
-                if (deviceRights().record) Button(if (r.recordingNow) "Stop this recording" else "Don't record this", leading = { Dot(Jc.Recording) }, onClick = onCancel)
+                // Only on a TV allowed to record (JellyDVR Space's device rights). Stopping a recording
+                // under way asks for a second press, like Stop recording elsewhere.
+                if (deviceRights().record) {
+                    var armed by remember(r.timerId) { mutableStateOf(false) }
+                    LaunchedEffect(armed) {
+                        if (armed) {
+                            delay(4000)
+                            armed = false
+                        }
+                    }
+                    Button(
+                        when {
+                            !r.recordingNow -> "Don't record this"
+                            armed -> "Press again to stop recording"
+                            else -> "Stop this recording"
+                        },
+                        leading = { Dot(Jc.Recording) },
+                    ) {
+                        if (r.recordingNow && !armed) {
+                            armed = true
+                        } else {
+                            armed = false
+                            onCancel()
+                        }
+                    }
+                }
                 Button("Keep it", onClick = onToggle)
             }
         }

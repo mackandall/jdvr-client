@@ -192,6 +192,7 @@ fun AppRoot() {
             }
         }
         Box(Modifier.fillMaxSize().onFocusChanged { screenHasFocus = it.hasFocus }) {
+            androidx.compose.runtime.CompositionLocalProvider(com.mackandall.jdvr.ui.LocalWatchLive provides { id: UUID -> playingChannel = id }) {
             when (screen) {
                 Screen.Home ->
                     HomeScreen(
@@ -212,9 +213,10 @@ fun AppRoot() {
                         androidx.compose.runtime.key(lib.id) { LibraryScreen(library = lib, entry = entry, refresh = played, onPlay = { playingRecording = it }) }
                     }
                 Screen.Search -> com.mackandall.jdvr.ui.SearchScreen(entry = entry, refresh = played, onPlayChannel = { playingChannel = it }, onPlay = { playingRecording = it })
-                Screen.Scheduled -> ScheduledScreen(entry = entry)
+                Screen.Scheduled -> ScheduledScreen(entry = entry, onPlayRecording = { playingRecording = it })
                 Screen.Series -> SeriesScreen(entry = entry)
                 Screen.Settings -> SettingsScreen(entry = entry, libraries = libraries)
+            }
             }
         }
         if (railOpen) {

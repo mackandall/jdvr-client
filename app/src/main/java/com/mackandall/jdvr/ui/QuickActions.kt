@@ -109,6 +109,7 @@ fun QuickActions(
         onDismiss()
     }
 
+    val scroll = rememberScrollState()
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Column(
             Modifier
@@ -130,7 +131,7 @@ fun QuickActions(
                     }
                 }
                 .onFocusChanged { hasFocus = it.hasFocus }
-                .verticalScroll(rememberScrollState())
+                .verticalScroll(scroll)
                 .padding(28.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
@@ -177,13 +178,33 @@ fun QuickActions(
                             }.onFailure { note = "Couldn't change it: ${it.message}" }
                     }
                 }
-                androidx.compose.runtime.CompositionLocalProvider(LocalWideButtons provides true) {
+                // "Watch live" closes the menu first: it is a dialog, and would sit over the player.
+                val watch = LocalWatchLive.current
+                androidx.compose.runtime.CompositionLocalProvider(
+                    LocalWideButtons provides true,
+                    LocalWatchLive provides watch?.let { w -> { id: java.util.UUID -> onDismiss(); w(id) } },
+                ) {
                     extra?.invoke(det, { note = it }, ::done)
                 }
             } else if (failed) {
                 Button("Close", modifier = Modifier.fillMaxWidth().focusRequester(first), onClick = onDismiss)
             }
-            if (item != null) Button("Close", modifier = Modifier.fillMaxWidth(), onClick = onDismiss)
+            // Down past Close goes round to the top (Play), with the title back in view.
+            if (item != null) {
+                Button(
+                    "Close",
+                    modifier = Modifier.fillMaxWidth().onPreviewKeyEvent { k ->
+                        if (k.key == Key.DirectionDown && k.type == KeyEventType.KeyDown) {
+                            runCatching { first.requestFocus() }
+                            scope.launch { scroll.animateScrollTo(0) }
+                            true
+                        } else {
+                            false
+                        }
+                    },
+                    onClick = onDismiss,
+                )
+            }
         }
     }
     LaunchedEffect(d != null, failed) {

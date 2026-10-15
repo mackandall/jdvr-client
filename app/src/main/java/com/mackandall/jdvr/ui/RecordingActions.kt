@@ -10,6 +10,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import com.mackandall.jdvr.data.Jdvr
 import com.mackandall.jdvr.data.LiveTvRepository
+import com.mackandall.jdvr.data.toUuid
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.UUID
@@ -20,6 +21,24 @@ import java.util.UUID
  * to record, for a user who may manage Live TV. Asks for a second press; what was recorded so
  * far is kept.
  */
+/**
+ * "Watch live" for each recording in progress behind an item: tunes the channel it is recorded
+ * from (Jellyfin shares the recording's stream, so no extra tuner). Shown to anyone; needs Episode
+ * History's channel in its active recordings, and a place that can play a channel.
+ */
+@Composable
+fun WatchLiveButtons(itemId: UUID) {
+    val watch = LocalWatchLive.current ?: return
+    var active by remember(itemId) { mutableStateOf<LiveTvRepository.ActiveRecordings?>(null) }
+    LaunchedEffect(itemId) { active = runCatching { Jdvr.liveTv.activeRecordings(itemId) }.getOrNull() }
+    val list = active?.recordings.orEmpty().filter { it.channelId?.toUuid() != null }
+    list.forEach { r ->
+        Button(if (list.size > 1) "Watch live: ${r.name}" else "Watch live", leading = { Dot(Jc.Recording) }) {
+            r.channelId?.toUuid()?.let(watch)
+        }
+    }
+}
+
 @Composable
 fun StopRecordingButtons(
     itemId: UUID,
@@ -171,6 +190,7 @@ fun RecordingActions(
     }
     @Suppress("NAME_SHADOWING")
     val canDelete = canDeleteNow ?: canDelete
+    WatchLiveButtons(itemId)
     StopRecordingButtons(itemId, onNote, onStopped = { stops++ })
     val cut = cuttingFor(itemId.toString())
     if (cut != null) {
@@ -405,6 +425,7 @@ fun ShowActions(
     LaunchedEffect(seriesId) {
         forget = runCatching { Jdvr.liveTv.forgetShow(seriesId, dryRun = true) }.getOrNull()
     }
+    WatchLiveButtons(seriesId)
     StopRecordingButtons(seriesId, onNote)
     LaunchedEffect(armedArchived) {
         if (armedArchived) {

@@ -175,15 +175,26 @@ fun HomeScreen(
                 val rec = upcoming.filter { it.recordingNow }
                 if (rec.isEmpty()) Text("Nothing is recording.", color = Jc.Muted, fontSize = 14.sp)
                 // Real recordings first; a live TV buffer is shown as one, not as a recording.
-                rec.sortedBy { it.programId?.plainId() in bufferIds }.take(3).forEach { r ->
+                // Three fit; the rest are a press away in Scheduled (Watch on each one recording now).
+                val shown = if (rec.size > 3) 2 else 3
+                rec.sortedBy { it.programId?.plainId() in bufferIds }.take(shown).forEach { r ->
                     val buffer = r.programId?.plainId() in bufferIds
                     SmallRow(
                         title = r.name,
                         detail = listOfNotNull(if (buffer) "Live TV buffer" else null, r.channelName, if (buffer) null else localOf(r.end)?.let { "until ${it.time()}" }).joinToString(" · "),
                         dot = !buffer,
                     ) {
-                        // Watch it from the start.
-                        scope.launch { r.programId?.toUuid()?.let { Jdvr.liveTv.recordingOfProgram(it) }?.let { onPlayRecording(PlayRecording(it, startMs = 0L)) } }
+                        // Watch it from the start; Back to live in the player tunes its channel.
+                        scope.launch {
+                            val pid = r.programId?.toUuid() ?: return@launch
+                            val channel = runCatching { Jdvr.liveTv.program(pid)?.channelId }.getOrNull()
+                            Jdvr.liveTv.recordingOfProgram(pid)?.let { onPlayRecording(PlayRecording(it, startMs = 0L, liveChannelId = channel)) }
+                        }
+                    }
+                }
+                if (rec.size > shown) {
+                    SmallRow(title = "${rec.size - shown} more recording now", detail = "Open Scheduled", dot = false) {
+                        onOpenScreen(com.mackandall.jdvr.Screen.Scheduled)
                     }
                 }
             }
