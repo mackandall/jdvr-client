@@ -193,8 +193,9 @@ private fun DateRow(
     onDetails: () -> Unit,
 ) {
     var isFocused by remember { mutableStateOf(false) }
-    val text = if (isFocused) Jc.OnFocus else Jc.Text
-    val muted = if (isFocused) Jc.OnFocus.copy(alpha = 0.75f) else Jc.Muted
+    // FocusFill is a panel colour (white in the light theme): the usual text colours stay readable on it.
+    val text = Jc.Text
+    val muted = Jc.Muted
     val held = { holdOk(menu = onHold, details = onDetails) }
     val hold = if (holdEnabled) held else null
     Surface(
@@ -221,17 +222,18 @@ private fun DateRow(
             WatchedDot(r)
             if (!logoRight) ChannelTile(r.channel, numberInside = true)
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(r.title, color = text, fontSize = 19.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
-                    StatusChips(r)
-                }
+                Text(r.title, color = text, fontSize = 19.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                // The state chips go on the second line, so a long one ("Stalled · 98 min lost") can't squeeze the title.
                 val sub = listOfNotNull(
                     if (r.type == "Episode") r.episodeTitle else r.year?.toString(),
                     numbers(r),
                     r.minutes?.let { "$it min" },
                     if (logoRight) at?.time() else null,
                 ).joinToString(" · ")
-                if (sub.isNotEmpty()) Text(sub, color = muted, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    StatusChips(r)
+                    if (sub.isNotEmpty()) Text(sub, color = muted, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
             }
             if (logoRight) {
                 ChannelTile(r.channel, numberInside = false, numberColor = muted)
@@ -294,7 +296,7 @@ private fun StatusChips(r: DateRecording) {
     if (r.recording) Chip("● Recording", Jc.Recording)
     val warn = r.statusShort ?: if (r.partial) "Partial" + (r.minutes?.let { " · $it min" } ?: "") else null
     warn?.let { Chip(it, Jc.Amber, dark = true) }
-    if (r.archived) Chip("Archived", Jc.Panel2)
+    if (r.archived) Chip("Archived", Jc.Panel2, textColor = Jc.Text)
 }
 
 @Composable
@@ -302,10 +304,11 @@ private fun Chip(
     text: String,
     color: Color,
     dark: Boolean = false,
+    textColor: Color? = null,
 ) {
     Text(
         text,
-        color = badgeText(color, dark),
+        color = textColor ?: badgeText(color, dark),
         fontSize = 12.sp,
         fontWeight = FontWeight.Bold,
         maxLines = 1,
@@ -338,8 +341,8 @@ private fun DateDetails(r: DateRecording) {
             Text(line, color = Jc.Muted, fontSize = 15.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Chip(if (r.played) "Watched" else if (r.playedPercent > 0) "${r.playedPercent}% watched" else "Not watched", Jc.Panel2)
-            if (r.archived) Chip("Archived", Jc.Panel2)
+            Chip(if (r.played) "Watched" else if (r.playedPercent > 0) "${r.playedPercent}% watched" else "Not watched", Jc.Panel2, textColor = Jc.Text)
+            if (r.archived) Chip("Archived", Jc.Panel2, textColor = Jc.Text)
         }
         when {
             r.recording -> Text("Recording now", color = Jc.Recording, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
