@@ -706,6 +706,15 @@ class LiveTvRepository {
 
     suspend fun libItem(id: UUID): LibItem = io { toLibItem(api.userLibraryApi.getItem(id, Jdvr.userId).content) }
 
+    /** A library's latest additions, as the web client's "Recently added in …" rows (episodes grouped by show). */
+    suspend fun latestIn(
+        libraryId: UUID,
+        limit: Int = 16,
+    ): List<LibItem>? =
+        runCatching {
+            io { api.userLibraryApi.getLatestMedia(userId = Jdvr.userId, parentId = libraryId, limit = limit).content.map(::toLibItem) }
+        }.getOrNull()
+
     suspend fun setPlayed(
         id: UUID,
         played: Boolean,

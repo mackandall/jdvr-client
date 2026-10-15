@@ -4,6 +4,8 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
@@ -13,6 +15,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -28,6 +32,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -74,6 +79,7 @@ fun HomeScreen(
     onPlayRecording: (PlayRecording) -> Unit,
     onOpenScreen: (com.mackandall.jdvr.Screen) -> Unit,
     onOpenShow: (String) -> Unit,
+    onOpenLibraryItem: (UUID, LiveTvRepository.LibItem) -> Unit = { _, _ -> },
 ) {
     var last by remember { mutableStateOf<Channel?>(null) }
     var fromStart by remember { mutableStateOf<UUID?>(null) }
@@ -191,6 +197,7 @@ fun HomeScreen(
     val showAttention = extras != null && shown("attention", attentionLines.isNotEmpty())
     val showTuners = shown("tuners")
     val showFresh = shown("fresh")
+    val showLibraries = shown("libraries")
     val row1 = showLive || showWeather || showNow
     val row2 = showNext || showAttention || showTuners
     val tileRows = (if (row1) 1 else 0) + (if (row2) 1 else 0)
@@ -216,7 +223,25 @@ fun HomeScreen(
         // (the picture's dark ground, trees, night sky).
         Box(Modifier.fillMaxSize().background(Jc.Ink.copy(alpha = if (Jc.Light) 0.66f else 0.35f)))
     }
-    Column(Modifier.fillMaxSize().padding(start = 28.dp, top = 16.dp, end = 28.dp, bottom = 20.dp)) {
+    // Home is one screen of tiles; the libraries' rows wait below it (▼ from New recordings), and
+    // focus back in the tiles brings the whole page back up.
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+    val pageHeight = maxHeight
+    val page = rememberScrollState()
+    // While focus is in the tiles, the page stays at the top (a focused tile's bring-into-view
+    // would otherwise nudge it up and cut off the clock).
+    var inTiles by remember { mutableStateOf(false) }
+    LaunchedEffect(inTiles) {
+        if (inTiles) androidx.compose.runtime.snapshotFlow { page.value }.collect { if (it > 0) page.animateScrollTo(0) }
+    }
+    Column(Modifier.fillMaxSize().verticalScroll(page)) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .height(pageHeight)
+            .onFocusChanged { inTiles = it.hasFocus }
+            .padding(start = 28.dp, top = 16.dp, end = 28.dp, bottom = 20.dp),
+    ) {
         // The clock and date; the weather and tuners have tiles of their own.
         Row(Modifier.padding(bottom = 12.dp), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             Text("JDVR", color = Jc.Focus, fontSize = 22.sp, fontWeight = FontWeight.Bold)
@@ -301,7 +326,78 @@ fun HomeScreen(
             }
         }
     }
+    if (showLibraries) LibraryRows(onOpenLibraryItem)
     }
+    }
+    }
+    }
+}
+
+/**
+ * "Recently added in …", one row per library (menu order, hidden ones left out), as on the web
+ * client's home page; refreshed every five minutes.
+ */
+@Composable
+private fun LibraryRows(onOpen: (UUID, LiveTvRepository.LibItem) -> Unit) {
+    val prefs = Jdvr.prefs
+    var rows by remember { mutableStateOf<List<Pair<LiveTvRepository.Library, List<LiveTvRepository.LibItem>>>>(emptyList()) }
+    LaunchedEffect(prefs.hiddenLibraries, prefs.libraryOrder) {
+        while (true) {
+            runCatching { Jdvr.liveTv.libraries() }.getOrNull()?.let { libs ->
+                rows =
+                    libs.filter { it.id.toString() !in prefs.hiddenLibraries }.inMenuOrder().mapNotNull { l ->
+                        Jdvr.liveTv.latestIn(l.id)?.takeIf { it.isNotEmpty() }?.let { l to it }
+                    }
+            }
+            delay(5 * 60_000L)
+        }
+    }
+    Column(Modifier.fillMaxWidth().padding(start = 28.dp, end = 28.dp, bottom = 32.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        rows.forEach { (lib, items) ->
+            Text("Recently added in ${lib.name}", color = Jc.Text, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(14.dp), contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp)) {
+                itemsIndexed(items, key = { _, it -> it.id }) { i, item ->
+                    // ◄ from the first poster opens the menu.
+                    PosterCard(item, if (i == 0) Modifier.focusProperties { left = FocusRequester.Cancel } else Modifier) { onOpen(lib.id, item) }
+                }
+            }
+        }
+    }
+}
+
+/** A library poster: the show's for an episode; its name, and the episode or year under it. */
+@Composable
+private fun PosterCard(
+    item: LiveTvRepository.LibItem,
+    modifier: Modifier,
+    onClick: () -> Unit,
+) {
+    Column(Modifier.width(132.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Surface(
+            onClick = onClick,
+            modifier = modifier.fillMaxWidth().aspectRatio(2f / 3f),
+            shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(9.dp)),
+            colors = ClickableSurfaceDefaults.colors(containerColor = homePanel2(), focusedContainerColor = homePanel2()),
+            border = ClickableSurfaceDefaults.border(focusedBorder = Border(BorderStroke(3.dp, Jc.Focus))),
+            scale = ClickableSurfaceDefaults.scale(focusedScale = 1.06f),
+        ) {
+            Box(Modifier.fillMaxSize()) {
+                AsyncImage(model = Jdvr.liveTv.imageUrl(item.seriesId ?: item.id, 330), contentDescription = item.name, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+                val badge = item.unplayed?.takeIf { it > 0 && item.type == "Series" }?.toString()
+                badge?.let {
+                    Text(
+                        it,
+                        color = Jc.Text,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.align(Alignment.TopEnd).padding(6.dp).background(Jc.Ink.copy(alpha = 0.85f), RoundedCornerShape(5.dp)).padding(horizontal = 6.dp, vertical = 2.dp),
+                    )
+                }
+            }
+        }
+        Text(item.seriesName ?: item.name, color = Jc.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        val sub = if (item.seriesName != null) listOfNotNull(item.seasonEpisode, item.name).joinToString(" · ") else item.year?.toString()
+        sub?.let { Text(it, color = Jc.Muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
     }
 }
 

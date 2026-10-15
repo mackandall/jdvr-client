@@ -91,6 +91,8 @@ fun AppRoot() {
     var screen by remember { mutableStateOf(Screen.Home) }
     // A show for Recorded Shows to open straight away (from Home's New recordings).
     var openShow by remember { mutableStateOf<String?>(null) }
+    // A library item for its library to open straight away (from Home's library rows).
+    var openLibItem by remember { mutableStateOf<com.mackandall.jdvr.data.LiveTvRepository.LibItem?>(null) }
     // Screens reached from inside another (Home's Guide, Scheduled, a show): Back returns there.
     // Picking from the rail starts afresh.
     val backStack = remember { androidx.compose.runtime.mutableStateListOf<Screen>() }
@@ -218,13 +220,18 @@ fun AppRoot() {
                             openShow = it
                             goTo(Screen.RecordedShows)
                         },
+                        onOpenLibraryItem = { lib, item ->
+                            libraryId = lib
+                            openLibItem = item
+                            goTo(Screen.Library)
+                        },
                     )
                 Screen.Guide -> GuideScreen(entry = entry, onPlay = { playingChannel = it }, onPlayRecording = { playingRecording = it }, watching = playingChannel)
                 Screen.LiveTv -> ChannelsScreen(entry = entry, onPlay = { playingChannel = it })
                 Screen.RecordedShows -> RecordedShowsScreen(entry = entry, onPlay = { playingRecording = PlayRecording(it) }, openShowId = openShow, onShowOpened = { openShow = null }, onLeave = { if (backStack.isNotEmpty()) screen = backStack.removeAt(backStack.lastIndex) }, refresh = played, onPlayItem = { playingRecording = it })
                 Screen.Library ->
                     currentLibrary?.let { lib ->
-                        androidx.compose.runtime.key(lib.id) { LibraryScreen(library = lib, entry = entry, refresh = played, onPlay = { playingRecording = it }) }
+                        androidx.compose.runtime.key(lib.id) { LibraryScreen(library = lib, entry = entry, refresh = played, onPlay = { playingRecording = it }, openItem = openLibItem, onItemOpened = { openLibItem = null }, onLeave = { if (backStack.isNotEmpty()) screen = backStack.removeAt(backStack.lastIndex) }) }
                     }
                 Screen.Search -> com.mackandall.jdvr.ui.SearchScreen(entry = entry, refresh = played, onPlayChannel = { playingChannel = it }, onPlay = { playingRecording = it })
                 Screen.Scheduled -> ScheduledScreen(entry = entry, onPlayRecording = { playingRecording = it })

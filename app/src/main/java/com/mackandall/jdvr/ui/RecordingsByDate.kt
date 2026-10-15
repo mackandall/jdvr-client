@@ -1,5 +1,7 @@
 package com.mackandall.jdvr.ui
 
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -14,14 +16,17 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -317,13 +322,17 @@ private fun Chip(
     )
 }
 
-/** The focused recording: picture, titles, channel, state, and the guide's description. */
+/**
+ * The focused recording: picture, titles, channel, state, and the guide's description. Everything
+ * fits the pane: the picture gives up room first, and a description longer than five lines or so
+ * scrolls slowly by itself (the pane can't take focus, so the remote can't scroll it).
+ */
 @Composable
 private fun DateDetails(r: DateRecording) {
     val at = localTime(r.recordedUtc)
-    Column(Modifier.fillMaxSize().padding(top = 6.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    Column(Modifier.fillMaxSize().padding(top = 6.dp, bottom = 10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         val image = (r.imageId ?: r.id).let { Jdvr.liveTv.imageUrl(it, 360) }
-        Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f).background(Jc.Panel2, RoundedCornerShape(12.dp))) {
+        Box(Modifier.weight(1f, fill = false).aspectRatio(16f / 9f, matchHeightConstraintsFirst = true).background(Jc.Panel2, RoundedCornerShape(12.dp))) {
             if (image != null) {
                 AsyncImage(model = image, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize().background(Jc.Panel2, RoundedCornerShape(12.dp)))
             }
@@ -354,7 +363,29 @@ private fun DateDetails(r: DateRecording) {
                 Text(r.statusText ?: "Too short to count as recorded. Hold OK to keep it or record it again.", color = Jc.Text, fontSize = 14.sp, maxLines = 4, overflow = TextOverflow.Ellipsis)
             }
         }
-        r.overview?.let { Text(it, color = Jc.Text, fontSize = 15.sp, maxLines = 6, overflow = TextOverflow.Ellipsis) }
+        r.overview?.let { ScrollingText(it, r.id, Modifier.heightIn(max = 130.dp)) }
         Text("OK Play  ·  Hold OK Options", color = Jc.Muted, fontSize = 14.sp)
     }
+}
+
+/** Text in the room it's given; when it doesn't fit, it waits, scrolls slowly to its end, waits, and starts over. */
+@Composable
+private fun ScrollingText(
+    text: String,
+    key: Any,
+    modifier: Modifier,
+) {
+    val scroll = rememberScrollState()
+    LaunchedEffect(key, text) {
+        scroll.scrollTo(0)
+        while (true) {
+            delay(3_000)
+            val max = scroll.maxValue
+            if (max <= 0) continue
+            scroll.animateScrollTo(max, tween(durationMillis = max * 40, easing = LinearEasing))
+            delay(3_000)
+            scroll.animateScrollTo(0, tween(600))
+        }
+    }
+    Text(text, color = Jc.Text, fontSize = 15.sp, modifier = modifier.fillMaxWidth().verticalScroll(scroll, enabled = false))
 }

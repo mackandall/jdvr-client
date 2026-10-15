@@ -299,15 +299,15 @@ class Prefs(
 
     companion object {
         // Home's tiles, row by row, and the presets of Settings › Home.
-        val HOME_TILES = listOf("live", "weather", "now", "next", "attention", "tuners", "fresh")
+        val HOME_TILES = listOf("live", "weather", "now", "next", "attention", "tuners", "fresh", "libraries")
         const val CALM = "calm"
         const val STANDARD = "standard"
         const val EVERYTHING = "everything"
         val HOME_PRESETS =
             linkedMapOf(
-                CALM to mapOf("live" to "on", "weather" to "off", "now" to "auto", "next" to "on", "attention" to "auto", "tuners" to "off", "fresh" to "on"),
-                STANDARD to mapOf("live" to "on", "weather" to "on", "now" to "auto", "next" to "on", "attention" to "auto", "tuners" to "on", "fresh" to "on"),
-                EVERYTHING to mapOf("live" to "on", "weather" to "on", "now" to "on", "next" to "on", "attention" to "on", "tuners" to "on", "fresh" to "on"),
+                CALM to mapOf("live" to "on", "weather" to "off", "now" to "auto", "next" to "on", "attention" to "auto", "tuners" to "off", "fresh" to "on", "libraries" to "on"),
+                STANDARD to mapOf("live" to "on", "weather" to "on", "now" to "auto", "next" to "on", "attention" to "auto", "tuners" to "on", "fresh" to "on", "libraries" to "on"),
+                EVERYTHING to mapOf("live" to "on", "weather" to "on", "now" to "on", "next" to "on", "attention" to "on", "tuners" to "on", "fresh" to "on", "libraries" to "on"),
             )
         const val MAGNIFY = "magnify"
         const val WAVE = "wave"

@@ -140,12 +140,15 @@ fun SettingsScreen(
             Triple("attention", "Needs attention", true),
             Triple("tuners", "Tuners and recordings drive", false),
             Triple("fresh", "New recordings", false),
+            Triple("libraries", "Recently added in each library", false),
         ).forEach { (key, label, auto) ->
             val v = prefs.homeTile(key)
             Choice(
                 label = label,
                 help =
-                    if (auto) {
+                    if (key == "libraries") {
+                        "A row per library under Home, newest first, like the web client's home page (▼ from New recordings). Libraries hidden from the menu are left out."
+                    } else if (auto) {
                         "Auto: only while there is something to show. The other tiles grow into the room it leaves."
                     } else {
                         "Turned off, the other tiles grow into the room it leaves."

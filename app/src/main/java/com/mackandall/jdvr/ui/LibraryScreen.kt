@@ -90,9 +90,20 @@ fun LibraryScreen(
     entry: FocusRequester,
     refresh: Int,
     onPlay: (PlayRecording) -> Unit,
+    openItem: LiveTvRepository.LibItem? = null,
+    onItemOpened: () -> Unit = {},
+    onLeave: () -> Unit = {},
 ) {
     var show by remember { mutableStateOf<LiveTvRepository.LibItem?>(null) }
     var movie by remember { mutableStateOf<LiveTvRepository.LibItem?>(null) }
+    // Opened from elsewhere (Home's rows): Back from its page goes back there, not to the grid.
+    var cameForItem by remember { mutableStateOf(false) }
+    LaunchedEffect(openItem) {
+        val o = openItem ?: return@LaunchedEffect
+        if (o.type == "Series") show = o else movie = o
+        cameForItem = true
+        onItemOpened()
+    }
     // What was opened (and where in the list), to put focus back on it after Back.
     var lastItem by remember { mutableStateOf<UUID?>(null) }
     var lastIndex by remember { mutableIntStateOf(0) }
@@ -104,14 +115,14 @@ fun LibraryScreen(
     val s = show
     when {
         m != null -> {
-            BackHandler { movie = null }
+            BackHandler { if (cameForItem) onLeave() else movie = null }
             DetailsPage(m.id, refresh, onPlay, actions = { det, say ->
                 // Live-folder recordings can be managed; archive copies get the tools only.
                 RecordingActions(det.item.id, say, manage = det.location == LIVE_FOLDER, canDelete = det.canDelete, place = det.location) { movie = null }
             })
         }
         s != null -> {
-            BackHandler { show = null }
+            BackHandler { if (cameForItem) onLeave() else show = null }
             ShowPage(s, refresh, onPlay)
         }
         else ->
