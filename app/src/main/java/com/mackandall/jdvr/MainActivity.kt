@@ -1,5 +1,7 @@
 package com.mackandall.jdvr
 
+import androidx.compose.foundation.focusGroup
+import androidx.compose.ui.focus.focusProperties
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -191,7 +193,19 @@ fun AppRoot() {
                 else -> railOpen = true
             }
         }
-        Box(Modifier.fillMaxSize().onFocusChanged { screenHasFocus = it.hasFocus }) {
+        // While a player is up, the screen under it is out of reach: a key the player has no use
+        // for (Down at the bottom of its controls) made the focus search step into this screen,
+        // and the next OK started whatever was selected there (another recording over the live
+        // channel). Focus can't enter it, and any key that still reaches it is dropped.
+        val playerUp = playingChannel != null || playingRecording != null
+        Box(
+            Modifier
+                .fillMaxSize()
+                .focusProperties { onEnter = { if (playerUp) cancelFocusChange() } }
+                .focusGroup()
+                .onPreviewKeyEvent { playerUp }
+                .onFocusChanged { screenHasFocus = it.hasFocus },
+        ) {
             androidx.compose.runtime.CompositionLocalProvider(com.mackandall.jdvr.ui.LocalWatchLive provides { id: UUID -> playingChannel = id }) {
             when (screen) {
                 Screen.Home ->

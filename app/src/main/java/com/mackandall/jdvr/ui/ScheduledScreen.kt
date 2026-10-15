@@ -180,8 +180,8 @@ private fun ScheduleRow(
             Row(Modifier.padding(start = 14.dp, top = 6.dp, bottom = 6.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 // Only a recording in progress has something to watch.
                 if (r.recordingNow) {
-                    Button(if (buffer) "Watch the buffer from the start" else "Watch from the start") { onWatch(true) }
-                    Button("Watch live") { onWatch(false) }
+                    Button(if (buffer) "Watch the buffer from the start" else "Watch from the start", leading = { Text("⏮", color = Jc.Text) }) { onWatch(true) }
+                    Button("Watch live", leading = { Text("▶", color = Jc.Text) }) { onWatch(false) }
                 }
                 // Only on a TV allowed to record (JellyDVR Space's device rights).
                 // Only on a TV allowed to record (JellyDVR Space's device rights). Stopping a recording

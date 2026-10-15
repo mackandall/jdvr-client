@@ -125,6 +125,10 @@ fun PlayerScreen(
     var error by remember { mutableStateOf<String?>(null) }
     // Try again: a fresh start of the same channel (a new stream from the server).
     var attempt by remember(channelId) { mutableIntStateOf(0) }
+    // Reconnecting by itself: a free channel's stream can break or freeze mid-programme (an ad
+    // spliced in with a wild timestamp froze the server's transcode, 2026-10-15). Up to three fresh
+    // starts in a row, a little further apart each time; the error only shows if they all fail.
+    var reconnects by remember(channelId) { mutableIntStateOf(0) }
     var osdUntil by remember { mutableStateOf(System.currentTimeMillis() + 6000) }
     var typed by remember { mutableStateOf("") }
     var typedAt by remember { mutableStateOf(0L) }
@@ -149,13 +153,32 @@ fun PlayerScreen(
 
     val formats = rememberPlayingFormats(player)
 
+    /** A fresh start of the channel, by itself; false once the tries are used up (the error then shows). */
+    fun reconnect(why: String): Boolean {
+        if (reconnects >= MAX_RECONNECTS) return false
+        reconnects++
+        Timber.i("Reconnecting channel %s (%d of %d): %s", channelId, reconnects, MAX_RECONNECTS, why)
+        val tryNo = reconnects
+        player.stop()
+        error = null
+        tuning = true
+        note = "Reconnecting… ($tryNo of $MAX_RECONNECTS)"
+        scope.launch {
+            delay(RECONNECT_DELAYS_MS[tryNo - 1])
+            attempt++
+        }
+        return true
+    }
+
     DisposableEffect(Unit) {
         val listener =
             object : Player.Listener {
                 override fun onPlayerError(e: PlaybackException) {
                     Timber.w(e, "Playback error")
-                    error = liveErrorText(e)
-                    tuning = false
+                    if (!reconnect("the stream stopped (${e.errorCodeName})")) {
+                        error = liveErrorText(e)
+                        tuning = false
+                    }
                 }
 
                 override fun onRenderedFirstFrame() {
@@ -223,8 +246,10 @@ fun PlayerScreen(
                     throw e
                 } catch (e: Exception) {
                     Timber.w(e, "Couldn't start channel %s", channelId)
-                    error = "The server couldn't start this channel. It may be off the air, or its tuner may be busy or not working."
-                    tuning = false
+                    if (attempt == 0 || !reconnect("the server couldn't start it")) {
+                        error = "The server couldn't start this channel. It may be off the air, or its tuner may be busy or not working."
+                        tuning = false
+                    }
                 }
             }
         onDispose {
@@ -236,6 +261,37 @@ fun PlayerScreen(
                 kotlinx.coroutines.MainScope().launch { runCatching { Jdvr.liveTv.reportStopped(p) } }
             }
         }
+    }
+
+    // A stream that freezes without an error (no new picture while it should be playing): after
+    // 12 s, a fresh start. Paused (live TV pause), tuning or showing an error doesn't count.
+    LaunchedEffect(channelId, attempt) {
+        var lastPos = -1L
+        var stillSince = 0L
+        while (true) {
+            delay(2000)
+            val playing = player.playWhenReady && pausedAt == null && !tuning && error == null && busy == null
+            val pos = player.currentPosition
+            val now = android.os.SystemClock.elapsedRealtime()
+            if (!playing || pos != lastPos) {
+                lastPos = pos
+                stillSince = now
+            } else if (now - stillSince >= STALL_MS) {
+                if (!reconnect("no new picture for ${STALL_MS / 1000} s")) {
+                    player.stop()
+                    error = "The channel stopped sending a picture and reconnecting didn't help. It may be having trouble at the source."
+                    tuning = false
+                }
+                return@LaunchedEffect
+            }
+        }
+    }
+    LaunchedEffect(tuning, attempt) {
+        if (!tuning && note?.startsWith("Reconnecting") == true) note = null
+    }
+    LaunchedEffect(attempt) {
+        delay(GOOD_SPELL_MS)
+        if (error == null && !tuning) reconnects = 0
     }
 
     // JellyDVR Live's buffer (from tune-in) and, if the programme is a real recording, the recording.
@@ -597,6 +653,7 @@ fun PlayerScreen(
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     Button("Try again", primary = true) {
                         error = null
+                        reconnects = 0
                         attempt++
                     }
                     Button("Back", onClick = onExit)
@@ -885,6 +942,11 @@ private fun TunersBusy(
  * better by asking again a few seconds later, so the player gives up at once and says so, instead
  * of retrying for half a minute behind the tuning spinner. Other errors keep the usual retries.
  */
+private const val MAX_RECONNECTS = 3
+private val RECONNECT_DELAYS_MS = longArrayOf(2000, 4000, 8000)
+private const val STALL_MS = 12_000L
+private const val GOOD_SPELL_MS = 90_000L
+
 private object NoRetryOnServerError : androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy() {
     override fun getRetryDelayMsFor(info: androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy.LoadErrorInfo): Long {
         val e = info.exception

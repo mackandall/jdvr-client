@@ -8,6 +8,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.tv.material3.Text
 import com.mackandall.jdvr.data.Jdvr
 import com.mackandall.jdvr.data.LiveTvRepository
 import com.mackandall.jdvr.data.toUuid
@@ -33,7 +34,8 @@ fun WatchLiveButtons(itemId: UUID) {
     LaunchedEffect(itemId) { active = runCatching { Jdvr.liveTv.activeRecordings(itemId) }.getOrNull() }
     val list = active?.recordings.orEmpty().filter { it.channelId?.toUuid() != null }
     list.forEach { r ->
-        Button(if (list.size > 1) "Watch live: ${r.name}" else "Watch live", leading = { Dot(Jc.Recording) }) {
+        // ▶ as in the guide: the red dot is for what changes the recording (Stop), not for watching it.
+        Button(if (list.size > 1) "Watch live: ${r.name}" else "Watch live", leading = { Text("▶", color = Jc.Text) }) {
             r.channelId?.toUuid()?.let(watch)
         }
     }
