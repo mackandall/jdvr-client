@@ -808,6 +808,35 @@ class LiveTvRepository {
             ?: deleteItem(itemId).let { DeletedRecording(deleted = 1) }
 
     @Serializable
+    data class ActiveRecording(
+        @SerialName("Id") val id: String,
+        @SerialName("Name") val name: String = "",
+    )
+
+    @Serializable
+    data class ActiveRecordings(
+        // Whether this user may stop them (Live TV management).
+        @SerialName("CanStop") val canStop: Boolean = false,
+        @SerialName("Recordings") val recordings: List<ActiveRecording> = emptyList(),
+    )
+
+    /**
+     * Episode History: the recordings being made right now behind an item (the item itself, or
+     * for a show any of its episodes). Null on a server without that endpoint.
+     */
+    suspend fun activeRecordings(itemId: UUID): ActiveRecordings? =
+        plugin(HttpMethod.GET, "/EpisodeHistory/Item/${itemId.toString().replace("-", "")}/ActiveRecordings")
+
+    @Serializable
+    private data class StoppedRecording(
+        @SerialName("Stopped") val stopped: Boolean = false,
+    )
+
+    /** Stops the recording writing this item's file; what was recorded so far is kept. */
+    suspend fun stopRecording(recordingId: String): Boolean =
+        plugin<StoppedRecording>(HttpMethod.POST, "/EpisodeHistory/Item/${recordingId.replace("-", "")}/StopRecording")?.stopped == true
+
+    @Serializable
     data class ShowDelete(
         @SerialName("Count") val count: Int = 0,
         @SerialName("Bytes") val bytes: Long = 0,
@@ -1149,6 +1178,51 @@ class LiveTvRepository {
     /** Episode History's recordings: "current" (live recordings folder), "archived", or "all". */
     suspend fun recordedShows(filter: String = "current"): List<RecordingCard>? =
         plugin<RecordingCards>(HttpMethod.GET, "/EpisodeHistory/Recordings", mapOf("filter" to filter, "limit" to 200))?.cards
+
+    @Serializable
+    data class DateChannel(
+        @SerialName("Id") val id: String,
+        @SerialName("Name") val name: String = "",
+        @SerialName("Number") val number: String? = null,
+        @SerialName("HasLogo") val hasLogo: Boolean = false,
+    )
+
+    /** One recording in the list by date. */
+    @Serializable
+    data class DateRecording(
+        @SerialName("Id") val id: String,
+        @SerialName("Type") val type: String = "",
+        @SerialName("ImageId") val imageId: String? = null,
+        @SerialName("Title") val title: String = "",
+        @SerialName("EpisodeTitle") val episodeTitle: String? = null,
+        @SerialName("Season") val season: Int? = null,
+        @SerialName("Episode") val episode: Int? = null,
+        @SerialName("Year") val year: Int? = null,
+        @SerialName("RecordedUtc") val recordedUtc: String? = null,
+        @SerialName("Minutes") val minutes: Int? = null,
+        @SerialName("Played") val played: Boolean = false,
+        @SerialName("PlayedPercent") val playedPercent: Int = 0,
+        @SerialName("Archived") val archived: Boolean = false,
+        @SerialName("Recording") val recording: Boolean = false,
+        @SerialName("Partial") val partial: Boolean = false,
+        // The repair's chip ("Stalled · 7 min lost", "Waiting for a re-airing") and its story.
+        @SerialName("StatusShort") val statusShort: String? = null,
+        @SerialName("StatusText") val statusText: String? = null,
+        @SerialName("Overview") val overview: String? = null,
+        // Unknown for recordings made before Episode History noted channels, or not by the DVR.
+        @SerialName("Channel") val channel: DateChannel? = null,
+    )
+
+    @Serializable
+    data class DateRecordings(
+        // Where the channel logo goes: "left" (start of the line) or "right" (end), a plugin setting.
+        @SerialName("DateLogo") val dateLogo: String = "left",
+        @SerialName("Recordings") val recordings: List<DateRecording> = emptyList(),
+    )
+
+    /** Every recording, newest first, one each with its channel. Null on an older Episode History. */
+    suspend fun recordingsByDate(filter: String = "current"): DateRecordings? =
+        plugin(HttpMethod.GET, "/EpisodeHistory/Recordings/ByDate", mapOf("filter" to filter))
 
     @Serializable
     data class EpisodeRecording(

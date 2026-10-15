@@ -15,6 +15,50 @@ import kotlinx.coroutines.launch
 import java.util.UUID
 
 /**
+ * "Stop recording" for an item being recorded right now: a recording, or a show with an episode
+ * being recorded (one button per recording, named when there are several). Only on a TV allowed
+ * to record, for a user who may manage Live TV. Asks for a second press; what was recorded so
+ * far is kept.
+ */
+@Composable
+fun StopRecordingButtons(
+    itemId: UUID,
+    onNote: (String) -> Unit,
+    onStopped: () -> Unit = {},
+) {
+    val rights = deviceRights()
+    val scope = rememberCoroutineScope()
+    var active by remember(itemId) { mutableStateOf<LiveTvRepository.ActiveRecordings?>(null) }
+    var check by remember(itemId) { mutableIntStateOf(0) }
+    var armed by remember(itemId) { mutableStateOf<String?>(null) }
+    LaunchedEffect(itemId, check) { active = runCatching { Jdvr.liveTv.activeRecordings(itemId) }.getOrNull() }
+    LaunchedEffect(armed) {
+        if (armed != null) {
+            delay(4000)
+            armed = null
+        }
+    }
+    val a = active
+    if (!rights.record || a == null || !a.canStop) return
+    a.recordings.forEach { r ->
+        val what = if (a.recordings.size > 1) ": ${r.name}" else ""
+        Button(if (armed == r.id) "Press again to stop recording$what" else "Stop recording$what", leading = { Dot(Jc.Recording) }) {
+            if (armed != r.id) {
+                armed = r.id
+            } else {
+                armed = null
+                scope.launch {
+                    val stopped = runCatching { Jdvr.liveTv.stopRecording(r.id) }.getOrDefault(false)
+                    onNote(if (stopped) "Recording stopped: what was recorded so far is kept" else "Couldn't stop it (it may have just ended).")
+                    check++
+                    if (stopped) onStopped()
+                }
+            }
+        }
+    }
+}
+
+/**
  * What a recording offers besides playing it: add its show to Recording Favourites (or, if it's
  * one already, take it off), and delete it. Taking a favourite off and deleting both ask for a
  * second press. [onNote] reports what happened; [onDeleted] follows a delete.
@@ -108,6 +152,26 @@ fun RecordingActions(
     // Being cut (program start, audio format): its progress and Stop, and nothing else that
     // touches the file until it's done (a second cut, a scan, a move or a delete meanwhile
     // would work on a file about to be replaced).
+    // Jellyfin won't delete a file it is recording, so [canDelete] was false while it recorded.
+    // After a stop it is asked again (Jellyfin lets go of the file a moment later), so Delete
+    // appears here without leaving the page.
+    var stops by remember(itemId) { mutableIntStateOf(0) }
+    var canDeleteNow by remember(itemId) { mutableStateOf<Boolean?>(null) }
+    LaunchedEffect(itemId, stops) {
+        if (stops > 0) {
+            repeat(8) {
+                val fresh = runCatching { Jdvr.liveTv.details(itemId).canDelete }.getOrNull()
+                if (fresh == true) {
+                    canDeleteNow = true
+                    return@LaunchedEffect
+                }
+                delay(1000)
+            }
+        }
+    }
+    @Suppress("NAME_SHADOWING")
+    val canDelete = canDeleteNow ?: canDelete
+    StopRecordingButtons(itemId, onNote, onStopped = { stops++ })
     val cut = cuttingFor(itemId.toString())
     if (cut != null) {
         CuttingBar(cut, onStop = if (cut.stoppable && edit != null) { { scope.launch { onNote(runCatching { Jdvr.liveTv.stopCut(itemId)?.message }.getOrNull() ?: "Couldn't stop it."); MoveWatcher.kick() } } } else null)
@@ -341,6 +405,7 @@ fun ShowActions(
     LaunchedEffect(seriesId) {
         forget = runCatching { Jdvr.liveTv.forgetShow(seriesId, dryRun = true) }.getOrNull()
     }
+    StopRecordingButtons(seriesId, onNote)
     LaunchedEffect(armedArchived) {
         if (armedArchived) {
             delay(4000)

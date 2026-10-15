@@ -41,6 +41,9 @@ class Prefs(
 
     /** Recorded Shows: "current" (the live recordings folder), "archived", or "all". */
     var recordingsFilter by mutableStateOf(p.getString("recordingsFilter", CURRENT) ?: CURRENT)
+
+    // Recorded Shows as cards per show (SHOWS) or one line per recording by date (BY_DATE).
+    var recordingsView by mutableStateOf(p.getString("recordingsView", SHOWS) ?: SHOWS)
         private set
 
     /** A show's episodes: "list" (rows plus the focused episode's details) or "tiles" (web client style). */
@@ -214,6 +217,11 @@ class Prefs(
         p.edit().putString("recordingsFilter", v).apply()
     }
 
+    fun changeRecordingsView(v: String) {
+        recordingsView = v
+        p.edit().putString("recordingsView", v).apply()
+    }
+
     fun changeGuideInfo(v: String) {
         guideInfo = v
         p.edit().putString("guideInfo", v).apply()
@@ -251,6 +259,8 @@ class Prefs(
         const val CURRENT = "current"
         const val ARCHIVED = "archived"
         const val ALL = "all"
+        const val SHOWS = "shows"
+        const val BY_DATE = "date"
         const val LIST = "list"
         const val TILES = "tiles"
         const val OPEN = "open"

@@ -86,6 +86,11 @@ fun RecordedShowsScreen(
     var openShow by remember { mutableStateOf<LiveTvRepository.RecordingCard?>(null) }
     // Hold OK on a card: its quick actions.
     var quick by remember { mutableStateOf<LiveTvRepository.RecordingCard?>(null) }
+    // Hold OK on a line of the list by date: its quick actions.
+    var quickLine by remember { mutableStateOf<UUID?>(null) }
+    // The list by date needs a newer Episode History; without it, the cards.
+    var noDateList by remember { mutableStateOf(false) }
+    val byDate = Jdvr.prefs.recordingsView == Prefs.BY_DATE && !noDateList
 
     val filter = Jdvr.prefs.recordingsFilter
     // A move to the archive finished: the recording now lives elsewhere.
@@ -113,7 +118,8 @@ fun RecordedShowsScreen(
     val gridState = rememberLazyGridState()
 
     details?.let { id ->
-        BackHandler { details = null }
+        // The list behind is loaded again: what was done on the page (a stop, a scan) shows.
+        BackHandler { details = null; reloadCards++ }
         DetailsPage(id, refresh, onPlay = onPlayItem, actions = { det, say ->
             RecordingActions(det.item.id, say, manage = det.location == LIVE_FOLDER, canDelete = det.canDelete, place = det.location) {
                 details = null
@@ -143,6 +149,10 @@ fun RecordedShowsScreen(
                     fontSize = 15.sp,
                 )
             }
+            // Cards per show, or one line per recording by date with its channel.
+            if (!plain) Button(if (byDate) "View: By date" else "View: By show") {
+                Jdvr.prefs.changeRecordingsView(if (Jdvr.prefs.recordingsView == Prefs.BY_DATE) Prefs.SHOWS else Prefs.BY_DATE)
+            }
             // Live folder → Archive → Both (Episode History's; not on a plain server).
             if (!plain) Button(
                 when (filter) {
@@ -163,6 +173,15 @@ fun RecordedShowsScreen(
         Spacer(14)
         val list = cards
         when {
+            byDate && !plain && loaded -> RecordingsByDate(
+                filter = filter,
+                reload = reloadCards,
+                entry = entry,
+                onPlay = onPlay,
+                onHold = { quickLine = it },
+                onDetails = { details = it },
+                onUnavailable = { noDateList = true },
+            )
             !loaded -> Text("Loading…", color = Jc.Muted, fontSize = 16.sp)
             list == null -> Text("Couldn't load the recordings from the server.", color = Jc.Amber, fontSize = 16.sp)
             list.isEmpty() -> Text(if (filter == Prefs.ARCHIVED) "Nothing has been moved to the archive." else "Nothing recorded yet.", color = Jc.Muted, fontSize = 16.sp)
@@ -219,6 +238,18 @@ fun RecordedShowsScreen(
             }
         }
     }
+    quickLine?.let { id ->
+        QuickActions(
+            itemId = id,
+            onPlay = { fromStart -> onPlayItem(com.mackandall.jdvr.PlayRecording(id, startMs = if (fromStart) 0L else null)) },
+            onDetails = { details = id },
+            onChanged = { reloadCards++ },
+            onDismiss = { quickLine = null; reloadCards++ },
+            extra = { det, say, done ->
+                RecordingActions(det.item.id, say, tools = false, manage = det.location == LIVE_FOLDER, canDelete = det.canDelete, place = det.location, onDeleted = done)
+            },
+        )
+    }
     val q = quick
     val qid = q?.id?.toUuid()
     if (q != null && qid != null) {
@@ -227,7 +258,7 @@ fun RecordedShowsScreen(
             onPlay = { fromStart -> onPlayItem(com.mackandall.jdvr.PlayRecording(qid, startMs = if (fromStart) 0L else null)) },
             onDetails = { details = qid },
             onChanged = { reloadCards++ },
-            onDismiss = { quick = null },
+            onDismiss = { quick = null; reloadCards++ },
             onOpenShow = if (q.type == "Series") { { openShow = q } } else null,
             extra = { det, say, done ->
                 if (q.type != "Series") {
@@ -337,7 +368,7 @@ private fun ShowEpisodes(
             }?.sortedWith(compareBy<EpisodeEntry>({ it.season ?: Int.MAX_VALUE }, { it.episode ?: Int.MAX_VALUE }, { it.recordedAt }))?.let { withCommercialBadges(it) } ?: emptyList()
     }
     info?.let { id ->
-        BackHandler { info = null }
+        BackHandler { info = null; reload++ }
         DetailsPage(id, refresh, onPlay = onPlayItem, actions = { det, say ->
             RecordingActions(det.item.id, say, manage = det.location == LIVE_FOLDER, canDelete = det.canDelete, place = det.location) {
                 info = null
@@ -372,7 +403,7 @@ private fun ShowEpisodes(
             onPlay = { fromStart -> if (fromStart) onPlayItem(com.mackandall.jdvr.PlayRecording(q.id, startMs = 0L)) else onPlay(q.id) },
             onDetails = { info = q.id },
             onChanged = { reload++ },
-            onDismiss = { quick = null },
+            onDismiss = { quick = null; reload++ },
             // Only a recording in the live folder can be deleted or moved from here (never an archive copy).
             extra = { det, say, done -> RecordingActions(det.item.id, say, tools = false, manage = det.location == LIVE_FOLDER, canDelete = det.canDelete, place = det.location, onDeleted = done) },
         )
