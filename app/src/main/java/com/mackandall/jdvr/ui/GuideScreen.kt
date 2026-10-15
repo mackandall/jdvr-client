@@ -220,6 +220,19 @@ fun GuideScreen(
         }
     }
 
+    // Focus gone from the actions panel (◄ to the menu, or back into the grid): it closes. After a
+    // moment, so a button the panel swaps for another (Record → Don't record) doesn't close it.
+    var panelHasFocus by remember { mutableStateOf(false) }
+    var panelHadFocus by remember(selected?.id) { mutableStateOf(false) }
+    LaunchedEffect(panelHasFocus, selected?.id) {
+        if (panelHasFocus) {
+            panelHadFocus = true
+        } else if (panelHadFocus && selected != null) {
+            delay(200)
+            selected = null
+        }
+    }
+
     @Composable
     fun Actions(p: Program) {
         BackHandler { closePanel() }
@@ -253,7 +266,7 @@ fun GuideScreen(
                     reload++
                 }
             },
-            modifier = Modifier,
+            modifier = Modifier.onFocusChanged { panelHasFocus = it.hasFocus },
         )
     }
 
