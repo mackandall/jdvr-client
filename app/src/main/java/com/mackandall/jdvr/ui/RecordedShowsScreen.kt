@@ -305,7 +305,7 @@ private fun RecordingCardView(
                     // The plain count only when it says something "N new" doesn't: some are watched.
                     if (c.count > 1 && c.unplayedCount != c.count) Badge("${c.count}", Jc.Panel)
                     if (c.unplayedCount > 0 && c.count > 1) Badge("${c.unplayedCount} new", Jc.FocusFill)
-                    commercials?.let { Badge("✂ ${it.label}", if (it.state == "failed") Jc.Recording else Jc.Panel) }
+                    commercials?.let { b -> commercialColor(b.state, b.failed == true).let { (color, dark) -> Badge("✂ ${b.label}", color, dark) } }
                     if (c.partialCount > 0) Badge(if (c.count == 1) "Partial${c.partialMinutes?.let { " · $it min" } ?: ""}" else "${c.partialCount} partial", Jc.Amber, dark = true)
                 }
             }
@@ -314,6 +314,24 @@ private fun RecordingCardView(
         c.subtitle?.let { Text(it, color = Jc.Muted, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
     }
 }
+
+/**
+ * A commercial badge's colour, as on the web client and Wholphin: green when ads were found, amber
+ * while scanning, grey when there were none, red when the scan failed; a show's summary is green
+ * (amber with one failed). The Boolean: dark text on it.
+ */
+@Composable
+fun commercialColor(
+    state: String?,
+    anyFailed: Boolean = false,
+): Pair<androidx.compose.ui.graphics.Color, Boolean> =
+    when (state) {
+        "found" -> Jc.Green to false
+        "scanning" -> Jc.Amber to true
+        "failed" -> Jc.Recording to false
+        "summary" -> (if (anyFailed) Jc.Amber to true else Jc.Green to false)
+        else -> Jc.Panel2 to false
+    }
 
 @Composable
 private fun Badge(

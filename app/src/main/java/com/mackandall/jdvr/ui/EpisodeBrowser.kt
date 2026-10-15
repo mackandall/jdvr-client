@@ -82,6 +82,7 @@ data class EpisodeEntry(
     val recording: Boolean = false,
     // Comskip's badge ("4m ads", "scanning", "no ads"…), when it has scanned this recording.
     val commercials: String? = null,
+    val commercialState: String? = null,
 ) {
     val seasonEpisode: String? get() = if (season != null && episode != null) "S$season:E$episode" else episode?.let { "E$it" }
 }
@@ -89,7 +90,7 @@ data class EpisodeEntry(
 /** The entries with Comskip's commercial badges added. */
 suspend fun withCommercialBadges(list: List<EpisodeEntry>): List<EpisodeEntry> {
     val badges = runCatching { Jdvr.liveTv.commercialBadges(list.map { it.id }) }.getOrDefault(emptyMap())
-    return if (badges.isEmpty()) list else list.map { e -> badges[e.id.toString().replace("-", "")]?.let { e.copy(commercials = it.label) } ?: e }
+    return if (badges.isEmpty()) list else list.map { e -> badges[e.id.toString().replace("-", "")]?.let { e.copy(commercials = it.label, commercialState = it.state) } ?: e }
 }
 
 private fun seasonTitle(n: Int?) = when (n) {
@@ -392,7 +393,7 @@ private fun BadgeLine(e: EpisodeEntry) =
 private fun Badges(e: EpisodeEntry) {
     movingFor(e.id.toString())?.let { MovingTag(it) }
     cuttingFor(e.id.toString())?.let { CuttingTag(it) }
-    e.commercials?.let { Tag("✂ $it", if (it.startsWith("scan failed")) Jc.Recording else Jc.Panel2) }
+    e.commercials?.let { commercialColor(e.commercialState).let { (color, dark) -> Tag("✂ $it", color, dark) } }
     if (e.recording) Tag("● Recording", Jc.Recording)
     if (e.archived) Tag("Archive", Jc.Panel2)
     if (e.partial) Tag("Partial" + (e.partialMinutes?.let { " · $it min" } ?: ""), Jc.Amber, dark = true)

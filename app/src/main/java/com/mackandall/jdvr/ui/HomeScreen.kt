@@ -80,6 +80,9 @@ fun HomeScreen(
     onOpenScreen: (com.mackandall.jdvr.Screen) -> Unit,
     onOpenShow: (String) -> Unit,
     onOpenLibraryItem: (UUID, LiveTvRepository.LibItem) -> Unit = { _, _ -> },
+    // The library poster opened from here: Back puts focus on it again, not on Watch live.
+    returnPoster: UUID? = null,
+    onReturned: () -> Unit = {},
 ) {
     var last by remember { mutableStateOf<Channel?>(null) }
     var fromStart by remember { mutableStateOf<UUID?>(null) }
@@ -212,7 +215,10 @@ fun HomeScreen(
             showFresh && !fresh.isNullOrEmpty() -> "fresh"
             else -> null
         }
-    fun entryFor(key: String) = if (entryAt == key) Modifier.focusRequester(entry) else Modifier
+    fun entryFor(key: String) = if (entryAt == key && returnPoster == null) Modifier.focusRequester(entry) else Modifier
+    // Watch live holds the screen's entry, unless a library poster is getting focus back.
+    val spare = remember { FocusRequester() }
+    val liveEntry = if (returnPoster == null) entry else spare
 
     val w = weather
     androidx.compose.runtime.CompositionLocalProvider(LocalSeeThrough provides (w != null)) {
@@ -260,9 +266,9 @@ fun HomeScreen(
                 if (wl > 0.01f) {
                     Box(Modifier.weight(wl).fillMaxHeight()) {
                         if (loaded && !hasLiveTv) {
-                            NoLiveTvCard(entry, Modifier.fillMaxSize(), onSearch = { onOpenScreen(com.mackandall.jdvr.Screen.Search) })
+                            NoLiveTvCard(liveEntry, Modifier.fillMaxSize(), onSearch = { onOpenScreen(com.mackandall.jdvr.Screen.Search) })
                         } else {
-                            LiveCard(last, fromStart, symbols, entry, Modifier.fillMaxSize(), onPlayChannel, onPlayRecording, onGuide = { onOpenScreen(com.mackandall.jdvr.Screen.Guide) })
+                            LiveCard(last, fromStart, symbols, liveEntry, Modifier.fillMaxSize(), onPlayChannel, onPlayRecording, onGuide = { onOpenScreen(com.mackandall.jdvr.Screen.Guide) })
                         }
                     }
                 }
@@ -326,21 +332,33 @@ fun HomeScreen(
             }
         }
     }
-    if (showLibraries) LibraryRows(onOpenLibraryItem)
+    if (showLibraries) {
+        LibraryRows(onOpenLibraryItem, returnPoster, entry, onReturned)
+    } else if (returnPoster != null) {
+        LaunchedEffect(Unit) { onReturned() }
+    }
     }
     }
     }
     }
 }
 
+private var libraryRowsCache: List<Pair<LiveTvRepository.Library, List<LiveTvRepository.LibItem>>> = emptyList()
+
 /**
  * "Recently added in …", one row per library (menu order, hidden ones left out), as on the web
  * client's home page; refreshed every five minutes.
  */
 @Composable
-private fun LibraryRows(onOpen: (UUID, LiveTvRepository.LibItem) -> Unit) {
+private fun LibraryRows(
+    onOpen: (UUID, LiveTvRepository.LibItem) -> Unit,
+    returnPoster: UUID?,
+    entry: FocusRequester,
+    onReturned: () -> Unit,
+) {
     val prefs = Jdvr.prefs
-    var rows by remember { mutableStateOf<List<Pair<LiveTvRepository.Library, List<LiveTvRepository.LibItem>>>>(emptyList()) }
+    // Kept between visits, so the poster to return to is there at once.
+    var rows by remember { mutableStateOf(libraryRowsCache) }
     LaunchedEffect(prefs.hiddenLibraries, prefs.libraryOrder) {
         while (true) {
             runCatching { Jdvr.liveTv.libraries() }.getOrNull()?.let { libs ->
@@ -348,6 +366,9 @@ private fun LibraryRows(onOpen: (UUID, LiveTvRepository.LibItem) -> Unit) {
                     libs.filter { it.id.toString() !in prefs.hiddenLibraries }.inMenuOrder().mapNotNull { l ->
                         Jdvr.liveTv.latestIn(l.id)?.takeIf { it.isNotEmpty() }?.let { l to it }
                     }
+                libraryRowsCache = rows
+                // The poster is gone (deleted, or no longer among the latest): focus goes to Watch live.
+                if (returnPoster != null && rows.none { (_, items) -> items.any { it.id == returnPoster } }) onReturned()
             }
             delay(5 * 60_000L)
         }
@@ -355,10 +376,21 @@ private fun LibraryRows(onOpen: (UUID, LiveTvRepository.LibItem) -> Unit) {
     Column(Modifier.fillMaxWidth().padding(start = 28.dp, end = 28.dp, bottom = 32.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         rows.forEach { (lib, items) ->
             Text("Recently added in ${lib.name}", color = Jc.Text, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(14.dp), contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp)) {
+            // Starts at the poster to return to, so it's composed and can take focus.
+            val start = items.indexOfFirst { it.id == returnPoster }.coerceAtLeast(0)
+            LazyRow(
+                state = androidx.compose.foundation.lazy.rememberLazyListState(initialFirstVisibleItemIndex = start),
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp),
+            ) {
                 itemsIndexed(items, key = { _, it -> it.id }) { i, item ->
-                    // ◄ from the first poster opens the menu.
-                    PosterCard(item, if (i == 0) Modifier.focusProperties { left = FocusRequester.Cancel } else Modifier) { onOpen(lib.id, item) }
+                    val back = item.id == returnPoster
+                    val m =
+                        Modifier
+                            // ◄ from the first poster opens the menu.
+                            .then(if (i == 0) Modifier.focusProperties { left = FocusRequester.Cancel } else Modifier)
+                            .then(if (back) Modifier.focusRequester(entry).onFocusChanged { if (it.isFocused) onReturned() } else Modifier)
+                    PosterCard(item, m) { onOpen(lib.id, item) }
                 }
             }
         }

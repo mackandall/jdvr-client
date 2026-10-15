@@ -93,6 +93,8 @@ fun AppRoot() {
     var openShow by remember { mutableStateOf<String?>(null) }
     // A library item for its library to open straight away (from Home's library rows).
     var openLibItem by remember { mutableStateOf<com.mackandall.jdvr.data.LiveTvRepository.LibItem?>(null) }
+    // ...and that poster, for Home to focus again on the way back.
+    var homePoster by remember { mutableStateOf<UUID?>(null) }
     // Screens reached from inside another (Home's Guide, Scheduled, a show): Back returns there.
     // Picking from the rail starts afresh.
     val backStack = remember { androidx.compose.runtime.mutableStateListOf<Screen>() }
@@ -223,8 +225,11 @@ fun AppRoot() {
                         onOpenLibraryItem = { lib, item ->
                             libraryId = lib
                             openLibItem = item
+                            homePoster = item.id
                             goTo(Screen.Library)
                         },
+                        returnPoster = homePoster,
+                        onReturned = { homePoster = null },
                     )
                 Screen.Guide -> GuideScreen(entry = entry, onPlay = { playingChannel = it }, onPlayRecording = { playingRecording = it }, watching = playingChannel)
                 Screen.LiveTv -> ChannelsScreen(entry = entry, onPlay = { playingChannel = it })
@@ -258,6 +263,7 @@ fun AppRoot() {
                 selected = screen,
                 onSelect = {
                     backStack.clear()
+                    homePoster = null
                     screen = it
                     railOpen = false
                 },
@@ -266,6 +272,7 @@ fun AppRoot() {
                 selectedLibrary = libraryId,
                 onSelectLibrary = {
                     backStack.clear()
+                    homePoster = null
                     libraryId = it.id
                     screen = Screen.Library
                     railOpen = false
