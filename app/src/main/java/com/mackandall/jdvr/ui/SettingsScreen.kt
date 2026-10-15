@@ -155,7 +155,7 @@ fun SettingsScreen(
                 label = label,
                 help =
                     if (key == "libraries") {
-                        "A row per library under Home, newest first, like the web client's home page (▼ from New recordings). Libraries hidden from the menu are left out."
+                        "A row per library under Home, newest first, like the web client's home page (▼ from New recordings). Choose which libraries below (a library holding the recordings folder repeats New recordings); ones hidden from the menu are left out."
                     } else if (auto) {
                         "Auto: only while there is something to show. The other tiles grow into the room it leaves."
                     } else {
@@ -170,6 +170,17 @@ fun SettingsScreen(
             ) {
                 val order = if (auto) listOf(Prefs.ON, Prefs.AUTO, Prefs.OFF) else listOf(Prefs.ON, Prefs.OFF)
                 prefs.changeHomeTile(key, order[(order.indexOf(v).coerceAtLeast(0) + 1) % order.size])
+            }
+            // Under the library rows' switch: which libraries get one.
+            if (key == "libraries" && v != Prefs.OFF) {
+                libraries.filter { it.id.toString() !in prefs.hiddenLibraries }.inMenuOrder().forEach { lib ->
+                    val id = lib.id.toString()
+                    Choice(
+                        label = "   ${lib.name}",
+                        help = "Its Recently added row on Home.",
+                        value = if (id in prefs.homeHiddenLibraries) "No row" else "Row",
+                    ) { prefs.toggleHomeLibrary(id) }
+                }
             }
         }
         Choice(

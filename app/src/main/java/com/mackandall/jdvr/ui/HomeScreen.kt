@@ -359,11 +359,11 @@ private fun LibraryRows(
     val prefs = Jdvr.prefs
     // Kept between visits, so the poster to return to is there at once.
     var rows by remember { mutableStateOf(libraryRowsCache) }
-    LaunchedEffect(prefs.hiddenLibraries, prefs.libraryOrder) {
+    LaunchedEffect(prefs.hiddenLibraries, prefs.homeHiddenLibraries, prefs.libraryOrder) {
         while (true) {
             runCatching { Jdvr.liveTv.libraries() }.getOrNull()?.let { libs ->
                 rows =
-                    libs.filter { it.id.toString() !in prefs.hiddenLibraries }.inMenuOrder().mapNotNull { l ->
+                    libs.filter { it.id.toString() !in prefs.hiddenLibraries && it.id.toString() !in prefs.homeHiddenLibraries }.inMenuOrder().mapNotNull { l ->
                         Jdvr.liveTv.latestIn(l.id)?.takeIf { it.isNotEmpty() }?.let { l to it }
                     }
                 libraryRowsCache = rows

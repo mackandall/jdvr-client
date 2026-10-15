@@ -30,6 +30,15 @@ class Prefs(
     var hiddenLibraries by mutableStateOf(p.getStringSet("hiddenLibraries", emptySet())?.toSet() ?: emptySet())
         private set
 
+    /** Libraries left without a "Recently added" row on Home (by id); new ones get one. */
+    var homeHiddenLibraries by mutableStateOf(p.getStringSet("homeHiddenLibraries", emptySet())?.toSet() ?: emptySet())
+        private set
+
+    fun toggleHomeLibrary(id: String) {
+        homeHiddenLibraries = if (id in homeHiddenLibraries) homeHiddenLibraries - id else homeHiddenLibraries + id
+        p.edit().putStringSet("homeHiddenLibraries", homeHiddenLibraries).apply()
+    }
+
     /** Libraries listed newest first (by id); the rest are A–Z. */
     var newestLibraries by mutableStateOf(p.getStringSet("newestLibraries", emptySet())?.toSet() ?: emptySet())
         private set
