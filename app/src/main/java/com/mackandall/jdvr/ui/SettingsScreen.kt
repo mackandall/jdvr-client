@@ -89,9 +89,17 @@ fun SettingsScreen(
         Section("Guide")
         Choice(
             label = "Programme details",
-            help = "Beside the guide, or above it so the guide uses the full width.",
-            value = if (prefs.guideInfo == Prefs.TOP) "Above the guide" else "Beside the guide",
-        ) { prefs.changeGuideInfo(if (prefs.guideInfo == Prefs.TOP) Prefs.SIDE else Prefs.TOP) }
+            help = "Below or above the guide (a band with the programme's picture, so the guide uses the full width), or beside it.",
+            value =
+                when (prefs.guideInfo) {
+                    Prefs.TOP -> "Above the guide"
+                    Prefs.SIDE -> "Beside the guide"
+                    else -> "Below the guide"
+                },
+        ) {
+            val order = listOf(Prefs.BOTTOM, Prefs.TOP, Prefs.SIDE)
+            prefs.changeGuideInfo(order[(order.indexOf(prefs.guideInfo).coerceAtLeast(0) + 1) % order.size])
+        }
         Choice(
             label = "Background art",
             help = "Rest on a programme and its picture fades in behind the guide, which turns see-through. Off keeps the plain dark guide.",

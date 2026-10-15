@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -48,6 +49,8 @@ import androidx.tv.material3.Border
 import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import coil3.compose.AsyncImage
 import com.mackandall.jdvr.data.Channel
 import com.mackandall.jdvr.data.Jdvr
@@ -112,6 +115,9 @@ fun GuideScreen(
     watching: UUID? = null,
 ) {
     val infoOnTop = Jdvr.prefs.guideInfo == com.mackandall.jdvr.data.Prefs.TOP
+    val infoBelow = Jdvr.prefs.guideInfo == com.mackandall.jdvr.data.Prefs.BOTTOM
+    // Above or below: the details on a band, the grid at full width.
+    val infoBand = infoOnTop || infoBelow
     var channels by remember { mutableStateOf<List<Channel>?>(null) }
     var windowStart by remember { mutableStateOf(floorToHalfHour(LocalDateTime.now())) }
     var programs by remember { mutableStateOf<Map<UUID, List<Program>>>(emptyMap()) }
@@ -299,15 +305,16 @@ fun GuideScreen(
     }) {
     GuideArt(art)
     Column(Modifier.fillMaxSize()) {
-    // "Above the guide" (Settings): the details on a band at the top, the grid at full width.
-    if (infoOnTop) {
-        Box(Modifier.fillMaxWidth().height(170.dp).background(guidePanel())) {
-            focused?.let { TopInfo(it, channels?.firstOrNull { c -> c.id == it.channelId }, symbols) }
+    // "Above the guide" / "Below the guide" (Settings): the details on a band, the grid at full width.
+    @Composable
+    fun band() =
+        Box(Modifier.fillMaxWidth().height(BandHeight).background(guidePanel())) {
+            focused?.let { InfoBand(it, channels?.firstOrNull { c -> c.id == it.channelId }, symbols) }
                 ?: if (channels?.isEmpty() != true) Text("Move through the guide to see a programme here; OK for what you can do with it.", color = Jc.Muted, fontSize = 15.sp, modifier = Modifier.padding(22.dp)) else Unit
         }
-    }
-    Row(Modifier.fillMaxSize()) {
-        Column(Modifier.weight(if (infoOnTop) 1f else 0.74f).fillMaxHeight().padding(start = 20.dp, top = if (infoOnTop) 8.dp else 20.dp)) {
+    if (infoOnTop) band()
+    Row(Modifier.weight(1f).fillMaxWidth()) {
+        Column(Modifier.weight(if (infoBand) 1f else 0.74f).fillMaxHeight().padding(start = 20.dp, top = if (infoOnTop) 8.dp else 20.dp)) {
             Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 Text("Guide", color = Jc.Text, fontSize = 28.sp, fontWeight = FontWeight.SemiBold)
                 Text(windowStart.day(), color = Jc.Muted, fontSize = 16.sp, modifier = Modifier.padding(bottom = 4.dp))
@@ -359,7 +366,7 @@ fun GuideScreen(
             }
         }
         // Side layout: the right quarter shows the programme the cursor is on, or its actions after OK.
-        if (!infoOnTop) {
+        if (!infoBand) {
             Box(Modifier.weight(0.26f).fillMaxHeight().background(guidePanel(0.6f))) {
                 val p = selected
                 if (p == null) {
@@ -371,9 +378,10 @@ fun GuideScreen(
             }
         }
     }
+    if (infoBelow) band()
     }
-    // Top layout: the actions open as a panel over the right of the grid.
-    if (infoOnTop) {
+    // Band layouts: the actions open as a panel over the right of the grid.
+    if (infoBand) {
         selected?.let { p ->
             Box(Modifier.align(Alignment.CenterEnd).width(380.dp).fillMaxHeight().background(Jc.Sheet)) { Actions(p) }
         }
@@ -427,23 +435,75 @@ private fun GuideChips(p: Program) {
     if (x.scanning(p)) Chip("CS · finding commercials" + (x.scanning[p.id.toString().plainId()]?.let { " · ${it}m" } ?: ""), Jc.Amber)
 }
 
+private val BandHeight = 200.dp
+private val PictureWidth = 240.dp
+
+/** Nothing for today (the band's times are today's unless it says), "Tomorrow", else the date. */
+private fun relativeDay(t: LocalDateTime): String? =
+    when (java.time.temporal.ChronoUnit.DAYS.between(java.time.LocalDate.now(), t.toLocalDate())) {
+        0L -> null
+        1L -> "Tomorrow"
+        -1L -> "Yesterday"
+        else -> t.day()
+    }
+
+/**
+ * The programme under the cursor on a band above or below the guide, laid out like Recorded Shows'
+ * By date details: its picture (with how far along it is, when it's on now), the titles, the
+ * channel's logo beside the when, the chips, and the description with what OK does.
+ */
 @Composable
-private fun TopInfo(
+private fun InfoBand(
     p: Program,
     channel: Channel?,
     symbols: LiveTvRepository.MarkSymbols?,
 ) {
     val marks = Marks.parse(p.rawEpisodeTitle, symbols)
-    Row(Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 16.dp), horizontalArrangement = Arrangement.spacedBy(28.dp)) {
-        Column(Modifier.weight(0.45f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    val now = LocalDateTime.now()
+    val on = p.isOn(now)
+    Row(Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 14.dp), horizontalArrangement = Arrangement.spacedBy(22.dp)) {
+        Column(Modifier.width(PictureWidth), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            // The channel's logo underneath: it shows when the programme has no picture.
+            Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f).background(Jc.Panel2, RoundedCornerShape(10.dp)), contentAlignment = Alignment.Center) {
+                channel?.logoUrl?.let { AsyncImage(model = it, contentDescription = null, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize(0.5f)) }
+                AsyncImage(
+                    model = Jdvr.liveTv.imageUrl(p.id, 300),
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(10.dp)),
+                )
+            }
+            if (on) {
+                val total = Duration.between(p.start, p.end).toMinutes().coerceAtLeast(1)
+                val done = Duration.between(p.start, now).toMinutes().coerceIn(0, total)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    Text(p.start.time(), color = Jc.Muted, fontSize = 12.sp, maxLines = 1, softWrap = false)
+                    Box(Modifier.weight(1f).height(4.dp).background(Jc.Line, RoundedCornerShape(2.dp))) {
+                        Box(Modifier.fillMaxHeight().fillMaxWidth(done.toFloat() / total).background(Jc.Focus, RoundedCornerShape(2.dp)))
+                    }
+                    Text(p.end.time(), color = Jc.Muted, fontSize = 12.sp, maxLines = 1, softWrap = false)
+                }
+            }
+        }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(p.name, color = Jc.Text, fontSize = 24.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            val episode = listOfNotNull(p.seasonEpisode, marks.title).joinToString(" · ")
-            if (episode.isNotEmpty()) Text(episode, color = Jc.Text, fontSize = 17.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(
-                "${p.start.day()} · ${p.start.time()} – ${p.end.time()}" + (channel?.let { " · ${it.number} ${it.name}" } ?: ""),
-                color = Jc.Muted,
-                fontSize = 15.sp,
-            )
+            marks.title?.takeIf { it.isNotBlank() }?.let { Text(it, color = Jc.Text, fontSize = 17.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                channel?.let { ChannelLogoTile(it) }
+                val minutes = Duration.between(p.start, p.end).toMinutes()
+                val first = listOfNotNull(p.seasonEpisode?.replace(":", " "), channel?.let { "${it.number} ${it.name}" }).joinToString(" · ")
+                val second =
+                    listOfNotNull(
+                        // On now, the bar under the picture has the times.
+                        if (on) null else listOfNotNull(relativeDay(p.start), "${p.start.time()} – ${p.end.time()}").joinToString(" "),
+                        "$minutes min",
+                        if (on) "${Duration.between(now, p.end).toMinutes().coerceAtLeast(1)} min left" else null,
+                    ).joinToString(" · ")
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    if (first.isNotEmpty()) Text(first, color = Jc.Muted, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(second, color = Jc.Muted, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 GuideChips(p)
                 if (p.isRepeat) Chip("repeat", Jc.Muted)
@@ -451,7 +511,25 @@ private fun TopInfo(
                 MarkChips(marks)
             }
         }
-        Text(p.overview ?: "", color = Jc.Muted, fontSize = 15.sp, maxLines = 5, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(0.55f))
+        Column(Modifier.weight(0.6f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(p.overview ?: "", color = Jc.Text.copy(alpha = 0.85f), fontSize = 15.sp, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+            Text("OK  Watch · record · favourites", color = Jc.Muted, fontSize = 13.sp)
+        }
+    }
+}
+
+/** The channel's logo on a tile with its number under it; its name when it has no logo. */
+@Composable
+private fun ChannelLogoTile(c: Channel) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Box(Modifier.width(76.dp).height(40.dp).background(Jc.Panel2, RoundedCornerShape(7.dp)).padding(horizontal = 6.dp, vertical = 4.dp), contentAlignment = Alignment.Center) {
+            if (c.logoUrl != null) {
+                AsyncImage(model = c.logoUrl, contentDescription = c.name, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize())
+            } else {
+                Text(c.name, color = Jc.Text, fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
+        }
+        Text(c.number, color = Jc.Muted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
     }
 }
 
