@@ -35,6 +35,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -256,6 +257,49 @@ fun GuideScreen(
         )
     }
 
+    // ▲▼ keep to the time picked with ◄► (a guide's "column"): from a long programme, Compose's own
+    // focus search aims at the middle of the cell and lands an hour or more ahead, then drifts on.
+    var anchor by remember { mutableStateOf<LocalDateTime?>(null) }
+    // The cell a ▲▼ is moving to: its focus mustn't reset the anchor.
+    var verticalTo by remember { mutableStateOf<UUID?>(null) }
+    var gridHasFocus by remember { mutableStateOf(false) }
+    fun onCellFocused(p: Program) {
+        focused = p
+        if (p.id == verticalTo) verticalTo = null else anchor = maxOf(p.start, windowStart)
+    }
+
+    // ▲▼: the programme on at the anchor time in the next channel with guide data that way.
+    fun moveVertical(dir: Int): Boolean {
+        val list = channels ?: return false
+        val from = focused ?: return false
+        val at = maxOf(anchor ?: from.start, windowStart)
+        val windowEnd = windowStart.plusMinutes(WINDOW_MINUTES)
+        var t = list.indexOfFirst { it.id == from.channelId }
+        if (t < 0) return false
+        var target: Program? = null
+        while (target == null) {
+            t += dir
+            if (t !in list.indices) return true // the edge: stay put
+            val row = programs[list[t].id].orEmpty().filter { it.end.isAfter(windowStart) && it.start.isBefore(windowEnd) }.sortedBy { it.start }
+            target = row.firstOrNull { !it.start.isAfter(at) && it.end.isAfter(at) } ?: row.firstOrNull { it.start.isAfter(at) } ?: row.lastOrNull()
+        }
+        val goal = target
+        val index = t
+        verticalTo = goal.id
+        if (cellFocus[goal.id]?.let { runCatching { it.requestFocus() }.isSuccess } == true && focused?.id == goal.id) return true
+        // Its row isn't laid out yet (fast scrolling): bring it on screen, then focus it.
+        guideScope.launch {
+            val visible = listState.layoutInfo.visibleItemsInfo
+            val shown = visible.size.coerceAtLeast(1)
+            if (visible.none { it.index == index }) listState.scrollToItem(if (dir > 0) (index - shown + 2).coerceAtLeast(0) else index)
+            repeat(20) {
+                if (cellFocus[goal.id]?.let { runCatching { it.requestFocus() }.isSuccess } == true && focused?.id == goal.id) return@launch
+                kotlinx.coroutines.delay(16)
+            }
+        }
+        return true
+    }
+
     // Moves the window; false when it can't (already at now), so Left can open the rail instead.
     fun shift(
         minutes: Long,
@@ -301,6 +345,13 @@ fun GuideScreen(
     // A key pressed in the guide means focus is where the user put it: the way back in follows it again.
     Box(Modifier.fillMaxSize().onPreviewKeyEvent { e ->
         if (e.type == KeyEventType.KeyDown) returnTo = null
+        // ▲▼ in the grid (not in the actions panel over it).
+        if (e.type == KeyEventType.KeyDown && gridHasFocus && selected == null) {
+            when (e.key) {
+                Key.DirectionDown -> return@onPreviewKeyEvent moveVertical(1)
+                Key.DirectionUp -> return@onPreviewKeyEvent moveVertical(-1)
+            }
+        }
         false
     }) {
     GuideArt(art)
@@ -342,7 +393,7 @@ fun GuideScreen(
                         NowLine(windowStart, perMinute)
                         // The way back in (after the rail or a player): the programme picked to watch, else the last one on, else the top-left.
                         val home = (returnTo ?: focused)?.takeIf { p -> list.any { it.id == p.channelId } }
-                        LazyColumn(state = listState, contentPadding = PaddingValues(bottom = 40.dp)) {
+                        LazyColumn(state = listState, contentPadding = PaddingValues(bottom = 40.dp), modifier = Modifier.onFocusChanged { gridHasFocus = it.hasFocus }) {
                             items(list, key = { it.id }) { ch ->
                                 GuideRow(
                                     channel = ch,
@@ -354,7 +405,7 @@ fun GuideScreen(
                                     pendingFocus = pendingFocus?.takeIf { it.first == ch.id }?.second,
                                     onFocusTaken = { pendingFocus = null },
                                     onSelect = { selected = it },
-                                    onFocused = { focused = it },
+                                    onFocused = { onCellFocused(it) },
                                     entry = if (ch.id == (home?.channelId ?: list.first().id)) entry else null,
                                     entryProgram = home?.id,
                                     onShift = { minutes -> shift(minutes, ch.id) },
