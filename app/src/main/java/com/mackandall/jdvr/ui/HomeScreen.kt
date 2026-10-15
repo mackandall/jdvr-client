@@ -234,18 +234,17 @@ fun HomeScreen(
     BoxWithConstraints(Modifier.fillMaxSize()) {
     val pageHeight = maxHeight
     val page = rememberScrollState()
-    // While focus is in the tiles, the page stays at the top (a focused tile's bring-into-view
-    // would otherwise nudge it up and cut off the clock).
-    var inTiles by remember { mutableStateOf(false) }
-    LaunchedEffect(inTiles) {
-        if (inTiles) androidx.compose.runtime.snapshotFlow { page.value }.collect { if (it > 0) page.animateScrollTo(0) }
+    // The page stays at the top unless focus is in the library rows: a focused tile's
+    // bring-into-view, or focus going off to the menu, would otherwise nudge it up and cut off the clock.
+    var inRows by remember { mutableStateOf(false) }
+    LaunchedEffect(inRows) {
+        if (!inRows) androidx.compose.runtime.snapshotFlow { page.value }.collect { if (it > 0) page.animateScrollTo(0) }
     }
     Column(Modifier.fillMaxSize().verticalScroll(page)) {
     Column(
         Modifier
             .fillMaxWidth()
             .height(pageHeight)
-            .onFocusChanged { inTiles = it.hasFocus }
             .padding(start = 28.dp, top = 16.dp, end = 28.dp, bottom = 20.dp),
     ) {
         // The clock and date; the weather and tuners have tiles of their own.
@@ -333,7 +332,7 @@ fun HomeScreen(
         }
     }
     if (showLibraries) {
-        LibraryRows(onOpenLibraryItem, returnPoster, entry, onReturned)
+        LibraryRows(onOpenLibraryItem, returnPoster, entry, onReturned, Modifier.onFocusChanged { inRows = it.hasFocus })
     } else if (returnPoster != null) {
         LaunchedEffect(Unit) { onReturned() }
     }
@@ -355,6 +354,7 @@ private fun LibraryRows(
     returnPoster: UUID?,
     entry: FocusRequester,
     onReturned: () -> Unit,
+    modifier: Modifier,
 ) {
     val prefs = Jdvr.prefs
     // Kept between visits, so the poster to return to is there at once.
@@ -373,7 +373,7 @@ private fun LibraryRows(
             delay(5 * 60_000L)
         }
     }
-    Column(Modifier.fillMaxWidth().padding(start = 28.dp, end = 28.dp, bottom = 32.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+    Column(modifier.fillMaxWidth().padding(start = 28.dp, end = 28.dp, bottom = 32.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         rows.forEach { (lib, items) ->
             Text("Recently added in ${lib.name}", color = Jc.Text, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
             // Starts at the poster to return to, so it's composed and can take focus.
