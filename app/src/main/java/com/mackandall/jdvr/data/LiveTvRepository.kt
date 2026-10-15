@@ -1582,6 +1582,30 @@ class LiveTvRepository {
             ?.toUuid()
     }
 
+    @Serializable
+    data class Attention(
+        // "failed", "incomplete" or "stalled".
+        @SerialName("Kind") val kind: String = "",
+        @SerialName("Title") val title: String = "",
+        @SerialName("Detail") val detail: String = "",
+        @SerialName("ItemId") val itemId: String? = null,
+    )
+
+    @Serializable
+    data class Drive(
+        @SerialName("FreeBytes") val freeBytes: Long = 0,
+        @SerialName("TotalBytes") val totalBytes: Long = 0,
+    )
+
+    @Serializable
+    data class HomeExtras(
+        @SerialName("Attention") val attention: List<Attention> = emptyList(),
+        @SerialName("Drive") val drive: Drive? = null,
+    )
+
+    /** Episode History's part of Home: what needs attention, and the recordings drive. Null without it. */
+    suspend fun homeExtras(): HomeExtras? = plugin(HttpMethod.GET, "/EpisodeHistory/Home")
+
     suspend fun tuners(channelId: UUID?): TunerStatus? = plugin(HttpMethod.GET, "/JellyDvrSchedule/Tuners", if (channelId == null) emptyMap() else mapOf("channelId" to channelId.toString()))
 }
 

@@ -26,6 +26,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
@@ -100,10 +101,17 @@ fun HomeScreen(
     }
     val scope = rememberCoroutineScope()
     val symbols = rememberMarkSymbols()
+    var extras by remember { mutableStateOf<LiveTvRepository.HomeExtras?>(null) }
 
+    // The clock.
     LaunchedEffect(Unit) {
         while (true) {
             now = LocalDateTime.now()
+            delay(5_000)
+        }
+    }
+    LaunchedEffect(Unit) {
+        while (true) {
             val channels = runCatching { Jdvr.liveTv.channels() }.getOrNull()
             // A failed call isn't "no Live TV": keep what was shown.
             if (channels != null) {
@@ -115,12 +123,89 @@ fun HomeScreen(
             bufferIds = Jdvr.liveTv.bufferPrograms()
             val shows = Jdvr.liveTv.recordedShows()
             freshFromLibrary = shows == null
-            fresh = shows?.filter { it.unplayedCount > 0 }?.take(5) ?: Jdvr.liveTv.recentlyAdded(5).orEmpty()
+            fresh = shows?.filter { it.unplayedCount > 0 }?.take(6) ?: Jdvr.liveTv.recentlyAdded(6).orEmpty()
             tuners = Jdvr.liveTv.tuners(null)
+            extras = runCatching { Jdvr.liveTv.homeExtras() }.getOrNull()
             loaded = true
             delay(60_000)
         }
     }
+
+    // What each tile has to show.
+    val recordingNow = upcoming.filter { it.recordingNow }.sortedBy { it.programId?.plainId() in bufferIds }
+    val nowLines =
+        recordingNow.map { r ->
+            val buffer = r.programId?.plainId() in bufferIds
+            TileLine(
+                key = r.timerId,
+                title = r.name + (r.episodeTitle?.let { " · $it" } ?: ""),
+                detail = listOfNotNull(r.channelNumber, r.channelName, if (buffer) "live TV buffer" else null).joinToString(" "),
+                side = if (buffer) "buffer" else localOf(r.end)?.let { "until ${it.time()}" },
+                dot = if (buffer) Jc.Recording.copy(alpha = 0.4f) else Jc.Recording,
+            ) {
+                // Watch it from the start; Back to live in the player tunes its channel.
+                scope.launch {
+                    val pid = r.programId?.toUuid() ?: return@launch
+                    val channel = runCatching { Jdvr.liveTv.program(pid)?.channelId }.getOrNull()
+                    Jdvr.liveTv.recordingOfProgram(pid)?.let { onPlayRecording(PlayRecording(it, startMs = 0L, liveChannelId = channel)) }
+                }
+            }
+        }
+    val nextLines =
+        upcoming.filter { !it.recordingNow && it.programId?.plainId() !in bufferIds }.take(5).map { u ->
+            val start = localOf(u.start)
+            TileLine(
+                key = u.timerId,
+                title = u.name + (u.episodeTitle?.let { " · $it" } ?: ""),
+                detail = listOfNotNull(listOfNotNull(u.channelNumber, u.channelName).joinToString(" ").ifEmpty { null }, if (u.kind == "series") "series" else if (u.kind == "favourite") "favourite" else "one-off").joinToString(" · "),
+                side = start?.let { if (it.toLocalDate() == now.toLocalDate()) it.time() else it.dayOfWeek.name.take(3).lowercase().replaceFirstChar { c -> c.uppercase() } + " " + it.time() },
+                dot = null,
+            ) { onOpenScreen(com.mackandall.jdvr.Screen.Scheduled) }
+        }
+    val attentionLines =
+        extras?.attention.orEmpty().mapIndexed { i, a ->
+            TileLine(
+                key = "a$i",
+                title = a.title,
+                detail = a.detail,
+                side = null,
+                dot = if (a.kind == "failed") Jc.Recording else Jc.Amber,
+            ) {
+                // The recording itself when there is one; else the schedule (where its re-record sits).
+                a.itemId?.toUuid()?.let { onPlayRecording(PlayRecording(it)) } ?: onOpenScreen(com.mackandall.jdvr.Screen.Scheduled)
+            }
+        }
+
+    // Which tiles show (Settings › Home): ON, OFF, or AUTO (only with something to show).
+    fun shown(key: String, has: Boolean = true) =
+        when (prefs.homeTile(key)) {
+            com.mackandall.jdvr.data.Prefs.ON -> true
+            com.mackandall.jdvr.data.Prefs.AUTO -> has
+            else -> false
+        }
+    val showLive = shown("live")
+    val showWeather = shown("weather") && prefs.weatherOn
+    val showNow = shown("now", nowLines.isNotEmpty())
+    val showNext = shown("next")
+    // Without Episode History there is nothing to say here.
+    val showAttention = extras != null && shown("attention", attentionLines.isNotEmpty())
+    val showTuners = shown("tuners")
+    val showFresh = shown("fresh")
+    val row1 = showLive || showWeather || showNow
+    val row2 = showNext || showAttention || showTuners
+    val tileRows = (if (row1) 1 else 0) + (if (row2) 1 else 0)
+
+    // Where focus starts: the first tile with something to press.
+    val entryAt =
+        when {
+            showLive -> "live"
+            showNow && nowLines.isNotEmpty() -> "now"
+            showNext && nextLines.isNotEmpty() -> "next"
+            showAttention && attentionLines.isNotEmpty() -> "attention"
+            showFresh && !fresh.isNullOrEmpty() -> "fresh"
+            else -> null
+        }
+    fun entryFor(key: String) = if (entryAt == key) Modifier.focusRequester(entry) else Modifier
 
     val w = weather
     androidx.compose.runtime.CompositionLocalProvider(LocalSeeThrough provides (w != null)) {
@@ -131,110 +216,89 @@ fun HomeScreen(
         // (the picture's dark ground, trees, night sky).
         Box(Modifier.fillMaxSize().background(Jc.Ink.copy(alpha = if (Jc.Light) 0.66f else 0.35f)))
     }
-    Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(start = 28.dp, top = 18.dp, end = 28.dp, bottom = 24.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+    Column(Modifier.fillMaxSize().padding(start = 28.dp, top = 16.dp, end = 28.dp, bottom = 20.dp)) {
+        // The clock and date; the weather and tuners have tiles of their own.
+        Row(Modifier.padding(bottom = 12.dp), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             Text("JDVR", color = Jc.Focus, fontSize = 22.sp, fontWeight = FontWeight.Bold)
             Text("Home", color = Jc.Muted, fontSize = 18.sp)
             Box(Modifier.weight(1f))
-            tuners?.let { t ->
-                if (t.capacity > 0) {
-                    Text(
-                        "${t.busy.size} of ${t.capacity} tuners in use",
-                        color = Jc.Text,
-                        fontSize = 14.sp,
-                        modifier = Modifier.background(homePanel(), RoundedCornerShape(50)).padding(horizontal = 12.dp, vertical = 5.dp),
-                    )
-                }
-            }
-            w?.let { x ->
-                Text(
-                    "${x.temperature}° ${x.label}" + (if (x.high != null && x.low != null) " · H ${x.high}° L ${x.low}°" else "") + (prefs.weatherPlace?.name?.substringBefore(',')?.let { " · $it" } ?: ""),
-                    color = Jc.Text,
-                    fontSize = 14.sp,
-                    modifier = Modifier.background(homePanel(), RoundedCornerShape(50)).padding(horizontal = 12.dp, vertical = 5.dp),
-                )
-            }
-            Text("${now.day()} · ${now.time()}", color = Jc.Text, fontSize = 16.sp)
+            Text(now.day(), color = Jc.Muted, fontSize = 15.sp, modifier = Modifier.padding(bottom = 3.dp))
+            Text(now.time(), color = Jc.Text, fontSize = 30.sp, fontWeight = FontWeight.SemiBold)
         }
 
-        // Back to live, and what's recording now.
-        Row(Modifier.fillMaxWidth().height(196.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            if (loaded && !hasLiveTv) {
-                NoLiveTvCard(entry, Modifier.weight(1f).fillMaxHeight(), onSearch = { onOpenScreen(com.mackandall.jdvr.Screen.Search) })
-            } else {
-                LiveCard(last, fromStart, symbols, entry, Modifier.weight(1f).fillMaxHeight(), onPlayChannel, onPlayRecording, onGuide = { onOpenScreen(com.mackandall.jdvr.Screen.Guide) })
-            }
-            Column(
-                Modifier.width(300.dp).fillMaxHeight().background(homePanel(), RoundedCornerShape(14.dp)).padding(14.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Text("RECORDING NOW", color = Jc.Muted, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                val rec = upcoming.filter { it.recordingNow }
-                if (rec.isEmpty()) Text("Nothing is recording.", color = Jc.Muted, fontSize = 14.sp)
-                // Real recordings first; a live TV buffer is shown as one, not as a recording.
-                // Three fit; the rest are a press away in Scheduled (Watch on each one recording now).
-                val shown = if (rec.size > 3) 2 else 3
-                rec.sortedBy { it.programId?.plainId() in bufferIds }.take(shown).forEach { r ->
-                    val buffer = r.programId?.plainId() in bufferIds
-                    SmallRow(
-                        title = r.name,
-                        detail = listOfNotNull(if (buffer) "Live TV buffer" else null, r.channelName, if (buffer) null else localOf(r.end)?.let { "until ${it.time()}" }).joinToString(" · "),
-                        dot = !buffer,
-                    ) {
-                        // Watch it from the start; Back to live in the player tunes its channel.
-                        scope.launch {
-                            val pid = r.programId?.toUuid() ?: return@launch
-                            val channel = runCatching { Jdvr.liveTv.program(pid)?.channelId }.getOrNull()
-                            Jdvr.liveTv.recordingOfProgram(pid)?.let { onPlayRecording(PlayRecording(it, startMs = 0L, liveChannelId = channel)) }
+        // The tiles: each row shares its width by the tiles' weights, the rows share the height;
+        // a tile turned off (or an Auto one with nothing to show) shrinks away and the others grow.
+        val r1 = animatedWeight(if (row1) 1.2f else 0f)
+        if (r1 > 0.01f) {
+            Row(Modifier.weight(r1).fillMaxWidth().padding(bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                val wl = animatedWeight(if (showLive) 3f else 0f)
+                if (wl > 0.01f) {
+                    Box(Modifier.weight(wl).fillMaxHeight()) {
+                        if (loaded && !hasLiveTv) {
+                            NoLiveTvCard(entry, Modifier.fillMaxSize(), onSearch = { onOpenScreen(com.mackandall.jdvr.Screen.Search) })
+                        } else {
+                            LiveCard(last, fromStart, symbols, entry, Modifier.fillMaxSize(), onPlayChannel, onPlayRecording, onGuide = { onOpenScreen(com.mackandall.jdvr.Screen.Guide) })
                         }
                     }
                 }
-                if (rec.size > shown) {
-                    SmallRow(title = "${rec.size - shown} more recording now", detail = "Open Scheduled", dot = false) {
-                        onOpenScreen(com.mackandall.jdvr.Screen.Scheduled)
-                    }
+                val ww = animatedWeight(if (showWeather) 2f else 0f)
+                if (ww > 0.01f) {
+                    WeatherTile(w, prefs.weatherPlace?.name?.substringBefore(','), Modifier.weight(ww).fillMaxHeight(), homePanel(), homePanel2())
+                }
+                val wn = animatedWeight(if (showNow) 2f else 0f)
+                if (wn > 0.01f) {
+                    ListTile("RECORDING NOW", nowLines, "Nothing is recording.", Modifier.weight(wn).fillMaxHeight(), homePanel(), homePanel2(), entryFor("now"), leftmost = !showLive && !showWeather)
+                }
+            }
+        }
+        val r2 = animatedWeight(if (row2) 1f else 0f)
+        if (r2 > 0.01f) {
+            Row(Modifier.weight(r2).fillMaxWidth().padding(bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                val wx = animatedWeight(if (showNext) 3f else 0f)
+                if (wx > 0.01f) {
+                    ListTile("RECORDING NEXT", nextLines, "Nothing more scheduled.", Modifier.weight(wx).fillMaxHeight(), homePanel(), homePanel2(), entryFor("next"), leftmost = true)
+                }
+                val wa = animatedWeight(if (showAttention) 2f else 0f)
+                if (wa > 0.01f) {
+                    ListTile("NEEDS ATTENTION", attentionLines, "All recordings are fine.", Modifier.weight(wa).fillMaxHeight(), homePanel(), homePanel2(), entryFor("attention"), leftmost = !showNext)
+                }
+                val wt = animatedWeight(if (showTuners) 2f else 0f)
+                if (wt > 0.01f) {
+                    TunersTile(tuners, extras?.drive, Modifier.weight(wt).fillMaxHeight(), homePanel(), homePanel2())
                 }
             }
         }
 
-        // New recordings.
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(if (freshFromLibrary) "Recently added" else "New recordings", color = Jc.Text, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
-                Text(if (freshFromLibrary) "unwatched · newest first · from your libraries" else "unwatched · newest first", color = Jc.Muted, fontSize = 13.sp)
-            }
-            val list = fresh
-            when {
-                list == null || !loaded -> Text("Loading…", color = Jc.Muted, fontSize = 14.sp)
-                list.isEmpty() -> Text("All caught up.", color = Jc.Muted, fontSize = 14.sp)
-                else ->
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        list.forEach { c ->
-                            NewCard(c, Modifier.weight(1f)) {
-                                if (c.type == "Series") onOpenShow(c.id) else c.id.toUuid()?.let { onPlayRecording(PlayRecording(it)) }
+        // New recordings: a strip under the tiles, more room when there are fewer of them.
+        val rf = animatedWeight(if (showFresh) (if (tileRows == 0) 3f else if (tileRows == 1) 1.1f else 0.78f) else 0f)
+        if (rf > 0.01f) {
+            Column(Modifier.weight(rf).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(if (freshFromLibrary) "Recently added" else "New recordings", color = Jc.Text, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+                    Text(if (freshFromLibrary) "unwatched · newest first · from your libraries" else "unwatched · newest first", color = Jc.Muted, fontSize = 13.sp)
+                }
+                val list = fresh
+                when {
+                    list == null || !loaded -> Text("Loading…", color = Jc.Muted, fontSize = 14.sp)
+                    list.isEmpty() -> Text("All caught up.", color = Jc.Muted, fontSize = 14.sp)
+                    else ->
+                        // As tall as the strip allows: the pictures shrink (keeping their shape) so
+                        // the names under them always show.
+                        Row(Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            list.forEachIndexed { i, c ->
+                                NewCard(c, Modifier.weight(1f), if (i == 0) entryFor("fresh") else Modifier) {
+                                    if (c.type == "Series") onOpenShow(c.id) else c.id.toUuid()?.let { onPlayRecording(PlayRecording(it)) }
+                                }
                             }
+                            repeat(6 - list.size) { Box(Modifier.weight(1f)) }
                         }
-                        repeat(5 - list.size) { Box(Modifier.weight(1f)) }
-                    }
-            }
-        }
-
-        // Tonight's schedule: chips of one size; any opens Scheduled.
-        val tonight =
-            upcoming.filter { !it.recordingNow && it.programId?.plainId() !in bufferIds }.filter { u -> localOf(u.start)?.let { Duration.between(now, it).toHours() < 8 } == true }.take(4)
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Tonight", color = Jc.Text, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(end = 4.dp))
-            if (tonight.isEmpty()) Text("Nothing more scheduled.", color = Jc.Muted, fontSize = 14.sp)
-            tonight.forEach { u ->
-                HomeChip("${localOf(u.start)?.time() ?: ""}  ${u.name}" + (u.channelName?.let { " · $it" } ?: ""), Modifier.weight(1f, fill = false)) {
-                    onOpenScreen(com.mackandall.jdvr.Screen.Scheduled)
                 }
             }
-            Box(Modifier.weight(0.01f))
-            HomeChip("All scheduled ›") { onOpenScreen(com.mackandall.jdvr.Screen.Scheduled) }
+        }
+        if (!row1 && !row2 && !showFresh) {
+            Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                Text("Turn Home's tiles on in Settings › Home.", color = Jc.Muted, fontSize = 18.sp)
+            }
         }
     }
     }
@@ -272,13 +336,13 @@ private fun LiveCard(
 ) {
     val p = channel?.now
     Column(
-        modifier.background(homePanel(), RoundedCornerShape(14.dp)).padding(horizontal = 20.dp, vertical = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
+        modifier.background(homePanel(), RoundedCornerShape(14.dp)).padding(horizontal = 18.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         Text("BACK TO LIVE · LAST CHANNEL", color = Jc.Muted, fontSize = 12.sp, fontWeight = FontWeight.Bold)
         Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(listOfNotNull(channel?.number, channel?.name).joinToString(" "), color = Jc.Muted, fontSize = 16.sp)
-            Text(p?.name ?: channel?.name ?: "…", color = Jc.Text, fontSize = 28.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(p?.name ?: channel?.name ?: "…", color = Jc.Text, fontSize = 24.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         val sub = listOfNotNull(p?.let { listOfNotNull(it.season?.let { s -> "S$s" }, it.episode?.let { e -> "E$e" }).joinToString("").ifEmpty { null } }, p?.rawEpisodeTitle?.let { Marks.parse(it, symbols).title }).joinToString(" · ")
         if (sub.isNotEmpty()) Text(sub, color = Jc.Text, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -298,7 +362,8 @@ private fun LiveCard(
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             // A TV not allowed live TV (JellyDVR Space's device rights) keeps the button for focus, and says so.
             val live = deviceRights().liveTv
-            Button(if (live) "Watch live" else "Live TV is off for this TV", primary = live, modifier = Modifier.focusRequester(entry)) { if (live) channel?.let { onPlayChannel(it.id) } }
+            // ◄ from here opens the menu (focus search would jump down to the first poster).
+            Button(if (live) "Watch live" else "Live TV is off for this TV", primary = live, modifier = Modifier.focusRequester(entry).focusProperties { left = FocusRequester.Cancel }) { if (live) channel?.let { onPlayChannel(it.id) } }
             if (fromStart != null) {
                 Button("Watch from start") { onPlayRecording(PlayRecording(fromStart, startMs = 0L, liveChannelId = channel?.id)) }
             }
@@ -362,12 +427,13 @@ private fun SmallRow(
 private fun NewCard(
     c: LiveTvRepository.RecordingCard,
     modifier: Modifier,
+    surfaceModifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
-    Column(modifier, verticalArrangement = Arrangement.spacedBy(5.dp)) {
+    Column(modifier.fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(5.dp)) {
         Surface(
             onClick = onClick,
-            modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f),
+            modifier = surfaceModifier.weight(1f, fill = false).aspectRatio(16f / 9f),
             shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(9.dp)),
             colors = ClickableSurfaceDefaults.colors(containerColor = homePanel2(), focusedContainerColor = homePanel2()),
             border = ClickableSurfaceDefaults.border(focusedBorder = Border(BorderStroke(3.dp, Jc.Focus))),

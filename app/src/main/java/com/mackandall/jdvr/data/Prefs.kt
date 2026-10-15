@@ -193,6 +193,57 @@ class Prefs(
         p.edit().putBoolean("librariesOpen", v).apply()
     }
 
+    /** The menu's icons: a set from ui/MenuIcons.kt ("line", "solid", "tile"), or OFF. */
+    var menuIconSet by mutableStateOf(p.getString("menuIconSet", "line") ?: "line")
+        private set
+
+    /** How the icons move with focus: OFF, MAGNIFY (the focused one) or WAVE (and its neighbours). */
+    var menuIconMotion by mutableStateOf(p.getString("menuIconMotion", MAGNIFY) ?: MAGNIFY)
+        private set
+
+    /** How big the focused icon gets: SMALL, MEDIUM or LARGE (never past its row). */
+    var menuIconSize by mutableStateOf(p.getString("menuIconSize", MEDIUM) ?: MEDIUM)
+        private set
+
+    /** Home's tiles (Settings › Home): ON, OFF, or AUTO (only when there is something to show). */
+    var homeTiles by mutableStateOf(parseTiles(p.getString("homeTiles", null)))
+        private set
+
+    fun homeTile(key: String): String = homeTiles[key] ?: HOME_PRESETS.getValue(STANDARD).getValue(key)
+
+    fun changeHomeTile(
+        key: String,
+        v: String,
+    ) {
+        homeTiles = HOME_TILES.associateWith { homeTile(it) } + (key to v)
+        p.edit().putString("homeTiles", homeTiles.entries.joinToString(",") { "${it.key}=${it.value}" }).apply()
+    }
+
+    fun applyHomePreset(name: String) {
+        HOME_PRESETS[name]?.forEach { (k, v) -> changeHomeTile(k, v) }
+    }
+
+    /** The preset Home matches now, or null (set by hand). */
+    fun homePreset(): String? = HOME_PRESETS.entries.firstOrNull { (_, tiles) -> tiles.all { (k, v) -> homeTile(k) == v } }?.key
+
+    private fun parseTiles(v: String?): Map<String, String> =
+        v.orEmpty().split(',').mapNotNull { it.split('=').takeIf { kv -> kv.size == 2 }?.let { kv -> kv[0] to kv[1] } }.toMap()
+
+    fun changeMenuIconSet(v: String) {
+        menuIconSet = v
+        p.edit().putString("menuIconSet", v).apply()
+    }
+
+    fun changeMenuIconMotion(v: String) {
+        menuIconMotion = v
+        p.edit().putString("menuIconMotion", v).apply()
+    }
+
+    fun changeMenuIconSize(v: String) {
+        menuIconSize = v
+        p.edit().putString("menuIconSize", v).apply()
+    }
+
     fun changeMenuIcons(v: Boolean) {
         menuIcons = v
         p.edit().putBoolean("menuIcons", v).apply()
@@ -247,6 +298,22 @@ class Prefs(
     }
 
     companion object {
+        // Home's tiles, row by row, and the presets of Settings › Home.
+        val HOME_TILES = listOf("live", "weather", "now", "next", "attention", "tuners", "fresh")
+        const val CALM = "calm"
+        const val STANDARD = "standard"
+        const val EVERYTHING = "everything"
+        val HOME_PRESETS =
+            linkedMapOf(
+                CALM to mapOf("live" to "on", "weather" to "off", "now" to "auto", "next" to "on", "attention" to "auto", "tuners" to "off", "fresh" to "on"),
+                STANDARD to mapOf("live" to "on", "weather" to "on", "now" to "auto", "next" to "on", "attention" to "auto", "tuners" to "on", "fresh" to "on"),
+                EVERYTHING to mapOf("live" to "on", "weather" to "on", "now" to "on", "next" to "on", "attention" to "on", "tuners" to "on", "fresh" to "on"),
+            )
+        const val MAGNIFY = "magnify"
+        const val WAVE = "wave"
+        const val SMALL = "small"
+        const val MEDIUM = "medium"
+        const val LARGE = "large"
         const val HOLD_OFF = "off"
         const val HOLD_MENU = "menu"
         const val HOLD_DETAILS = "details"

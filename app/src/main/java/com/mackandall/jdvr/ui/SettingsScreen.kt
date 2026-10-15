@@ -23,6 +23,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
@@ -110,11 +111,56 @@ fun SettingsScreen(
         Section("Menu")
         Choice(
             label = "Menu entries",
-            help = "Their order, which are shown, the Libraries group, and where Settings, Sign out and Exit go.",
+            help = "Their order, which are shown, the Libraries group, where Settings, Sign out and Exit go, and the icons beside them.",
             value = "Arrange…",
             modifier = Modifier.focusRequester(menuButton),
         ) { menuPage = true }
-        Section("Weather on Home")
+        Section("Home")
+        // Home's tiles: a preset, or each one On, Off or (two of them) Auto.
+        val preset = prefs.homePreset()
+        Choice(
+            label = "Home layout",
+            help = "Calm: the last channel, what records next and new recordings, plus what's recording or needs attention only when there is some. Standard adds the weather and the tuners. Everything shows every tile.",
+            value =
+                when (preset) {
+                    Prefs.CALM -> "Calm"
+                    Prefs.STANDARD -> "Standard"
+                    Prefs.EVERYTHING -> "Everything"
+                    else -> "Your own"
+                },
+        ) {
+            val keys = Prefs.HOME_PRESETS.keys.toList()
+            prefs.applyHomePreset(keys[(keys.indexOf(preset) + 1) % keys.size])
+        }
+        listOf(
+            Triple("live", "Back to live", false),
+            Triple("weather", "Weather tile", false),
+            Triple("now", "Recording now", true),
+            Triple("next", "Recording next", false),
+            Triple("attention", "Needs attention", true),
+            Triple("tuners", "Tuners and recordings drive", false),
+            Triple("fresh", "New recordings", false),
+        ).forEach { (key, label, auto) ->
+            val v = prefs.homeTile(key)
+            Choice(
+                label = label,
+                help =
+                    if (auto) {
+                        "Auto: only while there is something to show. The other tiles grow into the room it leaves."
+                    } else {
+                        "Turned off, the other tiles grow into the room it leaves."
+                    },
+                value =
+                    when (v) {
+                        Prefs.AUTO -> "Auto"
+                        Prefs.OFF -> "Off"
+                        else -> "On"
+                    },
+            ) {
+                val order = if (auto) listOf(Prefs.ON, Prefs.AUTO, Prefs.OFF) else listOf(Prefs.ON, Prefs.OFF)
+                prefs.changeHomeTile(key, order[(order.indexOf(v).coerceAtLeast(0) + 1) % order.size])
+            }
+        }
         Choice(
             label = "Weather",
             help = "Today's weather and a sky to match behind Home (from Open-Meteo: only your town is sent).",
@@ -192,6 +238,8 @@ private fun Choice(
     help: String,
     value: String,
     modifier: Modifier = Modifier,
+    // Shown before the value (the menu icons' sample).
+    preview: (@Composable () -> Unit)? = null,
     onClick: () -> Unit,
 ) {
     Surface(
@@ -206,6 +254,9 @@ private fun Choice(
             Column(Modifier.weight(1f)) {
                 Text(label, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
                 Text(help, color = Jc.Muted, fontSize = 14.sp)
+            }
+            preview?.let {
+                Row(Modifier.padding(end = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) { it() }
             }
             Text(value, color = Jc.Focus, fontSize = 16.sp, modifier = Modifier.width(260.dp))
         }
@@ -496,6 +547,69 @@ private fun MenuSettings(libraries: List<com.mackandall.jdvr.data.LiveTvReposito
             help = "A row of icons under the menu (▼ from the last entry), or the last three entries.",
             value = if (prefs.menuIcons) "Icons under the menu" else "Last in the list",
         ) { prefs.changeMenuIcons(!prefs.menuIcons) }
+        // Icons beside the entries: a set (ui/MenuIcons.kt), how they move with focus, how big.
+        val set = iconSetFor(prefs.menuIconSet)
+        Choice(
+            label = "Menu icons",
+            help = "An icon beside each entry. Line: thin outlines. Solid: filled shapes. Tile: outlines on a soft square.",
+            value = set?.name ?: "Off",
+            preview =
+                set?.let { st ->
+                    {
+                        listOf(MenuIcon.Home, MenuIcon.Guide, MenuIcon.LiveTv, MenuIcon.Recorded, MenuIcon.Scheduled).forEach {
+                            MenuGlyph(it, st, 22.dp, Jc.Text, Jc.Focus)
+                        }
+                    }
+                },
+        ) {
+            val keys = IconSets.map { it.key } + Prefs.OFF
+            prefs.changeMenuIconSet(keys[(keys.indexOf(prefs.menuIconSet).coerceAtLeast(0) + 1) % keys.size])
+        }
+        if (set != null) {
+            Choice(
+                label = "Icon animation",
+                help = "As you move through the menu. Magnify: the focused entry's icon grows. Wave: it grows most, the ones beside it a little.",
+                value =
+                    when (prefs.menuIconMotion) {
+                        Prefs.MAGNIFY -> "Magnify"
+                        Prefs.WAVE -> "Wave"
+                        else -> "Off"
+                    },
+            ) {
+                prefs.changeMenuIconMotion(
+                    when (prefs.menuIconMotion) {
+                        Prefs.MAGNIFY -> Prefs.WAVE
+                        Prefs.WAVE -> Prefs.OFF
+                        else -> Prefs.MAGNIFY
+                    },
+                )
+            }
+            if (prefs.menuIconMotion != Prefs.OFF) {
+                Choice(
+                    label = "Focused icon size",
+                    help = "How big the focused icon grows. It always stays inside its entry, so it is never cut off.",
+                    value =
+                        when (prefs.menuIconSize) {
+                            Prefs.SMALL -> "Small"
+                            Prefs.LARGE -> "Large"
+                            else -> "Medium"
+                        },
+                    preview = {
+                        val k = menuIconGrowth(prefs.menuIconSize)
+                        MenuGlyph(MenuIcon.Home, set, 22.dp, Jc.Muted, Jc.Focus)
+                        MenuGlyph(MenuIcon.Home, set, 22.dp, Jc.Focus, Jc.Focus, Modifier.graphicsLayer { scaleX = k; scaleY = k })
+                    },
+                ) {
+                    prefs.changeMenuIconSize(
+                        when (prefs.menuIconSize) {
+                            Prefs.SMALL -> Prefs.MEDIUM
+                            Prefs.MEDIUM -> Prefs.LARGE
+                            else -> Prefs.SMALL
+                        },
+                    )
+                }
+            }
+        }
         var armed by remember { mutableStateOf(false) }
         androidx.compose.runtime.LaunchedEffect(armed) {
             if (armed) {

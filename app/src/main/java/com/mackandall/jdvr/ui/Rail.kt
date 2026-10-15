@@ -31,6 +31,8 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
@@ -71,6 +73,7 @@ private data class Entry(
     val on: Boolean,
     val kind: Kind,
     val divider: Boolean = false,
+    val icon: MenuIcon? = null,
     val click: () -> Unit,
 )
 
@@ -129,11 +132,11 @@ fun Rail(
                 if (k == "libraries") {
                     if (libs.isEmpty()) return@forEach
                     if (prefs.librariesGrouped) {
-                        add(Entry(k, "Libraries", !open && selected == Screen.Library, Kind.Group) { setOpen(!open) })
-                        if (open) libs.forEach { l -> add(Entry("lib:${l.id}", l.name, selected == Screen.Library && l.id == selectedLibrary, Kind.Child) { onSelectLibrary(l) }) }
+                        add(Entry(k, "Libraries", !open && selected == Screen.Library, Kind.Group, icon = MenuIcon.Libraries) { setOpen(!open) })
+                        if (open) libs.forEach { l -> add(Entry("lib:${l.id}", l.name, selected == Screen.Library && l.id == selectedLibrary, Kind.Child, icon = l.menuIcon()) { onSelectLibrary(l) }) }
                     } else {
                         libs.forEachIndexed { i, l ->
-                            add(Entry("lib:${l.id}", l.name, selected == Screen.Library && l.id == selectedLibrary, Kind.Item, divider = i == 0) { onSelectLibrary(l) })
+                            add(Entry("lib:${l.id}", l.name, selected == Screen.Library && l.id == selectedLibrary, Kind.Item, divider = i == 0, icon = l.menuIcon()) { onSelectLibrary(l) })
                         }
                     }
                 } else {
@@ -144,13 +147,13 @@ fun Rail(
                     if (s == Screen.Series && !rights.record) return@forEach
                     // A line under the libraries when they're listed one by one.
                     val afterLibs = lastOrNull()?.let { it.kind == Kind.Item && it.key.startsWith("lib:") } == true
-                    add(Entry(k, s.label, s == selected, Kind.Item, divider = afterLibs) { onSelect(s) })
+                    add(Entry(k, s.label, s == selected, Kind.Item, divider = afterLibs, icon = s.menuIcon()) { onSelect(s) })
                 }
             }
             if (!icons) {
-                add(Entry("settings", Screen.Settings.label, selected == Screen.Settings, Kind.Item, divider = true) { onSelect(Screen.Settings) })
-                add(Entry("signout", if (signOutArmed) "Press again to sign out" else "Sign out", false, Kind.Item) { signOut() })
-                add(Entry("exit", "Exit", false, Kind.Item, click = onExit))
+                add(Entry("settings", Screen.Settings.label, selected == Screen.Settings, Kind.Item, divider = true, icon = MenuIcon.Settings) { onSelect(Screen.Settings) })
+                add(Entry("signout", if (signOutArmed) "Press again to sign out" else "Sign out", false, Kind.Item, icon = MenuIcon.Profile) { signOut() })
+                add(Entry("exit", "Exit", false, Kind.Item, icon = MenuIcon.Exit, click = onExit))
             }
         }
     // One focus handle per entry, kept by key, so opening Libraries doesn't lose focus.
@@ -173,6 +176,18 @@ fun Rail(
         }
 
     var focusedKey by remember { mutableStateOf<String?>(null) }
+
+    // Icons (Settings › Menu): the set, and each entry's size by its distance from the focused one
+    // (the row of icons under the list counts as the entry after the last).
+    val iconSet = iconSetFor(prefs.menuIconSet)
+    val growth = menuIconGrowth(prefs.menuIconSize)
+    val focusedAt =
+        when (focusedKey) {
+            "gear", "user", "power" -> entries.size
+            else -> entries.indexOfFirst { it.key == focusedKey }
+        }
+    fun iconScale(i: Int): Float = if (focusedAt < 0) 1f else menuIconScale(prefs.menuIconMotion, growth, kotlin.math.abs(i - focusedAt))
+    val itemWidth = if (iconSet != null) 216.dp else 192.dp
     LaunchedEffect(focusedKey, open) { onKeepsRight(focusedKey == "gear" || focusedKey == "user" || (focusedKey == "libraries" && !open)) }
     DisposableEffect(Unit) { onDispose { onKeepsRight(false) } }
 
@@ -203,25 +218,27 @@ fun Rail(
                         }
                         railHasFocus = it.hasFocus
                         if (it.hasFocus) hadFocus = true
-                    }.width(220.dp)
+                    }.width(itemWidth + 28.dp)
                     .fillMaxHeight()
                     .background(Jc.Rail)
                     .padding(start = 14.dp, end = 14.dp, top = 16.dp, bottom = 12.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             Text("JDVR", color = Jc.Focus, fontWeight = FontWeight.Bold, fontSize = 18.sp, modifier = Modifier.height(40.dp).padding(start = 10.dp, top = 8.dp))
-            // One scrolling list (no boundary for focus to cross).
-            Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            // One scrolling list (no boundary for focus to cross). The scroll area clips at its edges,
+            // so it keeps a little room inside them: the first or last entry, focused (a touch
+            // bigger, with its ring), isn't cut off.
+            Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 entries.forEachIndexed { i, e ->
                     key(e.key) {
                         if (e.divider) Box(Modifier.padding(horizontal = 12.dp, vertical = 2.dp).width(168.dp).height(1.dp).background(Jc.Line))
                         val m = slot(i).onFocusChanged { if (it.isFocused) focusedKey = e.key }
                         when (e.kind) {
-                            Kind.Item -> RailItem(e.label, e.on, m, onClick = e.click)
+                            Kind.Item -> RailItem(e.label, e.on, m, width = itemWidth, icon = e.icon, iconSet = iconSet, iconScale = iconScale(i), onClick = e.click)
                             Kind.Child ->
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Box(Modifier.padding(start = 16.dp, end = 10.dp).width(2.dp).height(36.dp).background(Jc.Line))
-                                    RailItem(e.label, e.on, m, width = 164.dp, small = true, onClick = e.click)
+                                    RailItem(e.label, e.on, m, width = itemWidth - 28.dp, small = true, icon = e.icon, iconSet = iconSet, iconScale = iconScale(i), onClick = e.click)
                                 }
                             Kind.Group ->
                                 RailItem(
@@ -241,6 +258,10 @@ fun Rail(
                                             false
                                         }
                                     },
+                                    width = itemWidth,
+                                    icon = e.icon,
+                                    iconSet = iconSet,
+                                    iconScale = iconScale(i),
                                     trailing = {
                                         if (!open) Text("${libs.size}", fontSize = 13.sp, color = it, modifier = Modifier.padding(end = 8.dp))
                                         StrokeIcon(if (open) CHEVRON_DOWN else CHEVRON_RIGHT, 16.dp, it)
@@ -270,6 +291,9 @@ fun Rail(
                 Row(Modifier.padding(start = 6.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     RailIcon(
                         GEAR,
+                        MenuIcon.Settings,
+                        iconSet,
+                        iconScale(entries.size).takeIf { focusedKey == "gear" } ?: 1f,
                         "Settings",
                         selected == Screen.Settings,
                         Modifier.focusRequester(gear).focusProperties {
@@ -280,6 +304,9 @@ fun Rail(
                     ) { onSelect(Screen.Settings) }
                     RailIcon(
                         USER,
+                        MenuIcon.Profile,
+                        iconSet,
+                        iconScale(entries.size).takeIf { focusedKey == "user" } ?: 1f,
                         "Sign out",
                         false,
                         Modifier.focusRequester(user).focusProperties {
@@ -292,6 +319,9 @@ fun Rail(
                     )
                     RailIcon(
                         POWER,
+                        MenuIcon.Exit,
+                        iconSet,
+                        iconScale(entries.size).takeIf { focusedKey == "power" } ?: 1f,
                         "Exit",
                         false,
                         Modifier.focusRequester(power).focusProperties {
@@ -313,13 +343,27 @@ private fun RailItem(
     modifier: Modifier,
     width: Dp = 192.dp,
     small: Boolean = false,
+    icon: MenuIcon? = null,
+    iconSet: IconSet? = null,
+    iconScale: Float = 1f,
     trailing: (@Composable (Color) -> Unit)? = null,
     onClick: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
+    // The row's own height bounds its icon: a magnified one never pokes out of it (nor does the
+    // spring's overshoot), whatever the font size.
+    var rowHeight by remember { mutableStateOf(0) }
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val base = if (small) 16.dp else 18.dp
+    val fit = with(density) { if (rowHeight == 0) 1f else ((rowHeight - 6.dp.toPx()) / base.toPx()).coerceAtLeast(1f) }
+    val grown by androidx.compose.animation.core.animateFloatAsState(
+        iconScale.coerceAtMost(fit),
+        androidx.compose.animation.core.spring(dampingRatio = 0.55f, stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow),
+        label = "menuIcon",
+    )
     Surface(
         onClick = onClick,
-        modifier = modifier.width(width).onFocusChanged { focused = it.isFocused },
+        modifier = modifier.width(width).onFocusChanged { focused = it.isFocused }.onSizeChanged { rowHeight = it.height },
         shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(12.dp)),
         colors =
             ClickableSurfaceDefaults.colors(
@@ -332,7 +376,25 @@ private fun RailItem(
         scale = ClickableSurfaceDefaults.scale(focusedScale = 1.03f),
     ) {
         val pad = if (small) 7.dp else 8.dp
-        Row(Modifier.padding(start = 16.dp, end = 12.dp, top = pad, bottom = pad), verticalAlignment = Alignment.CenterVertically) {
+        val withIcon = icon != null && iconSet != null
+        Row(Modifier.padding(start = if (withIcon) 10.dp else 16.dp, end = 12.dp, top = pad, bottom = pad), verticalAlignment = Alignment.CenterVertically) {
+            if (withIcon) {
+                Box(Modifier.width(base + 10.dp), contentAlignment = Alignment.Center) {
+                    val s = grown.coerceAtMost(fit)
+                    MenuGlyph(
+                        icon!!,
+                        iconSet!!,
+                        base,
+                        if (focused) Jc.Focus else if (selected) Jc.Text else Jc.Muted,
+                        Jc.Focus,
+                        Modifier.graphicsLayer {
+                            scaleX = s
+                            scaleY = s
+                        },
+                    )
+                }
+                Box(Modifier.width(10.dp))
+            }
             Text(label, fontSize = if (small) 15.sp else 17.sp, maxLines = 1, modifier = Modifier.weight(1f))
             trailing?.invoke(if (focused || selected) Jc.Text else Jc.Muted)
         }
@@ -343,6 +405,10 @@ private fun RailItem(
 @Composable
 private fun RailIcon(
     paths: List<String>,
+    icon: MenuIcon,
+    iconSet: IconSet?,
+    // Inside its circle the glyph grows by at most a quarter.
+    iconScale: Float,
     label: String,
     selected: Boolean,
     modifier: Modifier,
@@ -363,7 +429,19 @@ private fun RailIcon(
         border = ClickableSurfaceDefaults.border(focusedBorder = Border(BorderStroke(2.dp, Jc.Focus), shape = CircleShape)),
         scale = ClickableSurfaceDefaults.scale(focusedScale = 1.1f),
     ) {
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { StrokeIcon(paths, 18.dp, if (focused) Jc.Text else Jc.Muted) }
+        val grown by androidx.compose.animation.core.animateFloatAsState(
+            iconScale.coerceAtMost(1.25f),
+            androidx.compose.animation.core.spring(dampingRatio = 0.6f, stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow),
+            label = "railIcon",
+        )
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            if (iconSet == null) {
+                StrokeIcon(paths, 18.dp, if (focused) Jc.Text else Jc.Muted)
+            } else {
+                val s = grown.coerceAtMost(1.25f)
+                MenuGlyph(icon, iconSet, 18.dp, if (focused) Jc.Text else Jc.Muted, Jc.Focus, Modifier.graphicsLayer { scaleX = s; scaleY = s })
+            }
+        }
     }
 }
 

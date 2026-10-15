@@ -19,6 +19,15 @@ data class WeatherNow(
     val sky: Sky,
     val isDay: Boolean,
     val label: String,
+    // The next few hours (Home's weather tile).
+    val hours: List<WeatherHour> = emptyList(),
+)
+
+data class WeatherHour(
+    val time: java.time.LocalDateTime,
+    val temperature: Int,
+    val sky: Sky,
+    val label: String,
 )
 
 data class Place(
@@ -53,6 +62,14 @@ object Weather {
     private data class Forecast(
         val current: Current? = null,
         val daily: Daily? = null,
+        val hourly: Hourly? = null,
+    )
+
+    @Serializable
+    private data class Hourly(
+        val time: List<String> = emptyList(),
+        @SerialName("temperature_2m") val temperature: List<Double> = emptyList(),
+        @SerialName("weather_code") val code: List<Int> = emptyList(),
     )
 
     @Serializable
@@ -95,6 +112,8 @@ object Weather {
                 .addQueryParameter("longitude", place.longitude.toString())
                 .addQueryParameter("current", "temperature_2m,weather_code,is_day")
                 .addQueryParameter("daily", "temperature_2m_max,temperature_2m_min")
+                .addQueryParameter("hourly", "temperature_2m,weather_code")
+                .addQueryParameter("forecast_hours", "6")
                 .addQueryParameter("temperature_unit", if (fahrenheit) "fahrenheit" else "celsius")
                 .addQueryParameter("timezone", "auto")
                 .addQueryParameter("forecast_days", "1")
@@ -109,6 +128,15 @@ object Weather {
             sky = sky,
             isDay = c.isDay == 1,
             label = label,
+            // Times are the town's own (timezone=auto): the hours after this one.
+            hours =
+                f.hourly?.let { h ->
+                    h.time.indices.mapNotNull { i ->
+                        val t = runCatching { java.time.LocalDateTime.parse(h.time[i]) }.getOrNull() ?: return@mapNotNull null
+                        val (s, l) = describe(h.code.getOrElse(i) { 3 })
+                        WeatherHour(t, Math.round(h.temperature.getOrElse(i) { 0.0 }).toInt(), s, l)
+                    }.drop(1).take(4)
+                }.orEmpty(),
         )
     }
 
