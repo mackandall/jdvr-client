@@ -166,6 +166,8 @@ fun AiringsDialog(
     }
 
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        // Opened from Quick actions, whose buttons fill the menu: not in here.
+        androidx.compose.runtime.CompositionLocalProvider(LocalWideButtons provides false) {
         Column(
             Modifier
                 .width(700.dp)
@@ -216,6 +218,7 @@ fun AiringsDialog(
                         },
                 ) { if (rerecord) doRerecord(a.programId) else doRecord(a) }
             }
+        }
         }
     }
 }
