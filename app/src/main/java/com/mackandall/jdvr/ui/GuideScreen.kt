@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -441,7 +442,7 @@ fun GuideScreen(
                     focused?.let { InfoPanel(it, channels?.firstOrNull { c -> c.id == it.channelId }, symbols) }
                         ?: if (channels?.isEmpty() != true) Text("Move through the guide to see a programme here; OK for what you can do with it.", color = Jc.Muted, fontSize = 15.sp, modifier = Modifier.padding(22.dp)) else Unit
                 } else {
-                    // Its actions open over the right of the guide (below), wide enough for two columns.
+                    // Its actions open over the guide (below), docked or floating.
                     InfoPanel(p, channels?.firstOrNull { c -> c.id == p.channelId }, symbols)
                 }
             }
@@ -451,7 +452,7 @@ fun GuideScreen(
     }
     // A programme's actions: a panel over the right of the grid, its buttons in two columns.
     selected?.let { p ->
-        Box(Modifier.align(Alignment.CenterEnd).width(PanelWidth).fillMaxHeight().background(Jc.Sheet)) { Actions(p) }
+        ProgramActionsHost(onDismiss = { closePanel() }) { Actions(p) }
     }
     airingsFor?.let { p ->
         AiringsDialog(
@@ -863,6 +864,7 @@ internal fun ProgramPanel(
     var note by remember(program.id) { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     val first = remember { FocusRequester() }
+    var inside by remember(program.id) { mutableStateOf(false) }
     val marks = Marks.parse(p.rawEpisodeTitle, symbols)
 
     suspend fun refresh() {
@@ -879,7 +881,12 @@ internal fun ProgramPanel(
         isBuffer = program.id.toString().plainId() in Jdvr.liveTv.bufferPrograms()
         if (isBuffer) buffer = Jdvr.liveTv.buffers(program.channelId).lastOrNull { it.programId?.plainId() == program.id.toString().plainId() }
         schedule = Jdvr.liveTv.scheduleState(program.id)
-        runCatching { first.requestFocus() }
+        // Opened as a floating dialog, its window needs a frame or two before focus can land.
+        repeat(20) {
+            if (inside) return@LaunchedEffect
+            runCatching { first.requestFocus() }
+            delay(50)
+        }
     }
 
     fun act(block: suspend () -> String?) {
@@ -905,178 +912,232 @@ internal fun ProgramPanel(
         }
     }
 
+    // The panel is as wide as its two columns of buttons need; the header and note wrap to that.
     Column(
         modifier =
             modifier
-                .fillMaxHeight()
-                .background(Jc.Sheet)
+                .onFocusChanged { inside = it.hasFocus }
                 .verticalScroll(androidx.compose.foundation.rememberScrollState())
                 .padding(22.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Text(p.name, color = Jc.Text, fontSize = 24.sp, fontWeight = FontWeight.SemiBold, maxLines = 2)
-        val episode = listOfNotNull(p.seasonEpisode, marks.title).joinToString(" · ")
-        if (episode.isNotEmpty()) Text(episode, color = Jc.Text, fontSize = 16.sp)
-        Text(
-            "${p.start.day()} · ${p.start.time()} – ${p.end.time()}" + (channel?.let { " · ${it.number} ${it.name}" } ?: ""),
-            color = Jc.Muted,
-            fontSize = 15.sp,
-        )
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            MarkChips(marks)
-            if (isBuffer) Chip("Live TV buffer", Jc.Muted)
-            if (eh?.markedWatched == true) Chip("marked watched", Jc.Green)
-        }
-        p.overview?.let { Text(it, color = Jc.Muted, fontSize = 14.sp, maxLines = 4, overflow = TextOverflow.Ellipsis) }
-        schedule?.outcome?.let {
-            Text(
-                it.detail,
-                color = Jc.Amber,
-                fontSize = 14.sp,
-                modifier = Modifier.background(Jc.Amber.copy(alpha = 0.12f), RoundedCornerShape(8.dp)).padding(10.dp),
-            )
-        }
-        Spacer(4)
-        // What this TV may not do (JellyDVR Space's device rights) is named, not offered; the
-        // line keeps the panel's first focus.
-        val rights = deviceRights()
-        // Two columns, so every action stays on the screen: watching and recording on the left,
-        // the rest on the right.
-        MenuColumns(
-            left = {
-                if (p.isOn()) {
-                    if (rights.liveTv) {
-                        Button("Watch live", modifier = Modifier.fillMaxWidth().focusRequester(first), onClick = onWatch)
-                    } else {
-                        Button("Live TV is off for this TV", modifier = Modifier.fillMaxWidth().focusRequester(first)) {}
-                    }
+        FitToButtons(
+            header = {
+                Text(p.name, color = Jc.Text, fontSize = 24.sp, fontWeight = FontWeight.SemiBold, maxLines = 2)
+                val episode = listOfNotNull(p.seasonEpisode, marks.title).joinToString(" · ")
+                if (episode.isNotEmpty()) Text(episode, color = Jc.Text, fontSize = 16.sp)
+                Text(
+                    "${p.start.day()} · ${p.start.time()} – ${p.end.time()}" + (channel?.let { " · ${it.number} ${it.name}" } ?: ""),
+                    color = Jc.Muted,
+                    fontSize = 15.sp,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    MarkChips(marks)
+                    if (isBuffer) Chip("Live TV buffer", Jc.Muted)
+                    if (eh?.markedWatched == true) Chip("marked watched", Jc.Green)
                 }
-                recordingItem?.let { id -> Button("Watch from start", modifier = Modifier.fillMaxWidth(), leading = { Text("⏮", color = Jc.Text) }) { onWatchFromStart(id) } }
-                // A copy Episode History knows about (recorded before, or in a library).
-                eh?.libraryItemId?.toUuid()?.let { lib ->
-                    val resume = eh?.libraryItemPositionTicks?.div(10_000L) ?: 0L
-                    Button(if (resume > 60_000) "Play from library · ${resume / 60_000} min in" else "Play from library", modifier = Modifier.fillMaxWidth(), leading = { Text("▶", color = Jc.Text) }) {
-                        onPlayItem(com.mackandall.jdvr.PlayRecording(lib))
-                    }
+                p.overview?.let { Text(it, color = Jc.Muted, fontSize = 14.sp, maxLines = 4, overflow = TextOverflow.Ellipsis) }
+                schedule?.outcome?.let {
+                    Text(
+                        it.detail,
+                        color = Jc.Amber,
+                        fontSize = 14.sp,
+                        modifier = Modifier.background(Jc.Amber.copy(alpha = 0.12f), RoundedCornerShape(8.dp)).padding(10.dp),
+                    )
                 }
-                val recordModifier = if (p.isOn()) Modifier.fillMaxWidth() else Modifier.fillMaxWidth().focusRequester(first)
-                val bufferNow = buffer
-                if (!rights.record) {
-                    Button("Recording is off for this TV", modifier = recordModifier) {}
-                } else if (isBuffer && bufferNow != null && !bufferNow.kept) {
-                    // Only a buffer so far: Record keeps it (recorded from when it started).
-                    Button("Record (keep the live buffer)", modifier = recordModifier, leading = { Dot(Jc.Recording) }) {
-                        act {
-                            Jdvr.liveTv.keepBuffer(bufferNow.id, true)
-                            "Recording: the live TV buffer is kept."
-                        }
-                    }
-                } else if (p.isRecording && !isBuffer) {
-                    Button("Don't record this", modifier = recordModifier, leading = { Dot(Jc.Recording) }) {
-                        act {
-                            Jdvr.liveTv.cancelRecording(p.timerId!!)
-                            "Recording cancelled."
-                        }
-                    }
-                } else {
-                    Button("Record", modifier = recordModifier, leading = { Dot(Jc.Recording) }) {
-                        act {
-                            Jdvr.liveTv.record(p.id, series = false)
-                            "Recording scheduled."
-                        }
-                    }
-                }
-                if (p.isSeries && rights.record) {
-                    if (p.seriesTimerId != null) {
-                        Button("Cancel series recording", modifier = Modifier.fillMaxWidth()) {
-                            act {
-                                Jdvr.liveTv.cancelSeries(p.seriesTimerId!!)
-                                "Series recording cancelled."
-                            }
-                        }
-                    } else {
-                        Button("Record series", modifier = Modifier.fillMaxWidth()) {
-                            act {
-                                Jdvr.liveTv.record(p.id, series = true)
-                                "Series recording set up."
-                            }
-                        }
-                    }
-                }
-                if (schedule?.outcome != null && rights.record) {
-                    Button("Record this instead", modifier = Modifier.fillMaxWidth(), leading = { Dot(Jc.Amber) }) {
-                        act { Jdvr.liveTv.recordInstead(p.id)?.message }
-                    }
-                }
+                Spacer(4)
             },
-            right = {
-                // Every later airing of it, with tuner clashes and commercial-free channels (Episode History).
-                if (eh != null) {
-                    Button("Other airings", modifier = Modifier.fillMaxWidth()) {
-                        if (onOtherAirings != null) onOtherAirings(p) else airingsHere = true
-                    }
-                }
-                if (airingsHere) {
-                    AiringsDialog(programId = p.id, onNote = { msg -> if (onActed != null) onActed(msg) }, onDismiss = { airingsHere = false })
-                }
-                if (schedule != null && rights.record) {
-                    val fav = schedule?.favourite
-                    Button(
-                        if (fav == null) "Add to Recording Favourites" else "Remove from Recording Favourites",
-                        modifier = Modifier.fillMaxWidth(),
-                        leading = { Text(if (fav == null) "☆" else "★", color = Jc.Gold, fontSize = 18.sp) },
-                    ) {
-                        if (fav != null && armed != "fav") {
-                            armed = "fav"
-                        } else {
-                            armed = null
-                            act { (if (fav == null) Jdvr.liveTv.addFavourite(p.id) else Jdvr.liveTv.removeFavourite(fav.id))?.message }
-                        }
-                    }
-                    if (armed == "fav") Text("Press again to remove it from Recording Favourites", color = Jc.Amber, fontSize = 13.sp)
-                }
-                eh?.let { info ->
-                    Button(if (info.markedWatched) "Unmark watched" else "Mark watched", modifier = Modifier.fillMaxWidth(), leading = { Text("✓", color = Jc.Green) }) {
-                        act {
-                            Jdvr.liveTv.setProgramWatched(p.id, !info.markedWatched)
-                            if (info.markedWatched) "No longer marked watched." else "Marked watched: every airing of this episode shows it."
-                        }
-                    }
-                    if (info.canForget) {
-                        Button(if (armed == "forget") "Press again to forget" else "Forget this episode", modifier = Modifier.fillMaxWidth()) {
-                            if (armed != "forget") {
-                                armed = "forget"
+            buttons = {
+                // What this TV may not do (JellyDVR Space's device rights) is named, not offered; the
+                // line keeps the panel's first focus.
+                val rights = deviceRights()
+                // Two columns, so every action stays on the screen: watching and recording on the left,
+                // the rest on the right.
+                MenuColumns(
+                    fit = true,
+                    left = {
+                        if (p.isOn()) {
+                            if (rights.liveTv) {
+                                Button("Watch live", modifier = Modifier.fillMaxWidth().focusRequester(first), onClick = onWatch)
                             } else {
-                                armed = null
+                                Button("Live TV is off for this TV", modifier = Modifier.fillMaxWidth().focusRequester(first)) {}
+                            }
+                        }
+                        recordingItem?.let { id -> Button("Watch from start", modifier = Modifier.fillMaxWidth(), leading = { Text("⏮", color = Jc.Text) }) { onWatchFromStart(id) } }
+                        // A copy Episode History knows about (recorded before, or in a library).
+                        eh?.libraryItemId?.toUuid()?.let { lib ->
+                            val resume = eh?.libraryItemPositionTicks?.div(10_000L) ?: 0L
+                            Button(if (resume > 60_000) "Play from library · ${resume / 60_000} min in" else "Play from library", modifier = Modifier.fillMaxWidth(), leading = { Text("▶", color = Jc.Text) }) {
+                                onPlayItem(com.mackandall.jdvr.PlayRecording(lib))
+                            }
+                        }
+                        val recordModifier = if (p.isOn()) Modifier.fillMaxWidth() else Modifier.fillMaxWidth().focusRequester(first)
+                        val bufferNow = buffer
+                        if (!rights.record) {
+                            Button("Recording is off for this TV", modifier = recordModifier) {}
+                        } else if (isBuffer && bufferNow != null && !bufferNow.kept) {
+                            // Only a buffer so far: Record keeps it (recorded from when it started).
+                            Button("Record (keep the live buffer)", modifier = recordModifier, leading = { Dot(Jc.Recording) }) {
                                 act {
-                                    Jdvr.liveTv.forgetProgram(p.id)
-                                    "Forgotten: it can be recorded again."
+                                    Jdvr.liveTv.keepBuffer(bufferNow.id, true)
+                                    "Recording: the live TV buffer is kept."
+                                }
+                            }
+                        } else if (p.isRecording && !isBuffer) {
+                            Button("Don't record this", modifier = recordModifier, leading = { Dot(Jc.Recording) }) {
+                                act {
+                                    Jdvr.liveTv.cancelRecording(p.timerId!!)
+                                    "Recording cancelled."
+                                }
+                            }
+                        } else {
+                            Button("Record", modifier = recordModifier, leading = { Dot(Jc.Recording) }) {
+                                act {
+                                    Jdvr.liveTv.record(p.id, series = false)
+                                    "Recording scheduled."
                                 }
                             }
                         }
-                    }
-                }
-                showForget?.takeIf { it.episodes > 0 }?.let { sf ->
-                    Button(if (armed == "forgetShow") "Press again: forget all of ${sf.show ?: "this show"}" else "Forget this show (${sf.episodes} episode${if (sf.episodes == 1) "" else "s"})", modifier = Modifier.fillMaxWidth()) {
-                        if (armed != "forgetShow") {
-                            armed = "forgetShow"
-                        } else {
-                            armed = null
-                            act {
-                                val r = Jdvr.liveTv.forgetShow(p.id, dryRun = false)
-                                if (r == null) "Couldn't forget it." else "Forgot ${sf.show ?: "the show"}: its episodes can be recorded again" + if (r.keptInLibrary > 0) " (copies still in the library still count)." else "."
+                        if (p.isSeries && rights.record) {
+                            if (p.seriesTimerId != null) {
+                                Button("Cancel series recording", modifier = Modifier.fillMaxWidth()) {
+                                    act {
+                                        Jdvr.liveTv.cancelSeries(p.seriesTimerId!!)
+                                        "Series recording cancelled."
+                                    }
+                                }
+                            } else {
+                                Button("Record series", modifier = Modifier.fillMaxWidth()) {
+                                    act {
+                                        Jdvr.liveTv.record(p.id, series = true)
+                                        "Series recording set up."
+                                    }
+                                }
                             }
                         }
-                    }
-                }
+                        if (schedule?.outcome != null && rights.record) {
+                            Button("Record this instead", modifier = Modifier.fillMaxWidth(), leading = { Dot(Jc.Amber) }) {
+                                act { Jdvr.liveTv.recordInstead(p.id)?.message }
+                            }
+                        }
+                    },
+                    right = {
+                        // Every later airing of it, with tuner clashes and commercial-free channels (Episode History).
+                        if (eh != null) {
+                            Button("Other airings", modifier = Modifier.fillMaxWidth()) {
+                                if (onOtherAirings != null) onOtherAirings(p) else airingsHere = true
+                            }
+                        }
+                        if (airingsHere) {
+                            AiringsDialog(programId = p.id, onNote = { msg -> if (onActed != null) onActed(msg) }, onDismiss = { airingsHere = false })
+                        }
+                        if (schedule != null && rights.record) {
+                            val fav = schedule?.favourite
+                            Button(
+                                if (fav == null) "Add to Recording Favourites" else "Remove from Recording Favourites",
+                                modifier = Modifier.fillMaxWidth(),
+                                leading = { Text(if (fav == null) "☆" else "★", color = Jc.Gold, fontSize = 18.sp) },
+                            ) {
+                                if (fav != null && armed != "fav") {
+                                    armed = "fav"
+                                } else {
+                                    armed = null
+                                    act { (if (fav == null) Jdvr.liveTv.addFavourite(p.id) else Jdvr.liveTv.removeFavourite(fav.id))?.message }
+                                }
+                            }
+                            if (armed == "fav") Text("Press again to remove it from Recording Favourites", color = Jc.Amber, fontSize = 13.sp)
+                        }
+                        eh?.let { info ->
+                            Button(if (info.markedWatched) "Unmark watched" else "Mark watched", modifier = Modifier.fillMaxWidth(), leading = { Text("✓", color = Jc.Green) }) {
+                                act {
+                                    Jdvr.liveTv.setProgramWatched(p.id, !info.markedWatched)
+                                    if (info.markedWatched) "No longer marked watched." else "Marked watched: every airing of this episode shows it."
+                                }
+                            }
+                            if (info.canForget) {
+                                Button(if (armed == "forget") "Press again to forget" else "Forget this episode", modifier = Modifier.fillMaxWidth()) {
+                                    if (armed != "forget") {
+                                        armed = "forget"
+                                    } else {
+                                        armed = null
+                                        act {
+                                            Jdvr.liveTv.forgetProgram(p.id)
+                                            "Forgotten: it can be recorded again."
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        showForget?.takeIf { it.episodes > 0 }?.let { sf ->
+                            Button(if (armed == "forgetShow") "Press again: forget all of ${sf.show ?: "this show"}" else "Forget this show (${sf.episodes} episode${if (sf.episodes == 1) "" else "s"})", modifier = Modifier.fillMaxWidth()) {
+                                if (armed != "forgetShow") {
+                                    armed = "forgetShow"
+                                } else {
+                                    armed = null
+                                    act {
+                                        val r = Jdvr.liveTv.forgetShow(p.id, dryRun = false)
+                                        if (r == null) "Couldn't forget it." else "Forgot ${sf.show ?: "the show"}: its episodes can be recorded again" + if (r.keptInLibrary > 0) " (copies still in the library still count)." else "."
+                                    }
+                                }
+                            }
+                        }
+                    },
+                )
+            },
+            footer = {
+                note?.let { Text(it, color = Jc.Muted, fontSize = 14.sp) }
             },
         )
-        note?.let { Text(it, color = Jc.Muted, fontSize = 14.sp) }
     }
 }
 
-/** A programme's actions panel (guide, search): room for its buttons in two columns. */
-internal val PanelWidth = 720.dp
+/**
+ * The header over two columns of buttons and a note under them, the header and note as wide as
+ * the buttons (at least 360 dp), so the panel takes only the room its buttons need.
+ */
+@Composable
+private fun FitToButtons(
+    header: @Composable () -> Unit,
+    buttons: @Composable () -> Unit,
+    footer: @Composable () -> Unit,
+) {
+    androidx.compose.ui.layout.Layout(content = {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) { header() }
+        Box { buttons() }
+        Column { footer() }
+    }) { m, c ->
+        val gap = 10.dp.roundToPx()
+        val b = m[1].measure(androidx.compose.ui.unit.Constraints(maxWidth = c.maxWidth))
+        val w = maxOf(b.width, 360.dp.roundToPx()).coerceAtMost(c.maxWidth)
+        val fixed = androidx.compose.ui.unit.Constraints(minWidth = w, maxWidth = w)
+        val h = m[0].measure(fixed)
+        val f = m[2].measure(fixed)
+        val footerAt = h.height + gap + b.height + gap
+        layout(w, if (f.height > 0) footerAt + f.height else h.height + gap + b.height) {
+            h.place(0, 0)
+            b.place(0, h.height + gap)
+            if (f.height > 0) f.place(0, footerAt)
+        }
+    }
+}
+
+/**
+ * Where a programme's actions open (Settings › Guide › Programme actions): docked on the right,
+ * full height, or floating in the middle over the dimmed screen like the other menus. Back, or
+ * focus leaving it, closes it ([onDismiss]).
+ */
+@Composable
+internal fun androidx.compose.foundation.layout.BoxScope.ProgramActionsHost(
+    onDismiss: () -> Unit,
+    content: @Composable () -> Unit,
+) {
+    if (Jdvr.prefs.programActions == com.mackandall.jdvr.data.Prefs.FLOATING) {
+        androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss, properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)) {
+            Box(Modifier.heightIn(max = 520.dp).clip(RoundedCornerShape(16.dp)).background(Jc.Sheet).padding(6.dp)) { content() }
+        }
+    } else {
+        Box(Modifier.align(Alignment.CenterEnd).fillMaxHeight().background(Jc.Sheet)) { content() }
+    }
+}
 
 @Composable
 fun Dot(color: androidx.compose.ui.graphics.Color) = Box(Modifier.size(12.dp).background(color, CircleShape))

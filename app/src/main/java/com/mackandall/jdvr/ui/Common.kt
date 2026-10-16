@@ -3,6 +3,7 @@ package com.mackandall.jdvr.ui
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -53,11 +54,14 @@ val LocalWideButtons = androidx.compose.runtime.compositionLocalOf { false }
 fun MenuColumns(
     left: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit,
     right: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit,
+    // Each column only as wide as its longest button (not halves of the space there is).
+    fit: Boolean = false,
 ) {
-    androidx.compose.foundation.layout.Row(Modifier.fillMaxWidth(), horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(16.dp)) {
+    val column = if (fit) Modifier.width(androidx.compose.foundation.layout.IntrinsicSize.Max) else null
+    androidx.compose.foundation.layout.Row(if (fit) Modifier else Modifier.fillMaxWidth(), horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(16.dp)) {
         androidx.compose.runtime.CompositionLocalProvider(LocalWideButtons provides true) {
-            androidx.compose.foundation.layout.Column(Modifier.weight(1f), verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(10.dp), content = left)
-            androidx.compose.foundation.layout.Column(Modifier.weight(1f), verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(10.dp), content = right)
+            androidx.compose.foundation.layout.Column(column ?: Modifier.weight(1f), verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(10.dp), content = left)
+            androidx.compose.foundation.layout.Column(column ?: Modifier.weight(1f), verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(10.dp), content = right)
         }
     }
 }

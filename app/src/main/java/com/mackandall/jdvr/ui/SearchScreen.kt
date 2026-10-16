@@ -188,7 +188,7 @@ fun SearchScreen(
         // A programme's actions, over the right of the results.
         program?.let { p ->
             BackHandler { program = null }
-            Box(Modifier.align(Alignment.CenterEnd).width(PanelWidth).fillMaxHeight().background(Jc.Sheet)) {
+            ProgramActionsHost(onDismiss = { program = null }) {
                 ProgramPanel(
                     program = p,
                     channel = channels.firstOrNull { it.id == p.channelId },

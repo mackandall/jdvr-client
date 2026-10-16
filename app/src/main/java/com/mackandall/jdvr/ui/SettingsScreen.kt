@@ -101,6 +101,11 @@ fun SettingsScreen(
             prefs.changeGuideInfo(order[(order.indexOf(prefs.guideInfo).coerceAtLeast(0) + 1) % order.size])
         }
         Choice(
+            label = "Programme actions",
+            help = "What OK on a programme opens (in the guide and in search): a panel on the right, ◄ back to the guide; or a card in the middle over the dimmed guide, like the other menus.",
+            value = if (prefs.programActions == Prefs.FLOATING) "Floating" else "Docked on the right",
+        ) { prefs.changeProgramActions(if (prefs.programActions == Prefs.FLOATING) Prefs.DOCKED else Prefs.FLOATING) }
+        Choice(
             label = "Background art",
             help = "Rest on a programme and its picture fades in behind the guide, which turns see-through. Off keeps the plain dark guide.",
             value = if (prefs.guideArtSeconds == 0) "Off" else "After ${prefs.guideArtSeconds} s",

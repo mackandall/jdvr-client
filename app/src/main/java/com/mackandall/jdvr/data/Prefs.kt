@@ -18,6 +18,10 @@ class Prefs(
     var guideInfo by mutableStateOf(p.getString("guideInfo", BOTTOM) ?: BOTTOM)
         private set
 
+    /** Guide and search: a programme's actions "docked" on the right, or "floating" in the middle. */
+    var programActions by mutableStateOf(p.getString("programActions", DOCKED) ?: DOCKED)
+        private set
+
     /** Commercials in recordings: "ask" (a Skip prompt), "auto" or "off". */
     var commercialSkip by mutableStateOf(p.getString("commercialSkip", ASK) ?: ASK)
         private set
@@ -287,6 +291,11 @@ class Prefs(
         p.edit().putString("guideInfo", v).apply()
     }
 
+    fun changeProgramActions(v: String) {
+        programActions = v
+        p.edit().putString("programActions", v).apply()
+    }
+
     fun changeCommercialSkip(v: String) {
         commercialSkip = v
         p.edit().putString("commercialSkip", v).apply()
@@ -329,6 +338,8 @@ class Prefs(
         const val SIDE = "side"
         const val TOP = "top"
         const val BOTTOM = "bottom"
+        const val DOCKED = "docked"
+        const val FLOATING = "floating"
         const val ASK = "ask"
         const val AUTO = "auto"
         const val OFF = "off"
