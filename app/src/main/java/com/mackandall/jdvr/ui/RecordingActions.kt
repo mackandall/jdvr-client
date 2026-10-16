@@ -194,6 +194,7 @@ fun RecordingActions(
     val canDelete = canDeleteNow ?: canDelete
     WatchLiveButtons(itemId)
     StopRecordingButtons(itemId, onNote, onStopped = { stops++ })
+    RerecordButtons(itemId, onNote)
     val cut = cuttingFor(itemId.toString())
     if (cut != null) {
         CuttingBar(cut, onStop = if (cut.stoppable && edit != null) { { scope.launch { onNote(runCatching { Jdvr.liveTv.stopCut(itemId)?.message }.getOrNull() ?: "Couldn't stop it."); MoveWatcher.kick() } } } else null)

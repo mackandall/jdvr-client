@@ -220,6 +220,9 @@ fun GuideScreen(
         }
     }
 
+    // "Other airings" of a programme, opened from its panel (which closes as the dialog takes focus).
+    var airingsFor by remember { mutableStateOf<Program?>(null) }
+
     // Focus gone from the actions panel (◄ to the menu, or back into the grid): it closes. After a
     // moment, so a button the panel swaps for another (Record → Don't record) doesn't close it.
     var panelHasFocus by remember { mutableStateOf(false) }
@@ -257,6 +260,7 @@ fun GuideScreen(
             },
             onChanged = { reload++ },
             onClose = { closePanel() },
+            onOtherAirings = { airingsFor = it },
             // An action that worked: close the panel, say what happened, refresh the guide.
             onActed = { msg ->
                 guideNote = msg
@@ -449,6 +453,29 @@ fun GuideScreen(
         selected?.let { p ->
             Box(Modifier.align(Alignment.CenterEnd).width(380.dp).fillMaxHeight().background(Jc.Sheet)) { Actions(p) }
         }
+    }
+    airingsFor?.let { p ->
+        AiringsDialog(
+            programId = p.id,
+            onNote = { msg ->
+                guideNote = msg
+                guideScope.launch {
+                    delay(1500) // the server schedules in the background
+                    reload++
+                }
+            },
+            onDismiss = {
+                airingsFor = null
+                // Back to the programme it was opened from.
+                guideScope.launch {
+                    repeat(10) {
+                        delay(60)
+                        val r = cellFocus[p.id] ?: return@repeat
+                        if (runCatching { r.requestFocus() }.isSuccess) return@launch
+                    }
+                }
+            },
+        )
     }
     }
     }
@@ -809,8 +836,12 @@ internal fun ProgramPanel(
     // When given, a successful action hands its message here (the caller closes the panel);
     // otherwise the panel shows it and stays open.
     onActed: ((String?) -> Unit)? = null,
+    // "Other airings": the caller shows them (the guide, whose panel closes when focus leaves
+    // it); without it the panel opens them itself.
+    onOtherAirings: ((Program) -> Unit)? = null,
 ) {
     var p by remember(program.id) { mutableStateOf(program) }
+    var airingsHere by remember(program.id) { mutableStateOf(false) }
     // Episode History (watched mark, a copy to play, forget) and JellyDVR Live (is this only a buffer).
     var eh by remember(program.id) { mutableStateOf<LiveTvRepository.EhProgram?>(null) }
     // What "Forget this show" would forget (administrators, a show with history).
@@ -968,6 +999,15 @@ internal fun ProgramPanel(
                     }
                 }
             }
+        }
+        // Every later airing of it, with tuner clashes and commercial-free channels (Episode History).
+        if (eh != null) {
+            Button("Other airings", modifier = Modifier.fillMaxWidth()) {
+                if (onOtherAirings != null) onOtherAirings(p) else airingsHere = true
+            }
+        }
+        if (airingsHere) {
+            AiringsDialog(programId = p.id, onNote = { msg -> if (onActed != null) onActed(msg) }, onDismiss = { airingsHere = false })
         }
         if (schedule?.outcome != null && rights.record) {
             Button("Record this instead", modifier = Modifier.fillMaxWidth(), leading = { Dot(Jc.Amber) }) {

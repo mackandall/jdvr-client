@@ -102,6 +102,13 @@ fun ScheduledScreen(
                                 buffer = r.programId?.plainId() in bufferIds,
                                 modifier = if (r == list.first()) Modifier.focusRequester(entry) else Modifier,
                                 onToggle = { open = if (open == r.timerId) null else r.timerId },
+                                onNote = { msg ->
+                                    note = msg
+                                    scope.launch {
+                                        delay(1500) // the server schedules in the background
+                                        reload++
+                                    }
+                                },
                                 // Recording now: its file so far (Back to live in the player), or its channel.
                                 onWatch = { fromStart ->
                                     scope.launch {
@@ -144,6 +151,7 @@ private fun ScheduleRow(
     onToggle: () -> Unit,
     onCancel: () -> Unit,
     onWatch: (fromStart: Boolean) -> Unit,
+    onNote: (String) -> Unit = {},
 ) {
     val start = localTime(r.start)
     val end = localTime(r.end)
@@ -207,6 +215,16 @@ private fun ScheduleRow(
                         } else {
                             armed = false
                             onCancel()
+                        }
+                    }
+                }
+                // Another airing of it instead (fewer tuners busy, commercial-free); Episode History.
+                if (!r.recordingNow && r.programId != null && !buffer) {
+                    var airings by remember(r.timerId) { mutableStateOf(false) }
+                    Button("Other airings") { airings = true }
+                    if (airings) {
+                        r.programId.toUuid()?.let { pid ->
+                            AiringsDialog(programId = pid, onNote = onNote, onDismiss = { airings = false })
                         }
                     }
                 }

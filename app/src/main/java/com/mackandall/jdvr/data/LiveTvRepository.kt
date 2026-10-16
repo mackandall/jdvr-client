@@ -789,6 +789,85 @@ class LiveTvRepository {
         @SerialName("Message") val message: String = "",
     )
 
+    // ---- Other airings and Re-record (Episode History) ----------------------------------------
+
+    /** One airing of a movie or episode: where, when, and how it fits the tuners. */
+    @Serializable
+    data class Airing(
+        @SerialName("ProgramId") val programId: String,
+        @SerialName("Name") val name: String = "",
+        @SerialName("EpisodeTitle") val episodeTitle: String? = null,
+        @SerialName("Start") val start: String = "",
+        @SerialName("End") val end: String = "",
+        @SerialName("ChannelId") val channelId: String? = null,
+        @SerialName("ChannelName") val channelName: String? = null,
+        @SerialName("ChannelNumber") val channelNumber: String? = null,
+        @SerialName("HasLogo") val hasLogo: Boolean = false,
+        @SerialName("CommercialFree") val commercialFree: Boolean = false,
+        // "recording" or "series" when a recording is set for it already.
+        @SerialName("Recording") val recording: String? = null,
+        @SerialName("Busy") val busy: Int = 0,
+        @SerialName("Tuners") val tuners: Int = 0,
+        @SerialName("Clash") val clash: Boolean = false,
+        @SerialName("Clashes") val clashes: List<String> = emptyList(),
+        @SerialName("IsThis") val isThis: Boolean = false,
+        @SerialName("OnNow") val onNow: Boolean = false,
+    )
+
+    @Serializable
+    data class AiringsResult(
+        @SerialName("Title") val title: String? = null,
+        @SerialName("IsMovie") val isMovie: Boolean = false,
+        @SerialName("Tuners") val tuners: Int = 0,
+        @SerialName("Airings") val airings: List<Airing> = emptyList(),
+    )
+
+    /** Whether "Re-record…" is offered for an item, and where an asked-for re-record stands. */
+    @Serializable
+    data class RerecordState(
+        @SerialName("Eligible") val eligible: Boolean = false,
+        @SerialName("Why") val why: String? = null,
+        @SerialName("CanManage") val canManage: Boolean = false,
+        // waiting, scheduled, replaced, gaveup, kept…
+        @SerialName("State") val state: String? = null,
+        @SerialName("Asked") val asked: Boolean = false,
+        @SerialName("Reason") val reason: String? = null,
+        @SerialName("NextStart") val nextStart: String? = null,
+        @SerialName("NextChannel") val nextChannel: String? = null,
+        @SerialName("Short") val short: String? = null,
+        @SerialName("Text") val text: String? = null,
+    ) {
+        val pending: Boolean get() = asked && (state == "waiting" || state == "scheduled")
+    }
+
+    /** "Other airings" of a library item or a guide entry (null without Episode History). */
+    suspend fun airings(
+        itemId: UUID? = null,
+        programId: UUID? = null,
+    ): AiringsResult? =
+        plugin(
+            HttpMethod.GET,
+            "/EpisodeHistory/Airings",
+            listOfNotNull(itemId?.let { "itemId" to it.toString() }, programId?.let { "programId" to it.toString() }).toMap(),
+        )
+
+    suspend fun rerecordState(itemId: UUID): RerecordState? = plugin(HttpMethod.GET, "/EpisodeHistory/Item/$itemId/Rerecord")
+
+    /** Re-records a flawed recording at [programId], or the best airing found when null. */
+    suspend fun rerecord(
+        itemId: UUID,
+        programId: String?,
+        reason: String?,
+    ): Message? =
+        plugin(
+            HttpMethod.POST,
+            "/EpisodeHistory/Item/$itemId/Rerecord",
+            listOfNotNull(programId?.let { "programId" to it }, reason?.let { "reason" to it }).toMap(),
+        )
+
+    suspend fun cancelRerecord(itemId: UUID): Boolean =
+        runCatching { withContext(Dispatchers.IO) { api.request(method = HttpMethod.DELETE, pathTemplate = "/EpisodeHistory/Item/$itemId/Rerecord") } }.isSuccess
+
     @Serializable
     data class FavouriteRef(
         @SerialName("Id") val id: String = "",
