@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -38,12 +39,66 @@ import com.mackandall.jdvr.data.toUuid
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.time.Instant
+import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.ZoneOffset
 import java.util.UUID
 
 private val Reasons = listOf("Partial", "Picture trouble", "Audio trouble", "Ads or edited version", "Other")
+
+/** "Today", "Tomorrow", or the day. */
+private fun dayWord(t: LocalDateTime): String =
+    when (t.toLocalDate()) {
+        LocalDate.now() -> "Today"
+        LocalDate.now().plusDays(1) -> "Tomorrow"
+        else -> t.day()
+    }
+
+/**
+ * The line under the title: when it's on next and how many airings, or, when it isn't in the
+ * guide, what the guide has of the show and how far it reaches.
+ */
+private fun summary(
+    r: LiveTvRepository.AiringsResult,
+    airings: List<LiveTvRepository.Airing>,
+    rerecord: Boolean,
+    fromGuide: Boolean,
+): String {
+    if (airings.isNotEmpty()) {
+        val next = airings.first()
+        val at = localOf(next.start)
+        val channel = listOfNotNull(next.channelNumber, next.channelName).joinToString(" ").ifEmpty { null }?.let { " on $it" } ?: ""
+        // "today", "tomorrow" mid-sentence; a day name stays as it is.
+        val whenText = at?.let { t -> dayWord(t).let { if (it == "Today" || it == "Tomorrow") it.lowercase() else it } + " at " + t.time() }
+        val first = when {
+            next.onNow -> "On now$channel" + if (airings.size > 1) ", and ${airings.size - 1} more in the guide" else ""
+            whenText == null -> "${airings.size} airing${if (airings.size == 1) "" else "s"} in the guide"
+            airings.size == 1 -> "Airs again $whenText$channel"
+            else -> "${airings.size} airings in the guide, the next $whenText$channel"
+        }
+        return listOfNotNull(first, if (r.tuners > 0) "${r.tuners} tuners" else null).joinToString(" · ")
+    }
+    val until = localOf(r.guideUntil)?.day()
+    val head = when {
+        rerecord -> "Not in the guide yet: Automatic goes on looking."
+        fromGuide -> "No other airings in the guide."
+        else -> "Not in the guide."
+    }
+    val f = r.guideFirst?.label
+    val l = r.guideLast?.label
+    val has = when {
+        r.isMovie || r.guideShowings == 0 -> null
+        f != null && l != null && f != l -> "$f to $l"
+        else -> l
+    }
+    val reach = when {
+        has != null -> "The guide has $has" + (until?.let { ", up to $it" } ?: "") + "."
+        until != null -> "The guide runs to $until."
+        else -> null
+    }
+    return listOfNotNull(head, reach).joinToString(" ")
+}
 
 /** A server time ("…Z", or without a zone: UTC) in local time. */
 private fun localOf(iso: String?): LocalDateTime? =
@@ -123,17 +178,18 @@ fun AiringsDialog(
         ) {
             val r = result
             val airings = r?.airings.orEmpty().filter { !it.isThis }
-            Text(if (rerecord) "Re-record" else "Other airings", color = Jc.Text, fontSize = 24.sp, fontWeight = FontWeight.SemiBold)
+            // Close at the top, where focus starts: one stray OK mustn't record or re-record anything.
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(if (rerecord) "Re-record" else "Other airings", color = Jc.Text, fontSize = 24.sp, fontWeight = FontWeight.SemiBold)
+                Spacer(Modifier.weight(1f))
+                Button("Close", modifier = Modifier.focusRequester(first), onClick = onDismiss)
+            }
+            r?.title?.let { Text(it, color = Jc.Text, fontSize = 17.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
             Text(
                 when {
                     !loaded -> "Looking in the guide…"
                     r == null -> "Episode History isn't on this server."
-                    airings.isEmpty() -> listOfNotNull(r.title, when {
-                            rerecord -> "Not in the guide yet: Automatic goes on looking."
-                            programId != null -> "No other airings in the guide."
-                            else -> "Not in the guide."
-                        }).joinToString(" · ")
-                    else -> listOfNotNull(r.title, "${airings.size} airing${if (airings.size == 1) "" else "s"} in the guide", if (r.tuners > 0) "${r.tuners} tuners" else null).joinToString(" · ")
+                    else -> summary(r, airings, rerecord, fromGuide = programId != null)
                 },
                 color = Jc.Muted,
                 fontSize = 15.sp,
@@ -146,10 +202,10 @@ fun AiringsDialog(
                 Button(
                     "Automatic: the best airing (a free tuner, commercial-free, soonest)",
                     primary = true,
-                    modifier = Modifier.fillMaxWidth().focusRequester(first),
+                    modifier = Modifier.fillMaxWidth(),
                 ) { doRerecord(null) }
             }
-            airings.forEachIndexed { i, a ->
+            airings.forEach { a ->
                 AiringRow(
                     a,
                     action =
@@ -158,10 +214,8 @@ fun AiringsDialog(
                             rerecord -> "Re-record here"
                             else -> "Record"
                         },
-                    modifier = if (!rerecord && i == 0) Modifier.focusRequester(first) else Modifier,
                 ) { if (rerecord) doRerecord(a.programId) else doRecord(a) }
             }
-            Button("Close", modifier = if (r == null || (!rerecord && airings.isEmpty())) Modifier.focusRequester(first) else Modifier, onClick = onDismiss)
         }
     }
 }
@@ -170,7 +224,6 @@ fun AiringsDialog(
 private fun AiringRow(
     a: LiveTvRepository.Airing,
     action: String?,
-    modifier: Modifier,
     onAction: () -> Unit,
 ) {
     val at = localOf(a.start)
@@ -179,15 +232,21 @@ private fun AiringRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
+        ChannelTile(
+            a.channelId?.let { LiveTvRepository.DateChannel(id = it, name = a.channelName.orEmpty(), number = a.channelNumber, hasLogo = a.hasLogo) },
+            numberInside = true,
+            width = 96,
+            height = 56,
+        )
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Text(
-                listOfNotNull(at?.let { it.day() + " · " + it.time() }, if (a.onNow) "on now" else null).joinToString(" · "),
+                listOfNotNull(at?.let { dayWord(it) + " · " + it.time() }, if (a.onNow) "on now" else null).joinToString(" · "),
                 color = Jc.Text,
                 fontSize = 17.sp,
                 fontWeight = FontWeight.SemiBold,
             )
             Text(
-                listOfNotNull(listOfNotNull(a.channelNumber, a.channelName).joinToString(" ").ifEmpty { null }, a.episodeTitle).joinToString(" · "),
+                listOfNotNull(a.channelName?.ifEmpty { null }, a.episodeTitle).joinToString(" · "),
                 color = Jc.Muted,
                 fontSize = 14.sp,
                 maxLines = 1,
@@ -202,7 +261,7 @@ private fun AiringRow(
                 }
             }
         }
-        if (action != null) Button(action, modifier = modifier, onClick = onAction)
+        if (action != null) Button(action, onClick = onAction)
     }
 }
 

@@ -820,7 +820,23 @@ class LiveTvRepository {
         @SerialName("IsMovie") val isMovie: Boolean = false,
         @SerialName("Tuners") val tuners: Int = 0,
         @SerialName("Airings") val airings: List<Airing> = emptyList(),
+        // How far the guide reaches, and the series' first and last episodes in it.
+        @SerialName("GuideUntil") val guideUntil: String? = null,
+        @SerialName("GuideShowings") val guideShowings: Int = 0,
+        @SerialName("GuideFirst") val guideFirst: GuideEpisode? = null,
+        @SerialName("GuideLast") val guideLast: GuideEpisode? = null,
     )
+
+    @Serializable
+    data class GuideEpisode(
+        @SerialName("Season") val season: Int? = null,
+        @SerialName("Episode") val episode: Int? = null,
+        @SerialName("Title") val title: String? = null,
+        @SerialName("Start") val start: String = "",
+    ) {
+        /** "S1 E29", or its title when it has no numbers. */
+        val label: String? get() = episode?.let { e -> listOfNotNull(season?.let { "S$it" }, "E$e").joinToString(" ") } ?: title
+    }
 
     /** Whether "Re-record…" is offered for an item, and where an asked-for re-record stands. */
     @Serializable

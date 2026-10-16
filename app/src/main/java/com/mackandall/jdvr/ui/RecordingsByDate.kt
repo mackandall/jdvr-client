@@ -267,7 +267,7 @@ private fun WatchedDot(r: DateRecording) {
  * the channel isn't known.
  */
 @Composable
-private fun ChannelTile(
+internal fun ChannelTile(
     ch: DateChannel?,
     numberInside: Boolean,
     numberColor: Color = Jc.Muted,
