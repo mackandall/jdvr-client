@@ -3,6 +3,8 @@ package com.mackandall.jdvr.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -88,7 +90,8 @@ fun QuickActions(
     var d by remember(itemId) { mutableStateOf<LiveTvRepository.ItemDetails?>(null) }
     var failed by remember(itemId) { mutableStateOf(false) }
     var note by remember { mutableStateOf<String?>(null) }
-    var hasFocus by remember { mutableStateOf(false) }
+    // Close comes first in the dialog and would take focus by default: focus goes on to Play.
+    var firstFocused by remember { mutableStateOf(false) }
     // The OK that opened the menu is still held: its repeats and its release would press the
     // button that just took focus (Play). OK does nothing here until a fresh press.
     var okFresh by remember { mutableStateOf(false) }
@@ -110,11 +113,14 @@ fun QuickActions(
     }
 
     val scroll = rememberScrollState()
+    // With the recording's (or show's) actions: two columns, the item's own on the left, so the
+    // menu stays on the screen however long it gets.
+    val twoColumns = extra != null
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Column(
             Modifier
-                .width(560.dp)
-                .heightIn(max = 620.dp)
+                .width(if (twoColumns) 760.dp else 560.dp)
+                .heightIn(max = 520.dp)
                 .clip(RoundedCornerShape(16.dp))
                 .background(Jc.Sheet)
                 .onPreviewKeyEvent { k ->
@@ -130,80 +136,76 @@ fun QuickActions(
                         else -> true
                     }
                 }
-                .onFocusChanged { hasFocus = it.hasFocus }
                 .verticalScroll(scroll)
                 .padding(28.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             val det = d
             val item = det?.item
-            Text(item?.let { titleOf(it) } ?: if (failed) "Couldn't load this item" else "Loading…", color = Jc.Text, fontSize = 24.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            item?.let { subtitleOf(it, det) }?.let { Text(it, color = Jc.Muted, fontSize = 15.sp) }
+            // Close at the top right, as in the Other airings popup; focus still starts on Play.
+            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(item?.let { titleOf(it) } ?: if (failed) "Couldn't load this item" else "Loading…", color = Jc.Text, fontSize = 24.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    item?.let { subtitleOf(it, det) }?.let { Text(it, color = Jc.Muted, fontSize = 15.sp) }
+                }
+                Button("Close", modifier = if (failed) Modifier.focusRequester(first).onFocusChanged { if (it.isFocused) firstFocused = true } else Modifier, onClick = onDismiss)
+            }
             note?.let { Text(it, color = Jc.Focus, fontSize = 15.sp) }
             if (item != null) {
-                val firstMod = Modifier.fillMaxWidth().focusRequester(first)
-                if (onShowPage) {
-                    // Mark watched, below, is the first button.
-                } else if (onOpenShow != null) {
-                    Button("Open show", primary = true, modifier = firstMod) {
-                        onDismiss()
-                        onOpenShow()
-                    }
-                } else {
-                    val resume = item.resumeMs > 0 && !item.played
-                    Button(if (resume) "Resume from ${item.resumeMs / 60_000} min" else "Play", primary = true, modifier = firstMod) {
-                        onDismiss()
-                        onPlay(false)
-                    }
-                    if (resume) {
-                        Button("Play from start", modifier = Modifier.fillMaxWidth()) {
+                val watch: @Composable ColumnScope.() -> Unit = {
+                    val firstMod = Modifier.fillMaxWidth().focusRequester(first).onFocusChanged { if (it.isFocused) firstFocused = true }
+                    if (onShowPage) {
+                        // Mark watched, below, is the first button.
+                    } else if (onOpenShow != null) {
+                        Button("Open show", primary = true, modifier = firstMod) {
                             onDismiss()
-                            onPlay(true)
+                            onOpenShow()
+                        }
+                    } else {
+                        val resume = item.resumeMs > 0 && !item.played
+                        Button(if (resume) "Resume from ${item.resumeMs / 60_000} min" else "Play", primary = true, modifier = firstMod) {
+                            onDismiss()
+                            onPlay(false)
+                        }
+                        if (resume) {
+                            Button("Play from start", modifier = Modifier.fillMaxWidth()) {
+                                onDismiss()
+                                onPlay(true)
+                            }
+                        }
+                        Button("Details", modifier = Modifier.fillMaxWidth()) {
+                            onDismiss()
+                            onDetails()
                         }
                     }
-                    Button("Details", modifier = Modifier.fillMaxWidth()) {
-                        onDismiss()
-                        onDetails()
-                    }
-                }
-                // A show: every episode of it (in any library), as Jellyfin marks a series.
-                val all = if (item.type == "Series") " (all episodes)" else ""
-                Button(if (item.played) "Mark unwatched$all" else "Mark watched$all", modifier = if (onShowPage) firstMod else Modifier.fillMaxWidth()) {
-                    scope.launch {
-                        runCatching { Jdvr.liveTv.setPlayed(item.id, !item.played) }
-                            .onSuccess {
-                                note = if (item.played) "Marked unwatched" else "Marked watched"
-                                d = det.copy(item = item.copy(played = !item.played, resumeMs = if (item.played) item.resumeMs else 0L))
-                                onChanged()
-                            }.onFailure { note = "Couldn't change it: ${it.message}" }
-                    }
-                }
-                // "Watch live" closes the menu first: it is a dialog, and would sit over the player.
-                val watch = LocalWatchLive.current
-                androidx.compose.runtime.CompositionLocalProvider(
-                    LocalWideButtons provides true,
-                    LocalWatchLive provides watch?.let { w -> { id: java.util.UUID -> onDismiss(); w(id) } },
-                ) {
-                    extra?.invoke(det, { note = it }, ::done)
-                }
-            } else if (failed) {
-                Button("Close", modifier = Modifier.fillMaxWidth().focusRequester(first), onClick = onDismiss)
-            }
-            // Down past Close goes round to the top (Play), with the title back in view.
-            if (item != null) {
-                Button(
-                    "Close",
-                    modifier = Modifier.fillMaxWidth().onPreviewKeyEvent { k ->
-                        if (k.key == Key.DirectionDown && k.type == KeyEventType.KeyDown) {
-                            runCatching { first.requestFocus() }
-                            scope.launch { scroll.animateScrollTo(0) }
-                            true
-                        } else {
-                            false
+                    // A show: every episode of it (in any library), as Jellyfin marks a series.
+                    val all = if (item.type == "Series") " (all episodes)" else ""
+                    Button(if (item.played) "Mark unwatched$all" else "Mark watched$all", modifier = if (onShowPage) firstMod else Modifier.fillMaxWidth()) {
+                        scope.launch {
+                            runCatching { Jdvr.liveTv.setPlayed(item.id, !item.played) }
+                                .onSuccess {
+                                    note = if (item.played) "Marked unwatched" else "Marked watched"
+                                    d = det.copy(item = item.copy(played = !item.played, resumeMs = if (item.played) item.resumeMs else 0L))
+                                    onChanged()
+                                }.onFailure { note = "Couldn't change it: ${it.message}" }
                         }
-                    },
-                    onClick = onDismiss,
-                )
+                    }
+                }
+                val more: @Composable ColumnScope.() -> Unit = {
+                    // "Watch live" closes the menu first: it is a dialog, and would sit over the player.
+                    val live = LocalWatchLive.current
+                    androidx.compose.runtime.CompositionLocalProvider(
+                        LocalWideButtons provides true,
+                        LocalWatchLive provides live?.let { w -> { id: java.util.UUID -> onDismiss(); w(id) } },
+                    ) {
+                        extra?.invoke(det, { note = it }, ::done)
+                    }
+                }
+                if (twoColumns) {
+                    MenuColumns(left = watch, right = more)
+                } else {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) { watch() }
+                }
             }
         }
     }
@@ -211,7 +213,7 @@ fun QuickActions(
         // The dialog's window needs a frame or two before anything in it can take focus, and an
         // early requestFocus silently does nothing: retry until it lands.
         repeat(40) {
-            if (hasFocus) return@LaunchedEffect
+            if (firstFocused) return@LaunchedEffect
             runCatching { first.requestFocus() }
             delay(50)
         }

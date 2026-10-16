@@ -45,6 +45,23 @@ val LocalWatchLive = androidx.compose.runtime.compositionLocalOf<((java.util.UUI
 /** Buttons stretch to the full width of what holds them (a menu's column), where this is true. */
 val LocalWideButtons = androidx.compose.runtime.compositionLocalOf { false }
 
+/**
+ * A menu's buttons in two columns side by side, each button as wide as its column, so a long menu
+ * stays on the screen. ◄ ► cross between the columns, ▲ ▼ move within one.
+ */
+@Composable
+fun MenuColumns(
+    left: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit,
+    right: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit,
+) {
+    androidx.compose.foundation.layout.Row(Modifier.fillMaxWidth(), horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(16.dp)) {
+        androidx.compose.runtime.CompositionLocalProvider(LocalWideButtons provides true) {
+            androidx.compose.foundation.layout.Column(Modifier.weight(1f), verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(10.dp), content = left)
+            androidx.compose.foundation.layout.Column(Modifier.weight(1f), verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(10.dp), content = right)
+        }
+    }
+}
+
 /** A remote-friendly button: blue ring when focused. */
 @Composable
 fun Button(
