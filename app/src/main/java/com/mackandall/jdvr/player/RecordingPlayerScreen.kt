@@ -635,25 +635,28 @@ fun RecordingPlayerScreen(
                                     fontSize = 15.sp,
                                     modifier = Modifier.fillMaxWidth(),
                                 )
-                                choices.forEachIndexed { i, c ->
-                                    Button(
-                                        label = "Start at ${clockTenths(c.seconds)}" + if (c.before) " (before)" else " (after)",
-                                        modifier = if (i == 0) Modifier.focusRequester(editFirst) else Modifier,
-                                        leading = {
-                                            val picture = c.picture
-                                            if (picture != null) {
-                                                androidx.compose.foundation.Image(
-                                                    picture,
-                                                    contentDescription = null,
-                                                    modifier = Modifier.width(240.dp).height(135.dp),
-                                                )
-                                            }
-                                        },
-                                    ) { startAtKeyframe(c.seconds) }
-                                }
-                                Button("Cancel") {
-                                    keyChoices = null
-                                    editFocus = editFirst
+                                // The two pictures and Cancel on one line, so all of them stay on the screen.
+                                Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    choices.forEachIndexed { i, c ->
+                                        Button(
+                                            label = clockTenths(c.seconds) + if (c.before) "\nbefore" else "\nafter",
+                                            modifier = if (i == 0) Modifier.focusRequester(editFirst) else Modifier,
+                                            leading = {
+                                                val picture = c.picture
+                                                if (picture != null) {
+                                                    androidx.compose.foundation.Image(
+                                                        picture,
+                                                        contentDescription = null,
+                                                        modifier = Modifier.width(176.dp).height(99.dp),
+                                                    )
+                                                }
+                                            },
+                                        ) { startAtKeyframe(c.seconds) }
+                                    }
+                                    Button("Cancel") {
+                                        keyChoices = null
+                                        editFocus = editFirst
+                                    }
                                 }
                             } else {
                                 Button(
