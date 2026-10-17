@@ -374,6 +374,19 @@ fun RecordingPlayerScreen(
             armed = null
         }
     }
+    // Back with the edit row open closes it, as Close does (the pictures first, if they're up). Taken
+    // on the row itself: Compose's own Back on a focused button cleared focus first, leaving the
+    // controls up with nothing focused, and the remote reached nothing until a second Back.
+    fun editBack() {
+        if (keyChoices != null) {
+            keyChoices = null
+            editFocus = editFirst
+        } else {
+            editOpen = false
+            armed = null
+            editFocus = editButton
+        }
+    }
     LaunchedEffect(editOpen) { if (editOpen) startStatus = runCatching { Jdvr.liveTv.programStartStatus(itemId) }.getOrNull() }
     LaunchedEffect(player.isPlaying) {
         if (player.isPlaying) {
@@ -620,7 +633,16 @@ fun RecordingPlayerScreen(
                     // Editing (paused, users allowed to edit recordings): "✂ Edit" opens the actions on
                     // their own line; each acts on a second press that says what it will do.
                     if (edit != null && !player.isPlaying && live == null && !inProgress && com.mackandall.jdvr.ui.cuttingFor(itemId.toString()) == null) {
-                        FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                            modifier =
+                                Modifier.onPreviewKeyEvent { e ->
+                                    if (!editOpen || e.key != androidx.compose.ui.input.key.Key.Back) return@onPreviewKeyEvent false
+                                    if (e.type == KeyEventType.KeyUp) editBack()
+                                    true
+                                },
+                        ) {
                             if (!editOpen) {
                                 Button("✂ Edit", modifier = Modifier.focusRequester(editButton)) {
                                     editOpen = true
