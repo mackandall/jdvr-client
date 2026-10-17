@@ -57,6 +57,7 @@ import com.mackandall.jdvr.data.Jdvr
 import com.mackandall.jdvr.data.LiveTvRepository
 import com.mackandall.jdvr.data.Program
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.util.UUID
 
 /** What was last searched for, so Search opens with it again. */
@@ -88,6 +89,24 @@ fun SearchScreen(
     val symbols = rememberMarkSymbols()
     val focusManager = LocalFocusManager.current
     var fieldFocused by remember { mutableStateOf(false) }
+    // Each guide result's handle: closing a programme's panel puts focus back on its row (else it
+    // fell on the search field, and the keyboard came up).
+    val rowFocus = remember { mutableMapOf<UUID, FocusRequester>() }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+
+    fun closeProgram() {
+        val id = program?.id
+        program = null
+        if (id != null) {
+            scope.launch {
+                repeat(10) {
+                    delay(60)
+                    val r = rowFocus[id] ?: return@repeat
+                    if (runCatching { r.requestFocus() }.isSuccess) return@launch
+                }
+            }
+        }
+    }
 
     // Searches once typing pauses.
     LaunchedEffect(text, reload) {
@@ -179,7 +198,12 @@ fun SearchScreen(
                         if (progs.isNotEmpty()) {
                             item { Heading("On the guide", progs.size) }
                             items(progs, key = { it.id }) { p ->
-                                ProgramRow(p, channels.firstOrNull { it.id == p.channelId }, symbols) { program = p }
+                                ProgramRow(
+                                    p,
+                                    channels.firstOrNull { it.id == p.channelId },
+                                    symbols,
+                                    Modifier.focusRequester(rowFocus.getOrPut(p.id) { FocusRequester() }),
+                                ) { program = p }
                             }
                         }
                     }
@@ -187,8 +211,8 @@ fun SearchScreen(
         }
         // A programme's actions, over the right of the results.
         program?.let { p ->
-            BackHandler { program = null }
-            ProgramActionsHost(onDismiss = { program = null }) {
+            BackHandler { closeProgram() }
+            ProgramActionsHost(onDismiss = { closeProgram() }) {
                 ProgramPanel(
                     program = p,
                     channel = channels.firstOrNull { it.id == p.channelId },
@@ -206,10 +230,10 @@ fun SearchScreen(
                         onPlay(PlayRecording(itemId, startMs = 0L))
                     },
                     onChanged = { reload++ },
-                    onClose = { program = null },
+                    onClose = { closeProgram() },
                     onActed = { msg ->
                         note = msg
-                        program = null
+                        closeProgram()
                         reload++
                     },
                 )
@@ -235,12 +259,13 @@ private fun ProgramRow(
     p: Program,
     channel: Channel?,
     symbols: LiveTvRepository.MarkSymbols?,
+    modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
     val marks = Marks.parse(p.rawEpisodeTitle, symbols)
     Surface(
         onClick = onClick,
-        modifier = Modifier.fillMaxWidth(0.7f),
+        modifier = modifier.fillMaxWidth(0.7f),
         shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(10.dp)),
         colors = ClickableSurfaceDefaults.colors(containerColor = Jc.Panel, focusedContainerColor = Jc.FocusFill, contentColor = Jc.Text, focusedContentColor = Jc.Text),
         border = ClickableSurfaceDefaults.border(focusedBorder = Border(BorderStroke(2.dp, Jc.Focus))),
