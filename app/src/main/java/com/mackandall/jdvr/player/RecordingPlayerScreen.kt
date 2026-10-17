@@ -64,6 +64,7 @@ import com.mackandall.jdvr.data.toUuid
 import com.mackandall.jdvr.ui.Button
 import com.mackandall.jdvr.ui.Jc
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.async
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -363,6 +364,9 @@ fun RecordingPlayerScreen(
         editFocus = null
     }
     var armed by remember { mutableStateOf<String?>(null) }
+    // "Starts here" with trims: the keyframes either side of the paused moment, to pick the one
+    // the cut starts on (a cut can only start on a keyframe).
+    var keyChoices by remember { mutableStateOf<List<KeyChoice>?>(null) }
     var startStatus by remember { mutableStateOf<LiveTvRepository.ProgramStartStatus?>(null) }
     LaunchedEffect(armed) {
         if (armed != null) {
@@ -375,6 +379,7 @@ fun RecordingPlayerScreen(
         if (player.isPlaying) {
             editOpen = false
             armed = null
+            keyChoices = null
         }
     }
 
@@ -408,6 +413,51 @@ fun RecordingPlayerScreen(
             val r = runCatching {
                 if (card) Jdvr.liveTv.rememberStartCard(itemId, at) else Jdvr.liveTv.setProgramStart(itemId, at)
             }.getOrNull()
+            programStartBusy = false
+            note = when {
+                r == null -> "Couldn't do it: something may already be working on this recording."
+                r.trimmed -> r.message + " Start the recording again to see it."
+                else -> r.message
+            }
+            if (r?.ok == true && !r.trimmed) runCatching { segments = Jdvr.liveTv.segments(itemId) }
+            com.mackandall.jdvr.ui.MoveWatcher.kick()
+            delay(7000)
+            note = null
+        }
+    }
+
+    // Finds the keyframes either side of the paused moment and offers them, with their pictures.
+    fun chooseKeyframe() {
+        if (programStartBusy) return
+        programStartBusy = true
+        val at = player.currentPosition / 1000.0
+        scope.launch {
+            note = "Finding where a cut can start…"
+            val k = runCatching { Jdvr.liveTv.keyframes(itemId, at) }.getOrNull()
+            val times = listOfNotNull(k?.before, k?.after)
+            if (times.isEmpty()) {
+                programStartBusy = false
+                note = "Couldn't find where a cut can start near here."
+                delay(5000)
+                note = null
+                return@launch
+            }
+            val pictures = times.map { t -> async { runCatching { Jdvr.liveTv.frame(itemId, t) }.getOrNull() } }.map { it.await() }
+            keyChoices = times.mapIndexed { i, t -> KeyChoice(t, pictures[i], before = t <= at + 0.02) }
+            programStartBusy = false
+            note = null
+            editFocus = editFirst
+        }
+    }
+
+    fun startAtKeyframe(seconds: Double) {
+        keyChoices = null
+        editOpen = false
+        controlsOpen = false
+        programStartBusy = true
+        scope.launch {
+            note = "Setting the program start…"
+            val r = runCatching { Jdvr.liveTv.setProgramStart(itemId, seconds, keyframe = true) }.getOrNull()
             programStartBusy = false
             note = when {
                 r == null -> "Couldn't do it: something may already be working on this recording."
@@ -576,21 +626,52 @@ fun RecordingPlayerScreen(
                                     editOpen = true
                                     editFocus = editFirst
                                 }
+                            } else if (keyChoices != null) {
+                                val choices = keyChoices!!
+                                val spacing = if (choices.size == 2) " (every %.1f s here)".format(choices[1].seconds - choices[0].seconds) else ""
+                                Text(
+                                    "A cut can only start on a keyframe$spacing. Pick the picture the recording will start on; everything before it is cut. ${edit.undoNote}",
+                                    color = Jc.Text,
+                                    fontSize = 15.sp,
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
+                                choices.forEachIndexed { i, c ->
+                                    Button(
+                                        label = "Start at ${clockTenths(c.seconds)}" + if (c.before) " (before)" else " (after)",
+                                        modifier = if (i == 0) Modifier.focusRequester(editFirst) else Modifier,
+                                        leading = {
+                                            val picture = c.picture
+                                            if (picture != null) {
+                                                androidx.compose.foundation.Image(
+                                                    picture,
+                                                    contentDescription = null,
+                                                    modifier = Modifier.width(240.dp).height(135.dp),
+                                                )
+                                            }
+                                        },
+                                    ) { startAtKeyframe(c.seconds) }
+                                }
+                                Button("Cancel") {
+                                    keyChoices = null
+                                    editFocus = editFirst
+                                }
                             } else {
                                 Button(
                                     modifier = Modifier.focusRequester(editFirst),
                                     label = when {
+                                        edit.programStartTrims -> "Starts here (this recording)…"
                                         armed != "start" -> "Starts here (this recording)"
-                                        edit.programStartTrims -> "Press again: cut everything before here. ${edit.undoNote}"
                                         else -> "Press again: skip to here from the start"
                                     },
                                 ) {
-                                    if (armed != "start") {
-                                        armed = "start"
-                                    } else {
-                                        armed = null
-                                        editOpen = false
-                                        programStart(card = false)
+                                    when {
+                                        edit.programStartTrims -> chooseKeyframe()
+                                        armed != "start" -> armed = "start"
+                                        else -> {
+                                            armed = null
+                                            editOpen = false
+                                            programStart(card = false)
+                                        }
                                     }
                                 }
                                 Button(if (armed == "card") "Press again: remember this card for this channel's recordings" else "Remember card (all recordings)") {
@@ -629,6 +710,7 @@ fun RecordingPlayerScreen(
                                 Button("Close") {
                                     editOpen = false
                                     armed = null
+                                    keyChoices = null
                                     editFocus = editButton
                                 }
                             }
@@ -681,4 +763,14 @@ private fun SegmentBar(
             Box(Modifier.fillMaxHeight().fillMaxWidth(f).padding(vertical = 3.dp).background(Jc.Focus.copy(alpha = 0.85f), RoundedCornerShape(3.dp)))
         }
     }
+}
+
+/** A keyframe a cut can start on, with its picture; [before]: at or before the paused moment. */
+private data class KeyChoice(val seconds: Double, val picture: androidx.compose.ui.graphics.ImageBitmap?, val before: Boolean)
+
+/** 1:04.1 */
+private fun clockTenths(seconds: Double): String {
+    val tenths = (seconds * 10).toLong()
+    val s = tenths / 10
+    return (if (s >= 3600) "%d:%02d:%02d".format(s / 3600, s / 60 % 60, s % 60) else "%d:%02d".format(s / 60, s % 60)) + ".${tenths % 10}"
 }

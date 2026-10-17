@@ -1,5 +1,6 @@
 package com.mackandall.jdvr.data
 
+import androidx.compose.ui.graphics.asImageBitmap
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -1160,9 +1161,42 @@ class LiveTvRepository {
         @SerialName("Message") val message: String = "",
     )
 
-    /** Comskip plugin: "Starts here (this recording)" at [seconds]; editors. */
-    suspend fun setProgramStart(itemId: UUID, seconds: Double): ProgramStartResult? =
-        plugin(HttpMethod.POST, "/ComskipSegments/ProgramStart/$itemId", mapOf("seconds" to seconds))
+    /**
+     * Comskip plugin: "Starts here (this recording)" at [seconds]; editors. [keyframe]: [seconds] is
+     * a keyframe picked from [keyframes], and a cut starts exactly there.
+     */
+    suspend fun setProgramStart(itemId: UUID, seconds: Double, keyframe: Boolean = false): ProgramStartResult? =
+        plugin(HttpMethod.POST, "/ComskipSegments/ProgramStart/$itemId", mapOf("seconds" to seconds, "keyframe" to keyframe))
+
+    @Serializable
+    data class Keyframes(
+        @SerialName("Seconds") val seconds: Double = 0.0,
+        @SerialName("Before") val before: Double? = null,
+        @SerialName("After") val after: Double? = null,
+    )
+
+    /** The keyframes either side of [seconds]: a cut can only start on one (Comskip plugin; editors). */
+    suspend fun keyframes(itemId: UUID, seconds: Double): Keyframes? =
+        plugin(HttpMethod.GET, "/ComskipSegments/ProgramStart/$itemId/Keyframes", mapOf("seconds" to seconds))
+
+    /** The picture at [seconds] of a recording, to choose a keyframe by. */
+    suspend fun frame(itemId: UUID, seconds: Double, width: Int = 400): androidx.compose.ui.graphics.ImageBitmap? =
+        try {
+            val r = withContext(Dispatchers.IO) {
+                api.request(
+                    method = HttpMethod.GET,
+                    pathTemplate = "/ComskipSegments/ProgramStart/$itemId/Frame",
+                    queryParameters = mapOf("seconds" to seconds, "width" to width),
+                )
+            }
+            val bytes = r.body
+            android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Timber.d(e, "Frame at %s failed", seconds)
+            null
+        }
 
     /** "Remember card (all recordings)": the frame at [seconds] is the channel's card before its programs; editors. */
     suspend fun rememberStartCard(itemId: UUID, seconds: Double): ProgramStartResult? =
