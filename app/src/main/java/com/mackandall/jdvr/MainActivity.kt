@@ -164,9 +164,12 @@ fun AppRoot() {
             .screenBackground()
             .onPreviewKeyEvent { e ->
                 // Right with the rail open: into the screen, and the rail goes away (whether or not
-                // focus was in the rail).
+                // focus was in the rail). From the rail itself, back to where the user was (the
+                // screen's entry): a plain move right lands on whatever is level with the menu item,
+                // in the guide channels away from the one left.
                 if (railOpen && !railKeepsRight && e.type == KeyEventType.KeyDown && e.key == Key.DirectionRight) {
-                    focusManager.moveFocus(FocusDirection.Right)
+                    val returned = !screenHasFocus && runCatching { entry.requestFocus() }.isSuccess && screenHasFocus
+                    if (!returned) focusManager.moveFocus(FocusDirection.Right)
                     railOpen = false
                     true
                 } else {
