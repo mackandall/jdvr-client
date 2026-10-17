@@ -99,6 +99,9 @@ private data class GuideExtras(
 private val LocalGuideExtras = androidx.compose.runtime.compositionLocalOf { GuideExtras() }
 
 /** Each programme cell's own focus handle, by programme id: to put focus back on exactly that cell. */
+/** The channel last focused in the guide (this run): where the guide opens next time. */
+private var lastGuideChannel: UUID? = null
+
 private val LocalCellFocus = androidx.compose.runtime.staticCompositionLocalOf { mutableMapOf<UUID, FocusRequester>() }
 
 private fun floorToHalfHour(t: LocalDateTime): LocalDateTime = t.truncatedTo(ChronoUnit.HOURS).plusMinutes(if (t.minute >= 30) 30 else 0)
@@ -283,6 +286,7 @@ fun GuideScreen(
     var gridHasFocus by remember { mutableStateOf(false) }
     fun onCellFocused(p: Program) {
         focused = p
+        lastGuideChannel = p.channelId
         if (p.id == verticalTo) verticalTo = null else anchor = maxOf(p.start, windowStart)
     }
 
@@ -332,6 +336,18 @@ fun GuideScreen(
         windowStart = next
         pendingFocus = channelId to (if (minutes > 0) next.plusMinutes(WINDOW_MINUTES - STEP_MINUTES) else next)
         return true
+    }
+
+    // Opening: the channel last focused in the guide, else the one last watched; its row scrolled
+    // near the top so it's there to take focus.
+    val openingOn = remember {
+        lastGuideChannel ?: runCatching { UUID.fromString(Jdvr.session.lastChannelId) }.getOrNull()
+    }
+    LaunchedEffect(channels) {
+        val list = channels ?: return@LaunchedEffect
+        if (focused != null || returnTo != null) return@LaunchedEffect
+        val index = list.indexOfFirst { it.id == openingOn }.takeIf { it >= 0 } ?: return@LaunchedEffect
+        listState.scrollToItem((index - 2).coerceAtLeast(0))
     }
 
     // Channels changed in the player (▲▼, CH±, digits, mini guide): Back lands on the one last
@@ -409,8 +425,11 @@ fun GuideScreen(
                     Box {
                         // Behind the cells: shows in the gaps between them, never over the titles.
                         NowLine(windowStart, perMinute)
-                        // The way back in (after the rail or a player): the programme picked to watch, else the last one on, else the top-left.
-                        val home = (returnTo ?: focused)?.takeIf { p -> list.any { it.id == p.channelId } }
+                        // The way back in (after the rail or a player): the programme picked to watch, else the last one on;
+                        // opening the guide, what's on now on the channel last focused in it (else the one last watched).
+                        val home =
+                            (returnTo ?: focused ?: openingOn?.let { ch -> programs[ch].orEmpty().firstOrNull { it.end.isAfter(LocalDateTime.now()) } })
+                                ?.takeIf { p -> list.any { it.id == p.channelId } }
                         LazyColumn(state = listState, contentPadding = PaddingValues(bottom = 40.dp), modifier = Modifier.onFocusChanged { gridHasFocus = it.hasFocus }) {
                             items(list, key = { it.id }) { ch ->
                                 GuideRow(
