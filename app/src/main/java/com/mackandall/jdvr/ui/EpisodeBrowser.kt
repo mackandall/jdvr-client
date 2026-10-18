@@ -35,6 +35,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.focus.FocusRequester
@@ -446,7 +447,9 @@ private fun TilesView(
     }
     val bySeason = list.groupBy { it.season }
     val seasons = bySeason.keys.toList()
-    var season by remember { mutableStateOf(seasons.firstOrNull { s -> bySeason[s].orEmpty().any { !it.played } } ?: seasons.first()) }
+    var picked by remember { mutableStateOf(seasons.firstOrNull { s -> bySeason[s].orEmpty().any { !it.played } } ?: seasons.first()) }
+    // The picked season goes when its last episode is deleted: then the next one along (or the last).
+    val season = picked.takeIf { it in bySeason } ?: seasons.firstOrNull { (it ?: -1) > (picked ?: -1) } ?: seasons.last()
     val shown = bySeason[season].orEmpty()
     var focusedId by remember(season) { mutableStateOf((shown.firstOrNull { !it.played } ?: shown.first()).id) }
     val focused = shown.firstOrNull { it.id == focusedId } ?: shown.first()
@@ -474,13 +477,15 @@ private fun TilesView(
         ) {
             // Season tabs and the view switch.
             Row(Modifier.padding(horizontal = 36.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                if (seasons.size > 1) {
-                    seasons.forEach { s -> SeasonTab(seasonTitle(s), s == season) { season = s } }
-                } else {
-                    Text(seasonTitle(season), color = Jc.Muted, fontSize = 15.sp, modifier = Modifier.padding(vertical = 6.dp))
+                // Tabs take what the buttons leave and scroll (to the focused tab) when there are many.
+                Row(Modifier.weight(1f).horizontalScroll(androidx.compose.foundation.rememberScrollState()).padding(horizontal = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    if (seasons.size > 1) {
+                        seasons.forEach { s -> SeasonTab(seasonTitle(s), s == season) { picked = s } }
+                    } else {
+                        Text(seasonTitle(season), color = Jc.Muted, fontSize = 15.sp, modifier = Modifier.padding(vertical = 6.dp))
+                    }
                 }
-                Box(Modifier.weight(1f))
-                subtitle?.let { Text(it, color = Jc.Muted, fontSize = 13.sp, modifier = Modifier.padding(end = 8.dp)) }
+                subtitle?.let { Text(it, color = Jc.Muted, fontSize = 13.sp, maxLines = 1, modifier = Modifier.padding(end = 8.dp)) }
                 LocalShowActions.current?.let { Button("Show actions", onClick = it) }
                 Button("View: Tiles") { Jdvr.prefs.changeEpisodeView(Prefs.LIST) }
             }
