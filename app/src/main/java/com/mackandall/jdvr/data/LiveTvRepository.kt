@@ -908,7 +908,68 @@ class LiveTvRepository {
     data class DeletedRecording(
         @SerialName("Partial") val partial: Boolean = false,
         @SerialName("Deleted") val deleted: Int = 0,
+        // Moved to Episode History's trash (and kept that many days) rather than deleted.
+        @SerialName("Trashed") val trashed: Boolean = false,
+        @SerialName("TrashDays") val trashDays: Int? = null,
     )
+
+    @Serializable
+    data class TrashItem(
+        @SerialName("Id") val id: String,
+        @SerialName("Title") val title: String = "",
+        @SerialName("Show") val show: String? = null,
+        // "S6E8 · Frozen Evidence", a movie's year, or "27 episodes".
+        @SerialName("Detail") val detail: String? = null,
+        @SerialName("Kind") val kind: String = "Video",
+        @SerialName("Videos") val videos: Int = 1,
+        @SerialName("Bytes") val bytes: Long = 0,
+        @SerialName("DeletedUtc") val deletedUtc: String = "",
+        @SerialName("ExpiresUtc") val expiresUtc: String = "",
+        @SerialName("DeletedBy") val deletedBy: String? = null,
+        @SerialName("Place") val place: String? = null,
+    )
+
+    @Serializable
+    data class TrashList(
+        @SerialName("Enabled") val enabled: Boolean = false,
+        @SerialName("KeepDays") val keepDays: Int = 0,
+        @SerialName("MinFreeGb") val minFreeGb: Int = 0,
+        // Put things back (anyone who may delete); delete them for good (administrators).
+        @SerialName("CanRestore") val canRestore: Boolean = false,
+        @SerialName("CanEmpty") val canEmpty: Boolean = false,
+        @SerialName("Bytes") val bytes: Long = 0,
+        @SerialName("Items") val items: List<TrashItem> = emptyList(),
+    )
+
+    @Serializable
+    private data class TrashRestored(
+        @SerialName("Restored") val restored: Boolean = false,
+    )
+
+    @Serializable
+    private data class TrashDeleted(
+        @SerialName("Deleted") val deleted: Int = 0,
+    )
+
+    /** Episode History's trash: deleted recordings that can still be put back. Null without it. */
+    suspend fun trash(): TrashList? = plugin<TrashList>(HttpMethod.GET, "/EpisodeHistory/Trash")?.also { t -> trashDaysCache = (if (t.enabled) t.keepDays else null) to System.currentTimeMillis() }
+
+    /** Puts a deleted recording back; false when it couldn't (something is already where it was). */
+    suspend fun restoreFromTrash(id: String): Boolean = plugin<TrashRestored>(HttpMethod.POST, "/EpisodeHistory/Trash/$id/Restore")?.restored == true
+
+    suspend fun deleteFromTrash(id: String): Boolean = (plugin<TrashDeleted>(HttpMethod.DELETE, "/EpisodeHistory/Trash/$id")?.deleted ?: 0) > 0
+
+    suspend fun emptyTrash(): Int? = plugin<TrashDeleted>(HttpMethod.DELETE, "/EpisodeHistory/Trash")?.deleted
+
+    private var trashDaysCache: Pair<Int?, Long>? = null
+
+    /** Days a delete stays in the trash, or null when deletes are for good (no trash). Asked again after 2 minutes. */
+    suspend fun trashDays(): Int? {
+        trashDaysCache?.let { (days, at) -> if (System.currentTimeMillis() - at < 120_000) return days }
+        val t = trash()
+        if (t == null) trashDaysCache = null to System.currentTimeMillis()
+        return trashDaysCache?.first
+    }
 
     /**
      * Deletes a recording through Episode History: a partial one takes the episode's other
@@ -959,6 +1020,7 @@ class LiveTvRepository {
         @SerialName("Deleted") val deleted: Int = 0,
         // The shares the files are on, for the confirmation.
         @SerialName("Places") val places: List<String> = emptyList(),
+        @SerialName("Trashed") val trashed: Boolean = false,
     )
 
     /**

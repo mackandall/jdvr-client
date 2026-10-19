@@ -354,7 +354,7 @@ class Prefs(
         const val OPEN = "open"
         const val CLOSED = "closed"
         const val LAST = "last"
-        val MENU_DEFAULT = listOf("search", "home", "guide", "livetv", "recorded", "libraries", "scheduled", "series")
+        val MENU_DEFAULT = listOf("search", "home", "guide", "livetv", "recorded", "libraries", "scheduled", "series", "trash")
 
         /** A saved order, minus keys no longer known, plus new ones at the end. */
         fun normalizeMenu(saved: String?): List<String> {

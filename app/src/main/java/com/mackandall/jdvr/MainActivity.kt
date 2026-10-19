@@ -60,6 +60,7 @@ enum class Screen(
     Library("Library", "libraries"),
     Scheduled("Scheduled", "scheduled"),
     Series("Series", "series"),
+    Trash("Trash", "trash"),
     Settings("Settings", "settings"),
 }
 
@@ -118,9 +119,12 @@ fun AppRoot() {
     }
     // Recorded Shows is offered only on a server with Live TV or recordings (asked with the libraries).
     var hasDvr by remember { mutableStateOf(true) }
+    // Trash only where Episode History keeps one (or still holds something from when it did).
+    var hasTrash by remember { mutableStateOf(false) }
     LaunchedEffect(signedIn, librariesLoad) {
         if (signedIn) runCatching { Jdvr.liveTv.libraries() }.getOrNull()?.let { libraries = it }
         if (signedIn) hasDvr = Jdvr.liveTv.hasDvr()
+        if (signedIn) hasTrash = runCatching { Jdvr.liveTv.trash() }.getOrNull()?.let { it.enabled || it.items.isNotEmpty() } == true
     }
     val shownLibraries = libraries.filter { it.id.toString() !in Jdvr.prefs.hiddenLibraries }
     val currentLibrary = shownLibraries.firstOrNull { it.id == libraryId }
@@ -244,6 +248,7 @@ fun AppRoot() {
                 Screen.Search -> com.mackandall.jdvr.ui.SearchScreen(entry = entry, refresh = played, onPlayChannel = { playingChannel = it }, onPlay = { playingRecording = it })
                 Screen.Scheduled -> ScheduledScreen(entry = entry, onPlayRecording = { playingRecording = it })
                 Screen.Series -> SeriesScreen(entry = entry)
+                Screen.Trash -> com.mackandall.jdvr.ui.TrashScreen(entry = entry)
                 Screen.Settings -> SettingsScreen(entry = entry, libraries = libraries)
             }
             }
@@ -272,6 +277,7 @@ fun AppRoot() {
                 },
                 libraries = shownLibraries,
                 showRecorded = hasDvr,
+                showTrash = hasTrash,
                 selectedLibrary = libraryId,
                 onSelectLibrary = {
                     backStack.clear()

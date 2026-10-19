@@ -28,7 +28,7 @@ import com.mackandall.jdvr.data.Prefs
  * [IconSets]; a new entry, one more [MenuIcon] with a drawing in each set (a set without one
  * falls back to the Line set's).
  */
-enum class MenuIcon { Search, Home, Guide, LiveTv, Recorded, Libraries, Scheduled, Series, Settings, Profile, Exit, Movies, Tv, Archive, MoviesArchive, TvArchive, Music, Folder }
+enum class MenuIcon { Search, Home, Guide, LiveTv, Recorded, Libraries, Scheduled, Series, Trash, Settings, Profile, Exit, Movies, Tv, Archive, MoviesArchive, TvArchive, Music, Folder }
 
 class Glyph(
     val strokes: List<String> = emptyList(),
@@ -57,6 +57,7 @@ fun Screen.menuIcon(): MenuIcon =
         Screen.Library -> MenuIcon.Libraries
         Screen.Scheduled -> MenuIcon.Scheduled
         Screen.Series -> MenuIcon.Series
+        Screen.Trash -> MenuIcon.Trash
         Screen.Settings -> MenuIcon.Settings
     }
 
@@ -85,6 +86,7 @@ private val LINE =
         MenuIcon.Libraries to Glyph(listOf("M4.5 4.5h2.5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H4.5a1 1 0 0 1-1-1v-13a1 1 0 0 1 1-1z", "M10.5 4.5H13a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-2.5a1 1 0 0 1-1-1v-13a1 1 0 0 1 1-1z", "m15.6 6.2 3.6-1 3.1 13.9-3.6 1z")),
         MenuIcon.Scheduled to Glyph(listOf("M5 5h14a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z", "M3 9.5h18M8 3v4M16 3v4", "M12 12.5v3l2 1.2")),
         MenuIcon.Series to Glyph(listOf("M4 11V9a3 3 0 0 1 3-3h12", "m16 3 3 3-3 3", "M20 13v2a3 3 0 0 1-3 3H5", "m8 21-3-3 3-3")),
+        MenuIcon.Trash to Glyph(listOf("M4 7h16", "M9.5 7V4.5h5V7", "M6.5 7l1 13h9l1-13", "M10.5 11v5.5M13.5 11v5.5")),
         MenuIcon.Settings to Glyph(listOf("M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z", "M15 12a3 3 0 1 1-6 0a3 3 0 1 1 6 0z")),
         MenuIcon.Profile to Glyph(listOf("M16 8a4 4 0 1 1-8 0a4 4 0 1 1 8 0z", "M4 21a8 8 0 0 1 16 0")),
         MenuIcon.Exit to Glyph(listOf("M12 3v9", "M17.4 6.6a8 8 0 1 1-10.8 0")),
@@ -107,6 +109,7 @@ private val SOLID =
         MenuIcon.Libraries to Glyph(fills = listOf("M3.5 4.5h4.5v15H3.5z M9.5 4.5H14v15H9.5z M15.4 6.3l3.7-1 3.2 14-3.7 1z")),
         MenuIcon.Scheduled to Glyph(fills = listOf("M5 5h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z M5 10v9h14v-9z"), strokes = listOf("M8 3v4M16 3v4", "M12 12.3v3l2 1.2"), stroke = 2.2f),
         MenuIcon.Series to Glyph(strokes = listOf("M4 11V9a3 3 0 0 1 3-3h12", "m16 3 3 3-3 3", "M20 13v2a3 3 0 0 1-3 3H5", "m8 21-3-3 3-3"), stroke = 2.8f),
+        MenuIcon.Trash to Glyph(fills = listOf("M6 8h12l-1.1 12.5H7.1z"), strokes = listOf("M4 6.5h16", "M9.5 6.5V4h5v2.5"), stroke = 2.4f),
         MenuIcon.Settings to Glyph(fills = listOf("M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z M12 9a3 3 0 1 0 0 6a3 3 0 1 0 0-6z")),
         MenuIcon.Profile to Glyph(fills = listOf("M12 3.5a4.5 4.5 0 1 1 0 9a4.5 4.5 0 1 1 0-9z M3.5 21a8.5 8.5 0 0 1 17 0z")),
         MenuIcon.Exit to Glyph(strokes = listOf("M12 3v9", "M17.4 6.6a8 8 0 1 1-10.8 0"), stroke = 2.8f),

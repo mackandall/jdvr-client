@@ -98,6 +98,7 @@ fun Rail(
     onKeepsRight: (Boolean) -> Unit = {},
     // Recorded Shows: only on a server that has Live TV or recordings.
     showRecorded: Boolean = true,
+    showTrash: Boolean = false,
 ) {
     val prefs = Jdvr.prefs
     val rights = deviceRights()
@@ -142,6 +143,7 @@ fun Rail(
                 } else {
                     val s = Screen.entries.firstOrNull { it.key == k } ?: return@forEach
                     if (s == Screen.RecordedShows && !showRecorded) return@forEach
+                    if (s == Screen.Trash && !showTrash) return@forEach
                     // What this TV may not do (JellyDVR Space's device rights) isn't in its menu.
                     if (s == Screen.LiveTv && !rights.liveTv) return@forEach
                     if (s == Screen.Series && !rights.record) return@forEach

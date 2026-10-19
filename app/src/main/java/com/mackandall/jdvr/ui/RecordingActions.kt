@@ -368,9 +368,10 @@ fun RecordingActions(
     }
     // An archive copy: only where this TV may delete from the archive, and it says where from.
     val from = place?.let { " from $it" } ?: " from the archive"
+    val trashDays = rememberTrashDays()
     val deleteLabel = when {
-        manage -> if (armedDelete) "Press again to delete" else "Delete recording"
-        armedDelete -> "Press again: delete$from for good"
+        manage -> if (armedDelete) (if (trashDays != null) "Press again: move to the trash" else "Press again to delete") else "Delete recording"
+        armedDelete -> if (trashDays != null) "Press again: move to the trash" else "Press again: delete$from for good"
         else -> "Delete$from"
     }
     if (canDelete && (if (manage) rights.delete else rights.deleteArchive) && cut == null) Button(deleteLabel, leading = { Dot(Jc.Recording) }) {
@@ -381,7 +382,10 @@ fun RecordingActions(
             scope.launch {
                 runCatching { Jdvr.liveTv.deleteRecording(itemId) }
                     .onSuccess {
-                        onNote(if (it.deleted > 1) "Partial recording deleted, with its ${it.deleted - 1} other partial piece${if (it.deleted > 2) "s" else ""}" else if (manage) "Recording deleted" else "Deleted$from")
+                        onNote(
+                            (if (it.deleted > 1) "Partial recording deleted, with its ${it.deleted - 1} other partial piece${if (it.deleted > 2) "s" else ""}" else if (manage) "Recording deleted" else "Deleted$from") +
+                                ((if (it.trashed) it.trashDays else null)?.let { d -> ": in the trash for ${daysText(d)}" } ?: ""),
+                        )
                         onDeleted()
                     }.onFailure { onNote("Couldn't delete it: ${it.message}") }
             }
@@ -508,6 +512,8 @@ fun ShowActions(
             }
         }
     }
+    val trashDays = rememberTrashDays()
+    val forGood = if (trashDays != null) "to the trash" else "for good"
     val d = delete
     if (d != null && d.count > 0) {
         val what = "${d.count} recording${if (d.count == 1) "" else "s"}"
@@ -515,7 +521,7 @@ fun ShowActions(
         Button(
             when {
                 deleting -> "Deleting…"
-                armedDelete -> "Press again: delete $what ($size) for good"
+                armedDelete -> "Press again: delete $what ($size) $forGood"
                 else -> "Delete all $what"
             },
             leading = { Dot(Jc.Recording) },
@@ -532,7 +538,7 @@ fun ShowActions(
                     if (r == null) {
                         onNote("Couldn't delete them.")
                     } else {
-                        onNote("Deleted ${r.deleted} recording${if (r.deleted == 1) "" else "s"}" + if (r.skipped > 0) " (${r.skipped} left: recording now, or not yours to delete)" else "")
+                        onNote("Deleted ${r.deleted} recording${if (r.deleted == 1) "" else "s"}" + (if (r.trashed && trashDays != null) " to the trash" else "") + if (r.skipped > 0) " (${r.skipped} left: recording now, or not yours to delete)" else "")
                         onDeleted()
                     }
                 }
@@ -548,7 +554,7 @@ fun ShowActions(
         Button(
             when {
                 deleting -> "Deleting…"
-                armedArchived -> "Press again: delete $what ($size) from $from for good"
+                armedArchived -> "Press again: delete $what ($size) from $from $forGood"
                 else -> "Delete all $what"
             },
             leading = { Dot(Jc.Recording) },
@@ -565,7 +571,7 @@ fun ShowActions(
                     if (r == null) {
                         onNote("Couldn't delete them.")
                     } else {
-                        onNote("Deleted ${r.deleted} archived episode file${if (r.deleted == 1) "" else "s"}" + if (r.skipped > 0) " (${r.skipped} left: not yours to delete)" else "")
+                        onNote("Deleted ${r.deleted} archived episode file${if (r.deleted == 1) "" else "s"}" + (if (r.trashed && trashDays != null) " to the trash" else "") + if (r.skipped > 0) " (${r.skipped} left: not yours to delete)" else "")
                         onDeleted()
                     }
                 }
@@ -573,3 +579,12 @@ fun ShowActions(
         }
     }
 }
+
+/** Days a delete stays in Episode History's trash; null when deletes are for good. */
+@Composable
+fun rememberTrashDays(): Int? {
+    val days by androidx.compose.runtime.produceState<Int?>(null) { value = runCatching { Jdvr.liveTv.trashDays() }.getOrNull() }
+    return days
+}
+
+fun daysText(days: Int): String = if (days == 1) "1 day" else "$days days"
