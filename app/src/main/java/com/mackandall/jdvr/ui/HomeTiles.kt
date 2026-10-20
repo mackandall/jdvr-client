@@ -34,6 +34,7 @@ import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathOperation
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -125,9 +126,9 @@ fun WeatherIcon(
                 }
                 drawCircle(sun, r * u, Offset(cx * u, cy * u))
             } else {
-                // A crescent moon by night.
-                drawCircle(Color(0xFFE6E0C8), r * u, Offset(cx * u, cy * u))
-                drawCircle(if (Jc.Light) Color(0xFFC9D7E3) else Color(0xFF161B22), r * u, Offset((cx + r * 0.55f) * u, (cy - r * 0.35f) * u))
+                // A crescent moon by night: a cut-out shape, so it suits any theme and the see-through tile.
+                fun disc(x: Float, y: Float) = Path().apply { addOval(androidx.compose.ui.geometry.Rect(Offset(x * u, y * u), r * u)) }
+                drawPath(Path.combine(PathOperation.Difference, disc(cx, cy), disc(cx + r * 0.55f, cy - r * 0.35f)), Color(0xFFE6E0C8))
             }
         }
         fun cloudAt(dx: Float) {

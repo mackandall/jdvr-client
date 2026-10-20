@@ -87,6 +87,30 @@ val Palettes =
             ink = Color(0xFF130F1A), rail = Color(0xFF17121F), panel = Color(0xFF1C1626), panel2 = Color(0xFF261E33), line = Color(0xFF30263F),
             text = Color(0xFFEDE8F2), muted = Color(0xFFA89DB6), focus = Color(0xFFF06A9E), focusFill = Color(0xFF3A1F34), onFocus = Color(0xFF2A0816),
         ),
+        // After Windows Media Center: royal blue, white type, a bright blue bar on the selection.
+        Palette(
+            "mediacenter", "Media Center",
+            ink = Color(0xFF061A3D), rail = Color(0xFF08214A), panel = Color(0xFF0C2C5E), panel2 = Color(0xFF123A78), line = Color(0xFF1F4E94),
+            text = Color(0xFFFFFFFF), muted = Color(0xFFA9C3E8), focus = Color(0xFF2E8BEA), focusFill = Color(0xFF14427F), onFocus = Color(0xFFFFFFFF),
+        ),
+        // After MythTV's classic menus: indigo panes, silver type, an amber selection.
+        Palette(
+            "mythblue", "MythTV Blue",
+            ink = Color(0xFF0A0F2C), rail = Color(0xFF0F1640), panel = Color(0xFF16205A), panel2 = Color(0xFF1E2B70), line = Color(0xFF2C3B8C),
+            text = Color(0xFFF2F2F2), muted = Color(0xFFAEB8DE), focus = Color(0xFFF2B33D), focusFill = Color(0xFF2A2A55), onFocus = Color(0xFF1A1206),
+        ),
+        // After Kodi's default skin: dark slate, white type, a light-blue focus.
+        Palette(
+            "estuary", "Estuary",
+            ink = Color(0xFF13171C), rail = Color(0xFF181D23), panel = Color(0xFF1E242B), panel2 = Color(0xFF2A3139), line = Color(0xFF353D46),
+            text = Color(0xFFFFFFFF), muted = Color(0xFFA0A8B2), focus = Color(0xFF12B2E7), focusFill = Color(0xFF0F3A4A), onFocus = Color(0xFF021A24),
+        ),
+        // After TiVo: purple-blue screens with a lime highlight.
+        Palette(
+            "peanut", "Peanut",
+            ink = Color(0xFF120A2E), rail = Color(0xFF170D3A), panel = Color(0xFF1F1250), panel2 = Color(0xFF2A1A66), line = Color(0xFF3B2785),
+            text = Color(0xFFFFFFFF), muted = Color(0xFFBBB0E0), focus = Color(0xFF9BE15D), focusFill = Color(0xFF2E2A5E), onFocus = Color(0xFF132006),
+        ),
         // Light, after Emby's Apple TV theme: frosted panels on a soft wash, slate tiles, white focus.
         Palette(
             "ode", "Ode to Emby's Apple",
