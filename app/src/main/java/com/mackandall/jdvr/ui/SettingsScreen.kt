@@ -75,11 +75,11 @@ fun SettingsScreen(
         Section("Appearance")
         Choice(
             label = "Theme",
-            help = "The colours of the whole app. Ode to Emby's Apple is light: frosted panels on a soft backdrop.",
+            help = "The colours of the whole app. Ode to Emby's Apple is light: frosted panels on a soft backdrop. Paper and Daylight are light and plain.",
             value = paletteFor(prefs.theme).name,
             modifier = Modifier.focusRequester(entry),
         ) { prefs.changeTheme(Palettes[(Palettes.indexOf(paletteFor(prefs.theme)) + 1) % Palettes.size].key) }
-        if (paletteFor(prefs.theme).light) {
+        if (paletteFor(prefs.theme).let { it.light && it.wash }) {
             Choice(
                 label = "Backdrop",
                 help = "The soft colour behind the screens.",

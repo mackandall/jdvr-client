@@ -62,6 +62,8 @@ data class Palette(
     val onButton: Color? = null,
     // Light: a soft wash behind the screens (Settings › Backdrop), white focus, dark text.
     val light: Boolean = false,
+    // A light theme without the wash: its ink, solid, behind the screens (and no Backdrop setting).
+    val wash: Boolean = true,
 )
 
 val Palettes =
@@ -111,6 +113,25 @@ val Palettes =
             ink = Color(0xFF120A2E), rail = Color(0xFF170D3A), panel = Color(0xFF1F1250), panel2 = Color(0xFF2A1A66), line = Color(0xFF3B2785),
             text = Color(0xFFFFFFFF), muted = Color(0xFFBBB0E0), focus = Color(0xFF9BE15D), focusFill = Color(0xFF2E2A5E), onFocus = Color(0xFF132006),
         ),
+        // Warm charcoal with a coral focus.
+        Palette(
+            "ember", "Ember",
+            ink = Color(0xFF14110F), rail = Color(0xFF191512), panel = Color(0xFF201B17), panel2 = Color(0xFF2B241F), line = Color(0xFF3A312A),
+            text = Color(0xFFF3ECE4), muted = Color(0xFFB3A699), focus = Color(0xFFFF8A65), focusFill = Color(0xFF3B2620), onFocus = Color(0xFF2A0F06),
+        ),
+        // Navy panels and a cyan focus.
+        Palette(
+            "deepsea", "Deep sea",
+            ink = Color(0xFF06141F), rail = Color(0xFF091A28), panel = Color(0xFF0D2233), panel2 = Color(0xFF132D42), line = Color(0xFF1C3A52),
+            text = Color(0xFFE2EEF6), muted = Color(0xFF8EA8BC), focus = Color(0xFF4DD0E1), focusFill = Color(0xFF0F3A47), onFocus = Color(0xFF02191E),
+        ),
+        // After the old cable guide channel: a royal-blue grid with a yellow highlight.
+        Palette(
+            "prevue", "Prevue",
+            ink = Color(0xFF0A1650), rail = Color(0xFF0C1A5E), panel = Color(0xFF13278A), panel2 = Color(0xFF1A34A8), line = Color(0xFF2A46C0),
+            text = Color(0xFFFFFFFF), muted = Color(0xFFC3CCF4), focus = Color(0xFFFFD400), focusFill = Color(0xFF22379F), onFocus = Color(0xFF0A1650),
+            recording = Color(0xFFFF5A5F), amber = Color(0xFFFF9F1C), green = Color(0xFF3DDC84),
+        ),
         // Light, after Emby's Apple TV theme: frosted panels on a soft wash, slate tiles, white focus.
         Palette(
             "ode", "Ode to Emby's Apple",
@@ -118,6 +139,22 @@ val Palettes =
             text = Color(0xFF1F2A33), muted = Color(0xFF4C5B69), focus = Color(0xFF2F4F6B), focusFill = Color.White, onFocus = Color.White,
             recording = Color(0xFFC62828), amber = Color(0xFF9A4508), onAmber = Color.White, green = Color(0xFF2E7D32), gold = Color(0xFF8A6D00),
             button = Color(0xFF5F7890), onButton = Color.White, sheet = Color(0xFFDCE6EE), light = true,
+        ),
+        // Light and solid: warm off-white like newsprint, an ink-green focus.
+        Palette(
+            "paper", "Paper",
+            ink = Color(0xFFF3EFE7), rail = Color(0xFFEAE4D8), panel = Color(0xFFFFFDF8), panel2 = Color(0xFFE3DBCB), line = Color(0xFFD3CABA),
+            text = Color(0xFF23201B), muted = Color(0xFF5F584D), focus = Color(0xFF1F6B57), focusFill = Color(0xFFDCEDE5), onFocus = Color.White,
+            recording = Color(0xFFC62828), amber = Color(0xFF9A4508), onAmber = Color.White, green = Color(0xFF2E7D32), gold = Color(0xFF8A6D00),
+            light = true, wash = false,
+        ),
+        // Light and solid: crisp cool white, a strong blue focus.
+        Palette(
+            "daylight", "Daylight",
+            ink = Color(0xFFEEF2F7), rail = Color(0xFFE3E9F1), panel = Color(0xFFFFFFFF), panel2 = Color(0xFFD9E2ED), line = Color(0xFFC6D1DE),
+            text = Color(0xFF111827), muted = Color(0xFF4B5563), focus = Color(0xFF1D4ED8), focusFill = Color(0xFFDBE6FB), onFocus = Color.White,
+            recording = Color(0xFFC62828), amber = Color(0xFF9A4508), onAmber = Color.White, green = Color(0xFF2E7D32), gold = Color(0xFF8A6D00),
+            light = true, wash = false,
         ),
     )
 
@@ -157,10 +194,10 @@ object Jc {
  */
 fun Color.seeThrough(alpha: Float): Color = copy(alpha = this.alpha * alpha)
 
-/** A screen's background: the theme's ink, or for a light theme its soft wash. */
+/** A screen's background: the theme's ink, or for a light theme with a wash its soft wash. */
 fun Modifier.screenBackground(): Modifier =
     drawBehind {
-        if (!Jc.Light) {
+        if (!Jc.Light || !Jc.palette.wash) {
             drawRect(Jc.Ink)
             return@drawBehind
         }
