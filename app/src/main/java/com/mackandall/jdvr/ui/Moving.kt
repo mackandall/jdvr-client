@@ -203,7 +203,11 @@ fun MovingBar(p: MoveProgress?) =
 fun CuttingBar(c: CutJob, onStop: (() -> Unit)?) =
     WorkBar(
         CutAmber,
-        "✂ " + (if (c.kind == "audio-format") "Fixing the audio format · " else "Cutting to the program start · ") + c.label(),
+        "✂ " + when (c.kind) {
+            "audio-format" -> "Fixing the audio format · "
+            "commercials" -> "Cutting the commercials out · "
+            else -> "Cutting to the program start · "
+        } + c.label(),
         when {
             c.phase == "finishing" -> "Putting the cut copy in place: can't be stopped now"
             c.bytes > 0 && c.phase == "cutting" -> "${gb(c.doneBytes)} of about ${gb(c.bytes)}"
