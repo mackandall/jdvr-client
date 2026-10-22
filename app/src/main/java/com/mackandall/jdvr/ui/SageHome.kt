@@ -356,9 +356,14 @@ fun SageHome(
                         .height(itemHeight)
                         .then(
                             if (on && gem) {
+                                // Gemstone: a gem outline on lit glass (lighter at the top, a bright top edge), glowing.
                                 Modifier
-                                    .background(Jc.Focus.copy(alpha = if (subIndex == null) 0.16f else 0.08f), RoundedCornerShape(3.dp))
-                                    .drawBehind { drawRect(Jc.Focus, size = androidx.compose.ui.geometry.Size(3.dp.toPx(), size.height)) }
+                                    .shadow(if (subIndex == null) 12.dp else 3.dp, RoundedCornerShape(4.dp), ambientColor = Jc.Focus, spotColor = Jc.Focus)
+                                    .clip(RoundedCornerShape(4.dp))
+                                    .background(Color(0xFF101217))
+                                    .background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.13f), Color.White.copy(alpha = 0.03f))))
+                                    .drawBehind { drawRect(Color.White.copy(alpha = 0.28f), size = androidx.compose.ui.geometry.Size(size.width, 1.dp.toPx())) }
+                                    .border(1.5.dp, Jc.Focus.copy(alpha = if (subIndex == null) 1f else 0.6f), RoundedCornerShape(4.dp))
                             } else if (on) {
                                 Modifier
                                     .shadow(if (subIndex == null) 14.dp else 4.dp, RoundedCornerShape(8.dp), ambientColor = Color(0xFF50A0FF), spotColor = Color(0xFF50A0FF))
@@ -371,6 +376,8 @@ fun SageHome(
                         ).padding(horizontal = 16.dp),
                     contentAlignment = Alignment.CenterStart,
                 ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.weight(1f)) {
                     if (gem) {
                         Text(
                             en.label.uppercase(),
@@ -378,7 +385,6 @@ fun SageHome(
                             fontSize = 16.sp,
                             letterSpacing = 1.5.sp,
                             fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal,
-                            style = if (on && subIndex == null) TextStyle(shadow = Shadow(Jc.Focus, blurRadius = 16f)) else TextStyle.Default,
                             maxLines = 1,
                             softWrap = false,
                             overflow = TextOverflow.Ellipsis,
@@ -391,6 +397,18 @@ fun SageHome(
                             fontWeight = if (on) FontWeight.Bold else FontWeight.Normal,
                             maxLines = 1,
                         )
+                    }
+                    }
+                    // ► has something to open here: an arrow at the right end, on the highlighted entry only.
+                    if (on && en.subs.isNotEmpty()) {
+                        Text(
+                            "▶",
+                            color = Color.White,
+                            fontSize = if (gem) 14.sp else 16.sp,
+                            style = TextStyle(shadow = if (gem) Shadow(Jc.Focus, blurRadius = 12f) else Shadow(Color(0xFF001E5A).copy(alpha = 0.6f), androidx.compose.ui.geometry.Offset(0f, 2f), 4f)),
+                            modifier = Modifier.padding(start = 8.dp),
+                        )
+                    }
                     }
                 }
             }
