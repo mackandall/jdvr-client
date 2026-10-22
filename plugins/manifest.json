@@ -119,7 +119,7 @@
     "overview": "Keeps the DVR recordings drive from filling up: when free space drops below a floor, moves recordings (with their commercial marks) to archive storage you list, or deletes them, in the order you choose. Starts in preview mode.",
     "owner": "mackandall",
     "category": "Live TV",
-    "imageUrl": "https://raw.githubusercontent.com/mackandall/jellyfin-plugin-jellydvr-space/main/icon.png",
+    "imageUrl": "https://raw.githubusercontent.com/mackandall/jellyfin-plugin-jellydvr-space/master/icon.png",
     "versions": [
       {
         "version": "1.0.0.0",

@@ -68,6 +68,7 @@ def main():
     if out(["git", "rev-parse", "HEAD"], src) != out(["git", "rev-parse", "@{u}"], src):
         die(f"{src} isn't the same as its upstream; push (or pull) first")
     tag = "v" + version
+    branch = out(["gh", "repo", "view", f"{owner}/{repo}", "--json", "defaultBranchRef", "-q", ".defaultBranchRef.name"], src)
     if subprocess.run(["gh", "release", "view", tag, "--repo", f"{owner}/{repo}"], capture_output=True).returncode == 0:
         die(f"{owner}/{repo} already has {tag}; raise AssemblyVersion")
 
@@ -95,7 +96,7 @@ def main():
         "overview": meta.get("overview") or meta["description"],
         "owner": owner,
         "category": meta.get("category") or "Live TV",
-        "imageUrl": f"https://raw.githubusercontent.com/{owner}/{repo}/main/icon.png",
+        "imageUrl": f"https://raw.githubusercontent.com/{owner}/{repo}/{branch}/icon.png",
     }
     entry = {
         "version": version,
