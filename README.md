@@ -26,19 +26,25 @@ APK's SHA-256.
 ## Works best with
 
 All optional: without one, JDVR falls back to Jellyfin's own features or says what's missing.
-**Settings › Server features** in the app shows which ones your server has. To add one: Jellyfin
-dashboard › Plugins › Repositories › add the repository address, then Plugins › Catalog › install,
-and restart Jellyfin.
+**Settings › Server features** in the app shows which ones your server has. The JellyDVR plugins
+are all in one plugin repository: Jellyfin dashboard › Plugins › Repositories › add
 
-| Plugin | What it adds in JDVR | Repository |
+```
+https://raw.githubusercontent.com/mackandall/jdvr-client/main/plugins/manifest.json
+```
+
+then Plugins › Catalog › install the ones you want, and restart Jellyfin. (Intro Skipper has its own
+repository, below.)
+
+| Plugin | What it adds in JDVR | Source |
 |---|---|---|
-| Comskip Commercial Segments | Commercials found and skipped (also while recording), ✂ badges, program start, recording edits | `https://raw.githubusercontent.com/mackandall/jellyfin-plugin-comskip-segments/main/manifest.json` |
-| Intro Skipper | Intros, recaps and previews found and skipped | `https://intro-skipper.org/manifest.json` |
-| Episode History | New recordings on Home, Recorded Shows by show, watched / in library / recorded marks in the guide, Forget this episode | not published yet |
-| JellyDVR Schedule | Tuners in use, "all tuners are busy" before tuning, conflicts and priorities, Recording Favourites | not published yet |
-| JellyDVR Live | Pause and rewind live TV past when you tuned in; keep what you're watching | not published yet |
-| JellyDVR Space | Move to archive…, keeping the recordings drive from filling up | not published yet |
-| XMLTV Guide Cleaner | Cleaner movie titles in the guide (for guides that put the year in the title) | not published yet |
+| Comskip Commercial Segments | Commercials found and skipped (also while recording), ✂ badges, program start, recording edits | [repo](https://github.com/mackandall/jellyfin-plugin-comskip-segments) |
+| Intro Skipper | Intros, recaps and previews found and skipped | repository `https://intro-skipper.org/manifest.json` |
+| Episode History | New recordings on Home, Recorded Shows by show, watched / in library / recorded marks in the guide, Forget this episode | [repo](https://github.com/mackandall/jellyfin-plugin-episode-history) |
+| JellyDVR Schedule | Tuners in use, "all tuners are busy" before tuning, conflicts and priorities, Recording Favourites | [repo](https://github.com/mackandall/jellyfin-plugin-jellydvr-schedule) |
+| JellyDVR Live | Pause and rewind live TV past when you tuned in; keep what you're watching | [repo](https://github.com/mackandall/jellyfin-plugin-jellydvr-live) |
+| JellyDVR Space | Move to archive…, keeping the recordings drive from filling up | [repo](https://github.com/mackandall/jellyfin-plugin-jellydvr-space) |
+| XMLTV Guide Cleaner | Cleaner movie titles in the guide (for guides that put the year in the title) | [repo](https://github.com/mackandall/jellyfin-plugin-xmltv-cleaner) |
 
 ## What's in it
 

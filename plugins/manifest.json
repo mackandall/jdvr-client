@@ -1,0 +1,77 @@
+[
+  {
+    "guid": "e8f9a7c2-4b3d-4e1a-9c6f-2a1b0c3d4e5f",
+    "name": "Comskip Commercial Segments",
+    "description": "Detects commercials in DVR recordings with Comskip and exposes them as native Jellyfin MediaSegments.",
+    "overview": "Detects commercials in DVR recordings (and, on demand, existing library files) with an external Comskip binary, and exposes the breaks as native Jellyfin Commercial media segments so the built-in skip UI handles them.",
+    "owner": "mackandall",
+    "category": "Live TV",
+    "imageUrl": "https://raw.githubusercontent.com/mackandall/jellyfin-plugin-comskip-segments/main/icon.png",
+    "versions": [
+      {
+        "version": "1.3.1.0",
+        "changelog": "Check a cut: its joins are marked on the timeline, with Join buttons. Delete original per cut recording and Delete all originals, with the space they take; originals left without their recording are deleted after a day (new setting, on by default). Kept originals now go after 7 days by default (Keep the original file as a backup is off for new installs; an existing setting is kept). Another program's .edl stays with the original after a cut. The editor's picture fits the window (or Small/Medium/Large/drag). Fixes: frames follow quick jumps; the start lands on the first frame.",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/mackandall/jellyfin-plugin-comskip-segments/releases/download/v1.3.1.0/jellyfin-plugin-comskip-segments_1.3.1.0.zip",
+        "checksum": "af3d70eae7af80bb8d2eeb371cc1a1a5",
+        "timestamp": "2026-10-21T22:59:00.0000000Z"
+      },
+      {
+        "version": "1.3.0.0",
+        "changelog": "Commercial segments dashboard (admins): list recordings with their breaks and fix them frame by frame (wheel/keys, keyframes, previous/next black, mark-in/out), with timeline hover and scrubbing, an overview of every keyframe and fast forward. Cut commercials out of a recording with a fast stream copy, in the background, with Undo; resume positions and program start follow the cut. New setting: Cut rounding.",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/mackandall/jellyfin-plugin-comskip-segments/releases/download/v1.3.0.0/jellyfin-plugin-comskip-segments_1.3.0.0.zip",
+        "checksum": "819b5d265c5c9f98ee3d1861290b0f5b",
+        "timestamp": "2026-10-21T06:51:00.0000000Z"
+      },
+      {
+        "version": "1.2.0.2",
+        "changelog": "Web overlay works behind a Base URL; Install web overlay button and status on the settings page (shows the one-time permission command when Jellyfin can't change index.html); the overlay is put back automatically after a jellyfin-web update when Jellyfin may write the file. Press Update web overlay or re-run Web/install-overlay.sh once.",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/mackandall/jellyfin-plugin-comskip-segments/releases/download/v1.2.0.2/jellyfin-plugin-comskip-segments_1.2.0.2.zip",
+        "checksum": "f0b822ac21f0be96a6751465b712e635",
+        "timestamp": "2026-10-21T03:07:00.0000000Z"
+      },
+      {
+        "version": "1.2.0.1",
+        "changelog": "Fix: Jellyfin could crash while Comskip ran (its output and error output were written into one buffer from two threads at once). Same fix for live scans and audio trims.",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/mackandall/jellyfin-plugin-comskip-segments/releases/download/v1.2.0.1/jellyfin-plugin-comskip-segments_1.2.0.1.zip",
+        "checksum": "4f3576783637a719ac97485f490e017d",
+        "timestamp": "2026-10-19T21:39:00.0000000Z"
+      },
+      {
+        "version": "1.2.0.0",
+        "changelog": "Install Comskip button (self-contained Comskip 0.83.001 for Linux x86-64/arm64, all features) and a clear \"Comskip isn't installed\" message; program start from remembered channel cards with Undo trim; recording edits limited to chosen users with confirmation; Remove commercials keeps them removed. Re-run Web/install-overlay.sh for the web features.",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/mackandall/jellyfin-plugin-comskip-segments/releases/download/v1.2.0.0/jellyfin-plugin-comskip-segments_1.2.0.0.zip",
+        "checksum": "6a0692bd9f6e438e5fa256516aae40bb",
+        "timestamp": "2026-10-10T05:05:00.0000000Z"
+      },
+      {
+        "version": "1.1.0.0",
+        "changelog": "Skip commercials in recordings still in progress (web + TV forks), web commercial badges, \"Watch from start\" for programmes being recorded, use existing .edl files, AudioTrim writes MPEG-TS for .mpg, menu and live-scan fixes. Re-run Web/install-overlay.sh for the web features.",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/mackandall/jellyfin-plugin-comskip-segments/releases/download/v1.1.0.0/jellyfin-plugin-comskip-segments_1.1.0.0.zip",
+        "checksum": "02cee10b0c8b6d44ee9faa310593e023",
+        "timestamp": "2026-09-28T22:05:58.0000000Z"
+      },
+      {
+        "version": "1.0.1.0",
+        "changelog": "Version bump only, no code changes.",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/mackandall/jellyfin-plugin-comskip-segments/releases/download/v1.0.1.0/jellyfin-plugin-comskip-segments_1.0.1.0.zip",
+        "checksum": "b9176ba2cb35079e6f6f6a28e57d3cb5",
+        "timestamp": "2026-09-12T22:22:25.0000000Z"
+      },
+      {
+        "version": "1.0.0.0",
+        "changelog": "Initial public release.",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/mackandall/jellyfin-plugin-comskip-segments/releases/download/v1.0.0.0/jellyfin-plugin-comskip-segments_1.0.0.0.zip",
+        "checksum": "44a0f1256999a7fcf820b46468e44ea8",
+        "timestamp": "2026-09-12T22:13:09.0000000Z"
+      }
+    ]
+  }
+]
