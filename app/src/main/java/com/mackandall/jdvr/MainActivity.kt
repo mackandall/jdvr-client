@@ -249,7 +249,8 @@ fun AppRoot() {
             androidx.compose.runtime.CompositionLocalProvider(com.mackandall.jdvr.ui.LocalWatchLive provides { id: UUID -> playingChannel = id }) {
             when (screen) {
                 Screen.Home ->
-                    if (Jc.Style == com.mackandall.jdvr.ui.UiStyle.Sage) {
+                    // Both SageTV themes: Home is SageTV's menu (Gemstone draws it in its own look).
+                    if (themedHome) {
                         com.mackandall.jdvr.ui.SageHome(
                             entry = entry,
                             libraries = shownLibraries,
@@ -279,32 +280,6 @@ fun AppRoot() {
                                 signedIn = false
                             },
                             onExit = { backActivity?.finish() },
-                        )
-                    } else if (Jc.Style == com.mackandall.jdvr.ui.UiStyle.Gem) {
-                        com.mackandall.jdvr.ui.GemHome(
-                            entry = entry,
-                            libraries = shownLibraries,
-                            showRecorded = hasDvr,
-                            showTrash = hasTrash,
-                            onOpenScreen = { goTo(it) },
-                            onOpenGuide = { ch ->
-                                guideChannel = ch
-                                goTo(Screen.Guide)
-                            },
-                            onOpenLibrary = {
-                                libraryId = it
-                                goTo(Screen.Library)
-                            },
-                            onOpenShow = {
-                                openShow = it
-                                goTo(Screen.RecordedShows)
-                            },
-                            onOpenLibraryItem = { lib, item ->
-                                libraryId = lib
-                                openLibItem = item
-                                goTo(Screen.Library)
-                            },
-                            onPlayChannel = { playingChannel = it },
                         )
                     } else HomeScreen(
                         entry = entry,

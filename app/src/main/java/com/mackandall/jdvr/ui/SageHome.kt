@@ -27,6 +27,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -53,6 +54,7 @@ import com.mackandall.jdvr.data.Channel
 import com.mackandall.jdvr.data.Jdvr
 import com.mackandall.jdvr.data.LiveTvRepository
 import com.mackandall.jdvr.data.Prefs
+import com.mackandall.jdvr.data.toUuid
 import kotlinx.coroutines.delay
 import java.time.Duration
 import java.time.Instant
@@ -64,10 +66,10 @@ import java.util.UUID
 /** Where SageTV's menu was left, so coming back to Home lands on the same entry. */
 private object SageMenuState {
     var main by mutableIntStateOf(0)
-
-    // The submenu entry last used under each main entry (by key).
-    val sub = androidx.compose.runtime.mutableStateMapOf<String, Int>()
 }
+
+/** The same menu drawn in Gemstone's look: fanart behind black glass, one gem colour. */
+private val LocalGemLook = androidx.compose.runtime.compositionLocalOf { false }
 
 private class SageEntry(
     val key: String,
@@ -80,13 +82,26 @@ private class SageEntry(
 private val SageBlue = Color(0xFF4F86D8)
 private val SageBox = Color(0xFF06122F).copy(alpha = 0.55f)
 private val SageLabel = Color(0xFF8FB4E8)
+private val GemLine = Color(0xFF2C3038)
+private val GemBox = Color(0xFF08090C).copy(alpha = 0.6f)
+private val GemGrey = Color(0xFF9AA0AA)
+
+@Composable
+private fun panelBorder() = if (LocalGemLook.current) GemLine else SageBlue
+
+@Composable
+private fun panelFill() = if (LocalGemLook.current) GemBox else SageBox
+
+@Composable
+private fun panelLabel() = if (LocalGemLook.current) Jc.Focus else SageLabel
 
 private fun localOf(iso: String?): LocalDateTime? = iso?.let { runCatching { LocalDateTime.ofInstant(Instant.parse(it), ZoneId.systemDefault()) }.getOrNull() }
 
 /**
- * Home in the SageTV theme: SageTV's main menu. ▲▼ move the glossy bar (round from the bottom to
- * the top), ► goes into the entry's submenu, ◄ back out, OK opens. The panels on the right show
- * what the entry leads to.
+ * Home in the SageTV themes: SageTV's main menu. ▲▼ move the selection (round from the bottom to
+ * the top); OK opens the entry's first submenu item; ► shows the submenu and goes into it, ◄ back
+ * out and the submenu goes away. The panels on the right show what the entry leads to. In
+ * SageTV Gemstone the same menu sits on fanart behind black glass, in the gem colour.
  */
 @Composable
 fun SageHome(
@@ -104,6 +119,8 @@ fun SageHome(
     onExit: () -> Unit,
 ) {
     val prefs = Jdvr.prefs
+    val gem = Jc.Style == UiStyle.Gem
+    var recordings by remember { mutableStateOf<List<LiveTvRepository.RecordingCard>>(emptyList()) }
     var channels by remember { mutableStateOf<List<Channel>>(emptyList()) }
     var upcoming by remember { mutableStateOf<List<LiveTvRepository.Upcoming>>(emptyList()) }
     var newCount by remember { mutableStateOf<Int?>(null) }
@@ -128,7 +145,10 @@ fun SageHome(
         while (true) {
             runCatching { Jdvr.liveTv.channels() }.getOrNull()?.let { channels = it }
             upcoming = Jdvr.liveTv.schedule().orEmpty()
-            newCount = Jdvr.liveTv.recordedShows()?.sumOf { it.unplayedCount }
+            Jdvr.liveTv.recordedShows()?.let { cards ->
+                recordings = cards
+                newCount = cards.sumOf { it.unplayedCount }
+            }
             tuners = Jdvr.liveTv.tuners(null)
             drive = runCatching { Jdvr.liveTv.homeExtras() }.getOrNull()?.drive
             delay(60_000)
@@ -219,17 +239,31 @@ fun SageHome(
     // In the submenu: which entry (null: on the main column).
     var subIndex by remember { mutableStateOf<Int?>(null) }
     val subs = current.subs
-    val rememberedSub = (SageMenuState.sub[current.key] ?: 0).coerceIn(0, (subs.size - 1).coerceAtLeast(0))
 
+    // OK on a main entry: its first submenu item (the default).
     fun activate() {
         val i = subIndex
-        if (i != null) {
-            SageMenuState.sub[current.key] = i
-            subs.getOrNull(i)?.second?.invoke()
-        } else {
-            current.open?.invoke() ?: subs.getOrNull(rememberedSub)?.second?.invoke()
-        }
+        if (i != null) subs.getOrNull(i)?.second?.invoke() else current.open?.invoke() ?: subs.firstOrNull()?.second?.invoke()
     }
+
+    // The library the Libraries panel shows (the one picked in the submenu, else the first).
+    val panelLibrary = if (current.key == "libraries") libs.getOrNull(subIndex ?: 0) else null
+    var libraryItems by remember(panelLibrary?.id) { mutableStateOf<List<LiveTvRepository.LibItem>?>(null) }
+    LaunchedEffect(panelLibrary?.id) { panelLibrary?.let { libraryItems = Jdvr.liveTv.latestIn(it.id, 6) } }
+
+    // Gemstone: the fanart for the entry.
+    val fanart: String? =
+        if (!gem) {
+            null
+        } else {
+            when (current.key) {
+                "livetv", "guide" -> last?.now?.let { Jdvr.liveTv.imageUrl(it.id, 1080) }
+                "recorded" -> recordings.firstOrNull()?.id?.toUuid()?.let { Jdvr.liveTv.backdropUrl(it) }
+                "scheduled" -> upcoming.firstNotNullOfOrNull { it.programId?.toUuid() }?.let { Jdvr.liveTv.imageUrl(it, 1080) }
+                "libraries" -> libraryItems?.firstOrNull()?.let { Jdvr.liveTv.backdropUrl(it.seriesId ?: it.id) }
+                else -> null
+            }
+        }
 
     Box(
         Modifier
@@ -248,14 +282,11 @@ fun SageHome(
                         true
                     }
                     Key.DirectionRight -> {
-                        if (i == null && subs.isNotEmpty()) subIndex = rememberedSub
+                        if (i == null && subs.isNotEmpty()) subIndex = 0
                         true
                     }
                     Key.DirectionLeft -> {
-                        if (i != null) {
-                            SageMenuState.sub[current.key] = i
-                            subIndex = null
-                        }
+                        subIndex = null
                         true
                     }
                     Key.DirectionCenter, Key.Enter, Key.NumPadEnter -> {
@@ -267,8 +298,14 @@ fun SageHome(
                 }
             }.focusable(),
     ) {
-        // The light swoosh across the lower half, as on SageTV's menus.
-        androidx.compose.foundation.Canvas(Modifier.fillMaxSize()) {
+        androidx.compose.runtime.CompositionLocalProvider(LocalGemLook provides gem) {
+        if (gem) {
+            Box(Modifier.fillMaxSize().background(Color(0xFF0B0C0F)))
+            androidx.compose.animation.Crossfade(targetState = fanart, animationSpec = androidx.compose.animation.core.tween(600), label = "gem fanart") { url ->
+                if (url != null) AsyncImage(model = url, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+            }
+            Box(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Brush.horizontalGradient(listOf(Color(0xF508090C), Color(0xD908090C), Color(0x8C08090C)))))
+        } else androidx.compose.foundation.Canvas(Modifier.fillMaxSize()) {
             val w = size.width
             val h = size.height
             val path =
@@ -287,24 +324,30 @@ fun SageHome(
 
         // Top: the name, and the clock.
         Row(Modifier.padding(start = 36.dp, top = 20.dp), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text(
-                "JDVR",
-                color = Color.White,
-                fontSize = 34.sp,
-                fontWeight = FontWeight.Bold,
-                style = TextStyle(shadow = Shadow(Color(0xFF78B4FF).copy(alpha = 0.6f), blurRadius = 18f)),
-            )
-            Text("Home Theater", color = Jc.Muted, fontSize = 14.sp, modifier = Modifier.padding(bottom = 6.dp))
+            if (gem) {
+                Text("JDVR", color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 5.sp)
+            } else {
+                Text(
+                    "JDVR",
+                    color = Color.White,
+                    fontSize = 34.sp,
+                    fontWeight = FontWeight.Bold,
+                    style = TextStyle(shadow = Shadow(Color(0xFF78B4FF).copy(alpha = 0.6f), blurRadius = 18f)),
+                )
+                Text("Home Theater", color = Jc.Muted, fontSize = 14.sp, modifier = Modifier.padding(bottom = 6.dp))
+            }
         }
         Column(Modifier.align(Alignment.TopEnd).padding(end = 36.dp, top = 22.dp), horizontalAlignment = Alignment.End) {
-            Text(now.time(), color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.SemiBold)
-            Text(now.format(java.time.format.DateTimeFormatter.ofPattern("EEEE, MMMM d")), color = Jc.Muted, fontSize = 13.sp)
+            Text(now.time(), color = Color.White, fontSize = 26.sp, fontWeight = if (gem) FontWeight.Light else FontWeight.SemiBold)
+            Text(now.format(java.time.format.DateTimeFormatter.ofPattern("EEEE, MMMM d")).let { if (gem) it.uppercase() else it }, color = Jc.Muted, fontSize = 13.sp, letterSpacing = if (gem) 1.sp else 0.sp)
         }
 
         // The main menu.
         val itemHeight = 40.dp
         val itemGap = 5.dp
-        Column(Modifier.padding(start = 82.dp, top = 108.dp).width(250.dp), verticalArrangement = Arrangement.spacedBy(itemGap)) {
+        // Gemstone's spaced capitals need a little more room.
+        val menuWidth = if (gem) 284.dp else 250.dp
+        Column(Modifier.padding(start = 82.dp, top = 108.dp).width(menuWidth), verticalArrangement = Arrangement.spacedBy(itemGap)) {
             entries.forEachIndexed { i, en ->
                 val on = i == mainIndex
                 Box(
@@ -312,7 +355,11 @@ fun SageHome(
                         .fillMaxWidth()
                         .height(itemHeight)
                         .then(
-                            if (on) {
+                            if (on && gem) {
+                                Modifier
+                                    .background(Jc.Focus.copy(alpha = if (subIndex == null) 0.16f else 0.08f), RoundedCornerShape(3.dp))
+                                    .drawBehind { drawRect(Jc.Focus, size = androidx.compose.ui.geometry.Size(3.dp.toPx(), size.height)) }
+                            } else if (on) {
                                 Modifier
                                     .shadow(if (subIndex == null) 14.dp else 4.dp, RoundedCornerShape(8.dp), ambientColor = Color(0xFF50A0FF), spotColor = Color(0xFF50A0FF))
                                     .clip(RoundedCornerShape(8.dp))
@@ -324,56 +371,65 @@ fun SageHome(
                         ).padding(horizontal = 16.dp),
                     contentAlignment = Alignment.CenterStart,
                 ) {
-                    Text(
-                        en.label,
-                        color = if (on) Color.White else Color(0xFFC9DAF2),
-                        fontSize = 21.sp,
-                        fontWeight = if (on) FontWeight.Bold else FontWeight.Normal,
-                        maxLines = 1,
-                    )
+                    if (gem) {
+                        Text(
+                            en.label.uppercase(),
+                            color = if (on) Color.White else GemGrey,
+                            fontSize = 16.sp,
+                            letterSpacing = 1.5.sp,
+                            fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal,
+                            style = if (on && subIndex == null) TextStyle(shadow = Shadow(Jc.Focus, blurRadius = 16f)) else TextStyle.Default,
+                            maxLines = 1,
+                            softWrap = false,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    } else {
+                        Text(
+                            en.label,
+                            color = if (on) Color.White else Color(0xFFC9DAF2),
+                            fontSize = 21.sp,
+                            fontWeight = if (on) FontWeight.Bold else FontWeight.Normal,
+                            maxLines = 1,
+                        )
+                    }
                 }
             }
         }
 
-        // Its submenu, level with the entry (kept on screen).
-        if (subs.isNotEmpty()) {
+        // Its submenu, level with the entry (kept on screen): only once ► has been pressed.
+        val accent = if (gem) Jc.Focus else Color(0xFF5FB0FF)
+        val accentLine = if (gem) Jc.Focus else Color(0xFF9CD0FF)
+        if (subIndex != null && subs.isNotEmpty()) {
             val subRow = 30.dp
             val top = (108.dp + (itemHeight + itemGap) * mainIndex).coerceAtMost((490.dp - (subRow + 3.dp) * subs.size).coerceAtLeast(80.dp))
             Column(
                 Modifier
-                    .padding(start = 342.dp, top = top)
+                    .padding(start = 82.dp + menuWidth + 10.dp, top = top)
                     .width(196.dp),
                 verticalArrangement = Arrangement.spacedBy(3.dp),
             ) {
                 subs.forEachIndexed { i, (label, _) ->
                     val on = subIndex == i
-                    val remembered = subIndex == null && i == rememberedSub
                     Box(
                         Modifier
                             .fillMaxWidth()
                             .height(subRow)
-                            .background(
-                                when {
-                                    on -> Color(0xFF5FB0FF).copy(alpha = 0.32f)
-                                    remembered -> Color(0xFF5FB0FF).copy(alpha = 0.12f)
-                                    else -> Color.Transparent
-                                },
-                                RoundedCornerShape(6.dp),
-                            ).then(if (on) Modifier.border(1.dp, Color(0xFF9CD0FF), RoundedCornerShape(6.dp)) else Modifier)
+                            .background(if (on) accent.copy(alpha = if (gem) 0.18f else 0.32f) else Color.Transparent, RoundedCornerShape(if (gem) 3.dp else 6.dp))
+                            .then(if (on) Modifier.border(1.dp, accentLine, RoundedCornerShape(if (gem) 3.dp else 6.dp)) else Modifier)
                             .padding(horizontal = 12.dp),
                         contentAlignment = Alignment.CenterStart,
                     ) {
-                        Text(label, color = if (on) Color.White else Color(0xFF9DB6DA), fontSize = 15.sp, fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(label, color = if (on) Color.White else if (gem) GemGrey else Color(0xFF9DB6DA), fontSize = 15.sp, fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                 }
             }
             // The line joining the submenu to the menu.
             Box(
                 Modifier
-                    .padding(start = 334.dp, top = top)
+                    .padding(start = 82.dp + menuWidth + 2.dp, top = top)
                     .width(2.dp)
                     .height(subRow * subs.size + 3.dp * (subs.size - 1))
-                    .background(Color(0xFF3E7BD6)),
+                    .background(if (gem) Jc.Focus.copy(alpha = 0.5f) else Color(0xFF3E7BD6)),
             )
         }
 
@@ -395,7 +451,7 @@ fun SageHome(
                     }
                 }
                 "recorded" -> {
-                    last?.let { LivePanel(it, now, "BACK TO LIVE", symbols) }
+                    if (gem) NewRecordingsPanel(recordings) else last?.let { LivePanel(it, now, "BACK TO LIVE", symbols) }
                     NextPanel(upcoming, now, 3)
                 }
                 "scheduled" -> {
@@ -405,11 +461,8 @@ fun SageHome(
                     }
                     NextPanel(upcoming, now, 6)
                 }
-                "libraries" -> {
-                    val lib = libs.getOrNull(subIndex ?: rememberedSub)
-                    if (lib != null) LibraryPanel(lib)
-                }
-                "search" -> SagePanel("SEARCH") { Text("Find shows and films in every library, and programmes in the guide.", color = Color(0xFFE3ECFA), fontSize = 15.sp) }
+                "libraries" -> panelLibrary?.let { LibraryPanel(it, libraryItems) }
+                "search" -> SagePanel("SEARCH") { Text("Find shows and films in every library, and programmes in the guide.", color = Jc.Text, fontSize = 15.sp) }
                 "settings" -> {
                     SagePanel("TUNERS") {
                         val t = tuners
@@ -430,7 +483,7 @@ fun SageHome(
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
                 .height(42.dp)
-                .background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Color.Transparent, Color(0xFF040C20).copy(alpha = 0.85f))))
+                .background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Color.Transparent, (if (gem) Color(0xFF08090C) else Color(0xFF040C20)).copy(alpha = 0.85f))))
                 .padding(horizontal = 36.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -441,6 +494,7 @@ fun SageHome(
                 )
             Text(parts.joinToString(" · "), color = Jc.Muted, fontSize = 14.sp, modifier = Modifier.weight(1f))
             drive?.takeIf { it.totalBytes > 0 }?.let { Text("Recordings drive: ${it.freeBytes / 1_000_000_000L} GB free", color = Jc.Muted, fontSize = 14.sp) }
+        }
         }
     }
 
@@ -462,12 +516,12 @@ private fun SagePanel(
     Column(
         Modifier
             .fillMaxWidth()
-            .background(SageBox, RoundedCornerShape(8.dp))
-            .border(1.dp, SageBlue, RoundedCornerShape(8.dp))
+            .background(panelFill(), RoundedCornerShape(if (LocalGemLook.current) 4.dp else 8.dp))
+            .border(1.dp, panelBorder(), RoundedCornerShape(if (LocalGemLook.current) 4.dp else 8.dp))
             .padding(horizontal = 12.dp, vertical = 9.dp),
         verticalArrangement = Arrangement.spacedBy(5.dp),
     ) {
-        Text(label, color = SageLabel, fontSize = 11.sp, letterSpacing = 1.sp)
+        Text(label, color = panelLabel(), fontSize = 11.sp, letterSpacing = if (LocalGemLook.current) 2.sp else 1.sp)
         content()
     }
 }
@@ -496,26 +550,26 @@ private fun LivePanel(
     Column(
         Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
-            .background(SageBox)
-            .border(1.dp, SageBlue, RoundedCornerShape(8.dp)),
+            .clip(RoundedCornerShape(if (LocalGemLook.current) 4.dp else 8.dp))
+            .background(panelFill())
+            .border(1.dp, panelBorder(), RoundedCornerShape(if (LocalGemLook.current) 4.dp else 8.dp)),
     ) {
-        Box(Modifier.fillMaxWidth().height(150.dp).background(Color(0xFF050B1C)), contentAlignment = Alignment.Center) {
+        Box(Modifier.fillMaxWidth().height(150.dp).background(if (LocalGemLook.current) Color(0xFF14161B) else Color(0xFF050B1C)), contentAlignment = Alignment.Center) {
             val p = c.now
             val image = p?.let { Jdvr.liveTv.imageUrl(it.id, 360) } ?: c.logoUrl
             if (image != null) AsyncImage(model = image, contentDescription = null, contentScale = if (p != null) ContentScale.Crop else ContentScale.Fit, modifier = Modifier.fillMaxSize())
         }
         Column(Modifier.padding(horizontal = 12.dp, vertical = 9.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            Text("$label · ${c.number} ${c.name}".uppercase(), color = SageLabel, fontSize = 11.sp, letterSpacing = 1.sp, maxLines = 1)
+            Text("$label · ${c.number} ${c.name}".uppercase(), color = panelLabel(), fontSize = 11.sp, letterSpacing = 1.sp, maxLines = 1)
             val p = c.now
             Text(p?.name ?: c.name, color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
             val marks = Marks.parse(p?.rawEpisodeTitle, symbols)
-            listOfNotNull(p?.seasonEpisode, marks.title).joinToString(" · ").ifEmpty { null }?.let { Text(it, color = Color(0xFFC9DAF2), fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+            listOfNotNull(p?.seasonEpisode, marks.title).joinToString(" · ").ifEmpty { null }?.let { Text(it, color = Jc.Muted, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
             if (p != null) {
                 val total = Duration.between(p.start, p.end).toMinutes().coerceAtLeast(1)
                 val done = Duration.between(p.start, now).toMinutes().coerceIn(0, total)
-                Box(Modifier.padding(top = 4.dp).fillMaxWidth().height(5.dp).background(Color(0xFF1B3566), RoundedCornerShape(3.dp))) {
-                    Box(Modifier.fillMaxWidth(done.toFloat() / total).height(5.dp).background(Color(0xFF5FB0FF), RoundedCornerShape(3.dp)))
+                Box(Modifier.padding(top = 4.dp).fillMaxWidth().height(if (LocalGemLook.current) 3.dp else 5.dp).background(if (LocalGemLook.current) GemLine else Color(0xFF1B3566), RoundedCornerShape(3.dp))) {
+                    Box(Modifier.fillMaxWidth(done.toFloat() / total).height(if (LocalGemLook.current) 3.dp else 5.dp).background(if (LocalGemLook.current) Jc.Focus else Color(0xFF5FB0FF), RoundedCornerShape(3.dp)))
                 }
             }
         }
@@ -539,10 +593,30 @@ private fun NextPanel(
     }
 }
 
+/** Gemstone's Recorded Shows panel: the newest recordings' posters. */
 @Composable
-private fun LibraryPanel(lib: LiveTvRepository.Library) {
-    var items by remember(lib.id) { mutableStateOf<List<LiveTvRepository.LibItem>?>(null) }
-    LaunchedEffect(lib.id) { items = Jdvr.liveTv.latestIn(lib.id, 6) }
+private fun NewRecordingsPanel(cards: List<LiveTvRepository.RecordingCard>) {
+    SagePanel("NEW RECORDINGS") {
+        val fresh = cards.filter { it.unplayedCount > 0 }.ifEmpty { cards }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            fresh.take(3).forEach { c ->
+                AsyncImage(
+                    model = Jdvr.liveTv.imageUrl(c.imageId ?: c.id, 240),
+                    contentDescription = c.name,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.width(90.dp).height(135.dp).clip(RoundedCornerShape(4.dp)).background(Color(0xFF14161B)),
+                )
+            }
+        }
+        fresh.take(3).forEach { PanelLine(it.name, if (it.unplayedCount > 1) "${it.unplayedCount} new" else "") }
+    }
+}
+
+@Composable
+private fun LibraryPanel(
+    lib: LiveTvRepository.Library,
+    items: List<LiveTvRepository.LibItem>?,
+) {
     SagePanel("RECENTLY ADDED · ${lib.name.uppercase()}") {
         val list = items
         if (list == null) {
@@ -554,7 +628,7 @@ private fun LibraryPanel(lib: LiveTvRepository.Library) {
                         model = Jdvr.liveTv.imageUrl(it.seriesId ?: it.id, 240),
                         contentDescription = it.seriesName ?: it.name,
                         contentScale = ContentScale.Crop,
-                        modifier = Modifier.width(90.dp).height(135.dp).clip(RoundedCornerShape(5.dp)).background(Color(0xFF0B1A3C)),
+                        modifier = Modifier.width(90.dp).height(135.dp).clip(RoundedCornerShape(5.dp)).background(panelFill()),
                     )
                 }
             }
@@ -571,6 +645,7 @@ private fun ChannelPicker(
     onPick: (UUID) -> Unit,
 ) {
     val first = remember { FocusRequester() }
+    val gem = Jc.Style == UiStyle.Gem
     val start = channels.indexOfFirst { it.id == current }.coerceAtLeast(0)
     val state = androidx.compose.foundation.lazy.rememberLazyListState((start - 3).coerceAtLeast(0))
     LaunchedEffect(channels.isNotEmpty()) {
@@ -585,7 +660,7 @@ private fun ChannelPicker(
                 .width(440.dp)
                 .height(420.dp)
                 .background(Jc.Sheet, RoundedCornerShape(10.dp))
-                .border(1.dp, SageBlue, RoundedCornerShape(10.dp))
+                .border(1.dp, if (gem) GemLine else SageBlue, RoundedCornerShape(10.dp))
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
@@ -598,11 +673,11 @@ private fun ChannelPicker(
                         modifier = Modifier.fillMaxWidth().then(if (i == start) Modifier.focusRequester(first) else Modifier).onFocusChangedCompat { focused = it },
                         shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(6.dp)),
                         colors = ClickableSurfaceDefaults.colors(containerColor = Color.Transparent, focusedContainerColor = Color.Transparent, contentColor = Color.White, focusedContentColor = Color.White),
-                        border = ClickableSurfaceDefaults.border(focusedBorder = Border(BorderStroke(1.dp, Color(0xFF9CD0FF)))),
+                        border = ClickableSurfaceDefaults.border(focusedBorder = Border(BorderStroke(1.dp, if (gem) Jc.Focus else Color(0xFF9CD0FF)))),
                         scale = ClickableSurfaceDefaults.scale(focusedScale = 1f),
                     ) {
                         Row(
-                            (if (focused) Modifier.sageGloss() else Modifier).fillMaxWidth().padding(horizontal = 12.dp, vertical = 7.dp),
+                            (if (focused && gem) Modifier.background(Jc.Focus.copy(alpha = 0.18f)) else if (focused) Modifier.sageGloss() else Modifier).fillMaxWidth().padding(horizontal = 12.dp, vertical = 7.dp),
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {

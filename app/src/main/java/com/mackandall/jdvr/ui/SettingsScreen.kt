@@ -84,7 +84,7 @@ fun SettingsScreen(
         if (paletteFor(prefs.theme).style == UiStyle.Gem) {
             Choice(
                 label = "Gemstone colour",
-                help = "The one colour Gemstone uses: focus, the menu's underline, the poster flow's glow.",
+                help = "The one colour Gemstone uses: the menu's selection, focus rings, and the labels on Home's panels.",
                 value = gemFor(prefs.gem).name,
             ) { prefs.changeGem(Gems[(Gems.indexOf(gemFor(prefs.gem)) + 1) % Gems.size].key) }
         }
