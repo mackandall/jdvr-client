@@ -57,24 +57,18 @@ repository, below.)
 
 ## Screenshots
 
-Two of the themes: *Ode to Emby's Apple* (light) and *Midnight* (dark). The shows, films and
-channels are a made-up demo library, with artwork drawn for it.
+Taken on a real server, TV shows only, in two of the themes: *Midnight* (the default) and
+*MythTV Blue*.
 
-| | Ode to Emby's Apple | Midnight |
+| | Midnight | MythTV Blue |
 |---|---|---|
-| Home | ![Home, Apple theme](screenshots/apple-1-home.jpg) | ![Home, Midnight theme](screenshots/midnight-1-home.jpg) |
-| Menu | ![Menu, Apple theme](screenshots/apple-2-menu.jpg) | ![Menu, Midnight theme](screenshots/midnight-2-menu.jpg) |
-| Guide | ![Guide, Apple theme](screenshots/apple-3-guide.jpg) | ![Guide, Midnight theme](screenshots/midnight-3-guide.jpg) |
-| Recorded Shows | ![Recorded Shows, Apple theme](screenshots/apple-4-recorded-shows.jpg) | ![Recorded Shows, Midnight theme](screenshots/midnight-4-recorded-shows.jpg) |
-| A show's recordings | ![Show episodes, Apple theme](screenshots/apple-extra-show-episodes.jpg) | ![Show episodes, Midnight theme](screenshots/midnight-extra-show-episodes.jpg) |
-| TV episode details | ![TV details, Apple theme](screenshots/apple-6-tv-details.jpg) | ![TV details, Midnight theme](screenshots/midnight-6-tv-details.jpg) |
-| Movies Archive | ![Movies Archive, Apple theme](screenshots/apple-5-movies-archive.jpg) | ![Movies Archive, Midnight theme](screenshots/midnight-5-movies-archive.jpg) |
-| Movie details | ![Movie details, Apple theme](screenshots/apple-7-movie-details.jpg) | ![Movie details, Midnight theme](screenshots/midnight-7-movie-details.jpg) |
-
-Playing a recording: commercial breaks marked in orange on the seek bar (intros and recaps show
-in purple), with a skip prompt.
-
-![Player with commercial marks](screenshots/apple-8-player-commercial-marks.jpg)
+| Home | ![Home, Midnight theme](screenshots/midnight-1-home.jpg) | ![Home, MythTV Blue theme](screenshots/mythtv-1-home.jpg) |
+| Home, a library's row | ![Home library row, Midnight theme](screenshots/midnight-1b-home-rows.jpg) | ![Home library row, MythTV Blue theme](screenshots/mythtv-1b-home-rows.jpg) |
+| Menu | ![Menu, Midnight theme](screenshots/midnight-2-menu.jpg) | ![Menu, MythTV Blue theme](screenshots/mythtv-2-menu.jpg) |
+| Guide | ![Guide, Midnight theme](screenshots/midnight-3-guide.jpg) | ![Guide, MythTV Blue theme](screenshots/mythtv-3-guide.jpg) |
+| TV library | ![TV library, Midnight theme](screenshots/midnight-4-tv-library.jpg) | ![TV library, MythTV Blue theme](screenshots/mythtv-4-tv-library.jpg) |
+| A show's recordings | ![Show episodes, Midnight theme](screenshots/midnight-5-show-episodes.jpg) | ![Show episodes, MythTV Blue theme](screenshots/mythtv-5-show-episodes.jpg) |
+| TV episode details | ![TV details, Midnight theme](screenshots/midnight-6-tv-details.jpg) | ![TV details, MythTV Blue theme](screenshots/mythtv-6-tv-details.jpg) |
 
 Build: `JAVA_HOME=~/opt/jdk21 ANDROID_HOME=~/Android/Sdk ./gradlew :app:assembleDebug`
 (installs as `com.mackandall.jdvr.debug`, beside Wholphin).
