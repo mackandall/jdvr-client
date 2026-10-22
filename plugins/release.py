@@ -72,7 +72,9 @@ def main():
         die(f"{owner}/{repo} already has {tag}; raise AssemblyVersion")
 
     env = dict(os.environ, DOTNET_ROOT=os.environ.get("DOTNET_ROOT", os.path.expanduser("~/.dotnet")))
-    dotnet = "dotnet" if subprocess.run(["which", "dotnet"], capture_output=True).returncode == 0 else os.path.join(env["DOTNET_ROOT"], "dotnet")
+    dotnet = os.path.join(env["DOTNET_ROOT"], "dotnet")
+    if not os.path.exists(dotnet):
+        dotnet = "dotnet"
     run([dotnet, "build", "-c", "Release", "-v", "q", "-nologo"], src, env=env, stdout=subprocess.DEVNULL)
 
     folder = os.path.join(src, "bin", "release-zip")

@@ -73,5 +73,100 @@
         "timestamp": "2026-09-12T22:13:09.0000000Z"
       }
     ]
+  },
+  {
+    "guid": "62b08fb5-2008-4b2b-ace8-e73d3e584405",
+    "name": "Episode History",
+    "description": "SageTV-style episode history for the DVR: remembers what was recorded and watched (even after deletion), marks guide entries (✓ watched, ● in library, ○ recorded before), and cancels series recordings of episodes already in the library.",
+    "overview": "SageTV-style episode history for the DVR: remembers what was recorded and watched (even after deletion), marks guide entries (✓ watched, ● in library, ○ recorded before), and cancels series recordings of episodes already in the library.",
+    "owner": "mackandall",
+    "category": "Live TV",
+    "imageUrl": "https://raw.githubusercontent.com/mackandall/jellyfin-plugin-episode-history/main/icon.png",
+    "versions": [
+      {
+        "version": "1.0.0.0",
+        "changelog": "First public release.",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/mackandall/jellyfin-plugin-episode-history/releases/download/v1.0.0.0/jellyfin-plugin-episode-history_1.0.0.0.zip",
+        "checksum": "4c985d0bd1a9d1d22becc8fb812d25ef",
+        "timestamp": "2026-10-22T07:26:05.0000000Z"
+      }
+    ]
+  },
+  {
+    "guid": "110ae7e3-0c55-4684-b0f8-3e86eb2b53af",
+    "name": "XMLTV Guide Cleaner",
+    "description": "Serves a cleaned copy of an upstream XMLTV guide: strips a year that is already baked into a movie's title (e.g. \"Movie (2001)\") when it matches the programme's <date>, so Jellyfin stops naming recordings \"Movie (2001) (2001)\".",
+    "overview": "Serves a cleaned copy of an upstream XMLTV guide: strips a year that is already baked into a movie's title (e.g. \"Movie (2001)\") when it matches the programme's <date>, so Jellyfin stops naming recordings \"Movie (2001) (2001)\".",
+    "owner": "mackandall",
+    "category": "Live TV",
+    "imageUrl": "https://raw.githubusercontent.com/mackandall/jellyfin-plugin-xmltv-cleaner/main/icon.png",
+    "versions": [
+      {
+        "version": "1.0.0.0",
+        "changelog": "First public release.",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/mackandall/jellyfin-plugin-xmltv-cleaner/releases/download/v1.0.0.0/jellyfin-plugin-xmltv-cleaner_1.0.0.0.zip",
+        "checksum": "2a42565beb8510ed176f6cf9e816f0b1",
+        "timestamp": "2026-10-22T07:26:09.0000000Z"
+      }
+    ]
+  },
+  {
+    "guid": "c709ebd6-431f-493c-93cf-1c345db59d49",
+    "name": "JellyDVR Space",
+    "description": "Keeps the DVR recordings drive from filling up: when free space drops below a floor, moves recordings (with their commercial marks) to archive storage you list, or deletes them, in the order you choose. Starts in preview mode.",
+    "overview": "Keeps the DVR recordings drive from filling up: when free space drops below a floor, moves recordings (with their commercial marks) to archive storage you list, or deletes them, in the order you choose. Starts in preview mode.",
+    "owner": "mackandall",
+    "category": "Live TV",
+    "imageUrl": "https://raw.githubusercontent.com/mackandall/jellyfin-plugin-jellydvr-space/main/icon.png",
+    "versions": [
+      {
+        "version": "1.0.0.0",
+        "changelog": "First public release.",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/mackandall/jellyfin-plugin-jellydvr-space/releases/download/v1.0.0.0/jellyfin-plugin-jellydvr-space_1.0.0.0.zip",
+        "checksum": "616b8136e433a67a96df800204d277d2",
+        "timestamp": "2026-10-22T07:26:13.0000000Z"
+      }
+    ]
+  },
+  {
+    "guid": "7c1dd9fc-123a-477b-b646-e735ed726d58",
+    "name": "JellyDVR Schedule",
+    "description": "SageTV-style recording priorities and conflict handling: ranks your series recordings, looks ahead for times when more recordings are scheduled than you have tuner inputs, and moves the lower-priority one to another airing of the same episode or skips it. Starts in preview mode.",
+    "overview": "SageTV-style recording priorities and conflict handling: ranks your series recordings, looks ahead for times when more recordings are scheduled than you have tuner inputs, and moves the lower-priority one to another airing of the same episode or skips it. Starts in preview mode.",
+    "owner": "mackandall",
+    "category": "Live TV",
+    "imageUrl": "https://raw.githubusercontent.com/mackandall/jellyfin-plugin-jellydvr-schedule/main/icon.png",
+    "versions": [
+      {
+        "version": "1.0.0.0",
+        "changelog": "First public release.",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/mackandall/jellyfin-plugin-jellydvr-schedule/releases/download/v1.0.0.0/jellyfin-plugin-jellydvr-schedule_1.0.0.0.zip",
+        "checksum": "c44187bf91900d00edb7f8c739c068dc",
+        "timestamp": "2026-10-22T07:26:17.0000000Z"
+      }
+    ]
+  },
+  {
+    "guid": "cfd76dc2-a07d-4fc9-a2d9-c5d2aaa67215",
+    "name": "JellyDVR Live",
+    "description": "SageTV-style live TV buffer: records the programme you're watching from the moment you tune in, so you can rewind past tune-in, switch devices, skip commercials, or keep it as a real recording. Unkept buffers are deleted automatically.",
+    "overview": "SageTV-style live TV buffer: records the programme you're watching from the moment you tune in, so you can rewind past tune-in, switch devices, skip commercials, or keep it as a real recording. Unkept buffers are deleted automatically.",
+    "owner": "mackandall",
+    "category": "Live TV",
+    "imageUrl": "https://raw.githubusercontent.com/mackandall/jellyfin-plugin-jellydvr-live/main/icon.png",
+    "versions": [
+      {
+        "version": "1.0.0.0",
+        "changelog": "First public release.",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/mackandall/jellyfin-plugin-jellydvr-live/releases/download/v1.0.0.0/jellyfin-plugin-jellydvr-live_1.0.0.0.zip",
+        "checksum": "8fe1bcf58086c7b943b154cdd49d5ce9",
+        "timestamp": "2026-10-22T07:26:22.0000000Z"
+      }
+    ]
   }
 ]
