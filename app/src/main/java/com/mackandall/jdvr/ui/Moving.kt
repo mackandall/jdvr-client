@@ -3,7 +3,7 @@ package com.mackandall.jdvr.ui
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
@@ -24,6 +24,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -146,7 +147,7 @@ private fun BoxScope.WorkOverlay(colour: Color, icon: String, label: String, pro
         animationSpec = infiniteRepeatable(tween(1200, easing = LinearEasing), RepeatMode.Restart),
         label = "stripes",
     )
-    val fraction by animateFloatAsState(progress, tween(1500), label = "progress")
+    val fraction = glidingProgress(progress)
     Canvas(Modifier.matchParentSize()) {
         drawRect(Color.Black.copy(alpha = 0.45f))
         val gap = 28.dp.toPx()
@@ -225,7 +226,7 @@ private fun WorkBar(colour: Color, title: String, detail: String?, progress: Flo
         animationSpec = infiniteRepeatable(tween(900, easing = LinearEasing), RepeatMode.Restart),
         label = "stripes",
     )
-    val fraction by animateFloatAsState(progress, tween(1500), label = "progress")
+    val fraction = glidingProgress(progress)
     Row(
         Modifier.clip(RoundedCornerShape(10.dp)).background(Jc.Panel2).padding(horizontal = 16.dp, vertical = 10.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -275,6 +276,18 @@ private fun WorkTag(colour: Color, text: String) {
         maxLines = 1,
         modifier = Modifier.background(colour.copy(alpha = pulse), RoundedCornerShape(6.dp)).padding(horizontal = 7.dp, vertical = 2.dp),
     )
+}
+
+/**
+ * The bar's fill: starts at the progress it's first shown with (a cut or move found part way
+ * through, often near the end, doesn't slide up from 0 behind its percent) and glides to each
+ * new value in less than the 2 s between checks.
+ */
+@Composable
+private fun glidingProgress(progress: Float): Float {
+    val shown = remember { Animatable(progress) }
+    LaunchedEffect(progress) { shown.animateTo(progress, tween(800, easing = LinearEasing)) }
+    return shown.value
 }
 
 private fun gb(bytes: Long): String = "%.1f GB".format(bytes / (1024.0 * 1024 * 1024))
