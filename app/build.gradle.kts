@@ -14,8 +14,12 @@ android {
         applicationId = "com.mackandall.jdvr"
         minSdk = libs.versions.minSdk.get().toInt()
         targetSdk = libs.versions.targetSdk.get().toInt()
-        versionCode = 1
-        versionName = "0.1.0"
+        // The version is jdvr.version in gradle.properties ("1.2.3"); the code Android compares is
+        // made from it (1.2.3 → 10203), so a higher version always installs as an update.
+        val version = providers.gradleProperty("jdvr.version").get()
+        val (major, minor, patch) = version.split(".").map { it.toInt() }
+        versionCode = major * 10000 + minor * 100 + patch
+        versionName = version
     }
 
     // Release key: its location and passwords come from ~/.gradle/gradle.properties (JDVR_KEYSTORE,

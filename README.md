@@ -3,6 +3,26 @@
 A TV client for Jellyfin's live TV and DVR: live TV and a guide first, recordings next. It works
 with any Jellyfin server (10.11 or 12), and does more with a few optional server plugins (below).
 
+**Experimental:** used every day on one household's server, but young. Expect rough edges, and
+please open an issue when something breaks.
+
+## Install
+
+Android TV 6 or newer (Google TV, Shield, Fire TV, onn and other Android TV boxes). JDVR isn't in
+an app store: install the APK yourself.
+
+1. On the TV, install the **Downloader** app (from the Play Store or Amazon Appstore) and allow it
+   to install apps when it asks (Settings › Apps › Special app access › Install unknown apps).
+2. In Downloader, open
+   `https://github.com/mackandall/jdvr-client/releases/latest/download/jdvr.apk` and install.
+3. Open JDVR: it finds Jellyfin servers on your network, or type the address. Sign in with Quick
+   Connect (approve the code in the Jellyfin web client) or a password.
+
+To update, do step 2 again: the same address always gives the latest version, and it installs
+over the old one without signing you out. From a computer instead: `adb install -r jdvr.apk`.
+Each [release](https://github.com/mackandall/jdvr-client/releases) lists what changed and the
+APK's SHA-256.
+
 ## Works best with
 
 All optional: without one, JDVR falls back to Jellyfin's own features or says what's missing.
@@ -51,5 +71,7 @@ with a skip prompt.
 
 Build: `JAVA_HOME=~/opt/jdk21 ANDROID_HOME=~/Android/Sdk ./gradlew :app:assembleDebug`
 (installs as `com.mackandall.jdvr.debug`, beside Wholphin).
+Release: raise `jdvr.version` in `gradle.properties`, commit and push, then `./release.sh` builds
+the signed APK and makes a draft GitHub release with it.
 
 GPL-2.0: `app/src/main/java/com/mackandall/jdvr/profile` comes from Wholphin / Jellyfin Android TV.
