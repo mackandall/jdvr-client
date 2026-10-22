@@ -75,61 +75,57 @@ fun SettingsScreen(
         Text("Settings", color = Jc.Text, fontSize = 28.sp, fontWeight = FontWeight.SemiBold)
         Spacer(6)
         Section("Appearance")
-        Choice(
+        // OK on Theme opens the gallery (Gemstone's colours are on its card there).
+        var gallery by remember { mutableStateOf(false) }
+        Options(
             label = "Theme",
             help = "The colours of the whole app. Ode to Emby's Apple is light: frosted panels on a soft backdrop. Paper and Daylight are light and plain. SageTV and SageTV Gemstone also change Home into their main menu.",
-            value = paletteFor(prefs.theme).name,
+            options = Palettes.map { Opt(it.key, it.name + if (it.style == UiStyle.Gem) " · ${gemFor(prefs.gem).name}" else "") },
+            selected = paletteFor(prefs.theme).key,
             modifier = Modifier.focusRequester(entry),
-        ) { prefs.changeTheme(Palettes[(Palettes.indexOf(paletteFor(prefs.theme)) + 1) % Palettes.size].key) }
-        if (paletteFor(prefs.theme).style == UiStyle.Gem) {
-            Choice(
-                label = "Gemstone colour",
-                help = "The one colour Gemstone uses: the menu's selection, focus rings, and the labels on Home's panels.",
-                value = gemFor(prefs.gem).name,
-            ) { prefs.changeGem(Gems[(Gems.indexOf(gemFor(prefs.gem)) + 1) % Gems.size].key) }
-        }
+            onOpen = { gallery = true },
+        ) { prefs.changeTheme(it) }
+        if (gallery) ThemeGallery(onDismiss = { gallery = false })
         if (paletteFor(prefs.theme).let { it.light && it.wash }) {
-            Choice(
+            Options(
                 label = "Backdrop",
                 help = "The soft colour behind the screens.",
-                value = washFor(prefs.wash).name,
-            ) { prefs.changeWash(Washes[(Washes.indexOf(washFor(prefs.wash)) + 1) % Washes.size].key) }
+                options = Washes.map { Opt(it.key, it.name) },
+                selected = washFor(prefs.wash).key,
+            ) { prefs.changeWash(it) }
         }
         Section("Guide")
-        Choice(
+        Options(
             label = "Programme details",
             help = "Below or above the guide (a band with the programme's picture, so the guide uses the full width), or beside it.",
-            value =
-                when (prefs.guideInfo) {
-                    Prefs.TOP -> "Above the guide"
-                    Prefs.SIDE -> "Beside the guide"
-                    else -> "Below the guide"
-                },
-        ) {
-            val order = listOf(Prefs.BOTTOM, Prefs.TOP, Prefs.SIDE)
-            prefs.changeGuideInfo(order[(order.indexOf(prefs.guideInfo).coerceAtLeast(0) + 1) % order.size])
-        }
-        Choice(
+            options = listOf(Opt(Prefs.BOTTOM, "Below the guide"), Opt(Prefs.TOP, "Above the guide"), Opt(Prefs.SIDE, "Beside the guide")),
+            selected = prefs.guideInfo,
+        ) { prefs.changeGuideInfo(it) }
+        Options(
             label = "Programme actions",
             help = "What OK on a programme opens (in the guide and in search): a panel on the right, ◄ back to the guide; or a card in the middle over the dimmed guide, like the other menus.",
-            value = if (prefs.programActions == Prefs.FLOATING) "Floating" else "Docked on the right",
-        ) { prefs.changeProgramActions(if (prefs.programActions == Prefs.FLOATING) Prefs.DOCKED else Prefs.FLOATING) }
-        Choice(
+            options = listOf(Opt(Prefs.DOCKED, "Docked on the right"), Opt(Prefs.FLOATING, "Floating")),
+            selected = if (prefs.programActions == Prefs.FLOATING) Prefs.FLOATING else Prefs.DOCKED,
+        ) { prefs.changeProgramActions(it) }
+        Options(
             label = "Background art",
             help = "Rest on a programme and its picture fades in behind the guide, which turns see-through. Off keeps the plain dark guide.",
-            value = if (prefs.guideArtSeconds == 0) "Off" else "After ${prefs.guideArtSeconds} s",
-        ) { prefs.changeGuideArtSeconds(if (prefs.guideArtSeconds >= 5) 0 else if (prefs.guideArtSeconds == 0) 2 else prefs.guideArtSeconds + 1) }
+            options = listOf(Opt(0, "Off")) + (2..5).map { Opt(it, "After $it s") },
+            selected = prefs.guideArtSeconds,
+        ) { prefs.changeGuideArtSeconds(it) }
         Section("Recordings")
-        Choice(
+        Options(
             label = "Commercials",
             help = "Found by Comskip, also while a programme is still recording.",
-            value = skipLabel(prefs.commercialSkip),
-        ) { prefs.changeCommercialSkip(next(prefs.commercialSkip)) }
-        Choice(
+            options = SkipOptions,
+            selected = prefs.commercialSkip,
+        ) { prefs.changeCommercialSkip(it) }
+        Options(
             label = "Intros, recaps and previews",
             help = "Found by Intro Skipper.",
-            value = skipLabel(prefs.introSkip),
-        ) { prefs.changeIntroSkip(next(prefs.introSkip)) }
+            options = SkipOptions,
+            selected = prefs.introSkip,
+        ) { prefs.changeIntroSkip(it) }
         Section("Menu")
         Choice(
             label = "Menu entries",
@@ -140,20 +136,24 @@ fun SettingsScreen(
         Section("Home")
         // Home's tiles: a preset, or each one On, Off or (two of them) Auto.
         val preset = prefs.homePreset()
-        Choice(
+        Options(
             label = "Home layout",
             help = "Calm: the last channel, what records next and new recordings, plus what's recording or needs attention only when there is some. Standard adds the weather and the tuners. Everything shows every tile.",
-            value =
-                when (preset) {
-                    Prefs.CALM -> "Calm"
-                    Prefs.STANDARD -> "Standard"
-                    Prefs.EVERYTHING -> "Everything"
-                    else -> "Your own"
+            options =
+                Prefs.HOME_PRESETS.keys.map { k ->
+                    Opt(
+                        k,
+                        when (k) {
+                            Prefs.CALM -> "Calm"
+                            Prefs.STANDARD -> "Standard"
+                            Prefs.EVERYTHING -> "Everything"
+                            else -> k
+                        },
+                    )
                 },
-        ) {
-            val keys = Prefs.HOME_PRESETS.keys.toList()
-            prefs.applyHomePreset(keys[(keys.indexOf(preset) + 1) % keys.size])
-        }
+            selected = preset,
+            otherLabel = "Your own",
+        ) { it?.let(prefs::applyHomePreset) }
         listOf(
             Triple("live", "Back to live", false),
             Triple("weather", "Weather tile", false),
@@ -165,7 +165,7 @@ fun SettingsScreen(
             Triple("libraries", "Recently added in each library", false),
         ).forEach { (key, label, auto) ->
             val v = prefs.homeTile(key)
-            Choice(
+            Options(
                 label = label,
                 help =
                     if (key == "libraries") {
@@ -175,69 +175,55 @@ fun SettingsScreen(
                     } else {
                         "Turned off, the other tiles grow into the room it leaves."
                     },
-                value =
-                    when (v) {
-                        Prefs.AUTO -> "Auto"
-                        Prefs.OFF -> "Off"
-                        else -> "On"
-                    },
-            ) {
-                val order = if (auto) listOf(Prefs.ON, Prefs.AUTO, Prefs.OFF) else listOf(Prefs.ON, Prefs.OFF)
-                prefs.changeHomeTile(key, order[(order.indexOf(v).coerceAtLeast(0) + 1) % order.size])
-            }
+                options = if (auto) listOf(Opt(Prefs.ON, "On"), Opt(Prefs.AUTO, "Auto"), Opt(Prefs.OFF, "Off")) else listOf(Opt(Prefs.ON, "On"), Opt(Prefs.OFF, "Off")),
+                selected = if (v == Prefs.AUTO || v == Prefs.OFF) v else Prefs.ON,
+            ) { prefs.changeHomeTile(key, it) }
             // Under the library rows' switch: which libraries get one.
             if (key == "libraries" && v != Prefs.OFF) {
                 libraries.filter { it.id.toString() !in prefs.hiddenLibraries }.inMenuOrder().forEach { lib ->
                     val id = lib.id.toString()
-                    Choice(
+                    Options(
                         label = "   ${lib.name}",
                         help = "Its Recently added row on Home.",
-                        value = if (id in prefs.homeHiddenLibraries) "No row" else "Row",
-                    ) { prefs.toggleHomeLibrary(id) }
+                        options = listOf(Opt(true, "Row"), Opt(false, "No row")),
+                        selected = id !in prefs.homeHiddenLibraries,
+                    ) { if (it != (id !in prefs.homeHiddenLibraries)) prefs.toggleHomeLibrary(id) }
                 }
             }
         }
-        Choice(
+        Options(
             label = "Weather",
             help = "Today's weather and a sky to match behind Home (from Open-Meteo: only your town is sent).",
-            value = if (prefs.weatherOn) "Shown" else "Off",
-        ) { prefs.changeWeatherOn(!prefs.weatherOn) }
-        Choice(
+            options = listOf(Opt(true, "Shown"), Opt(false, "Off")),
+            selected = prefs.weatherOn,
+        ) { prefs.changeWeatherOn(it) }
+        Options(
             label = "Temperature",
             help = "Degrees Fahrenheit or Celsius.",
-            value = if (prefs.fahrenheit) "°F" else "°C",
-        ) { prefs.changeFahrenheit(!prefs.fahrenheit) }
+            options = listOf(Opt(true, "°F"), Opt(false, "°C")),
+            selected = prefs.fahrenheit,
+        ) { prefs.changeFahrenheit(it) }
         TownRow()
         Section("Playback")
-        Choice(
+        Options(
             label = "Subtitles",
             help = "Closed captions or subtitles when something starts, if it has any. The player's Subtitles button switches them any time.",
-            value = if (prefs.subtitles == Prefs.ON) "On when available" else "Off",
-        ) { prefs.changeSubtitles(if (prefs.subtitles == Prefs.ON) Prefs.OFF else Prefs.ON) }
-        Choice(
+            options = listOf(Opt(Prefs.ON, "On when available"), Opt(Prefs.OFF, "Off")),
+            selected = if (prefs.subtitles == Prefs.ON) Prefs.ON else Prefs.OFF,
+        ) { prefs.changeSubtitles(it) }
+        Options(
             label = "Info box at the top",
             help = "While a recording, show or movie plays: what it is, when it was recorded and aired, and what's next, at the top whenever the info bar shows. The player's Info button opens the full details either way.",
-            value = if (prefs.infoBoxTop) "On" else "Off",
-        ) { prefs.changeInfoBoxTop(!prefs.infoBoxTop) }
+            options = listOf(Opt(true, "On"), Opt(false, "Off")),
+            selected = prefs.infoBoxTop,
+        ) { prefs.changeInfoBoxTop(it) }
         Section("Remote")
-        Choice(
+        Options(
             label = "Hold OK on a poster or episode",
             help = "Off: holding OK is just a press. Quick actions: play, from the start, details, mark watched, and for recordings favourites, archive and delete. The Menu key, where the remote has one, does the same.",
-            value =
-                when (prefs.holdOk) {
-                    Prefs.HOLD_MENU -> "Quick actions menu"
-                    Prefs.HOLD_DETAILS -> "Details page"
-                    else -> "Off"
-                },
-        ) {
-            prefs.changeHoldOk(
-                when (prefs.holdOk) {
-                    Prefs.HOLD_OFF -> Prefs.HOLD_MENU
-                    Prefs.HOLD_MENU -> Prefs.HOLD_DETAILS
-                    else -> Prefs.HOLD_OFF
-                },
-            )
-        }
+            options = listOf(Opt(Prefs.HOLD_OFF, "Off"), Opt(Prefs.HOLD_MENU, "Quick actions menu"), Opt(Prefs.HOLD_DETAILS, "Details page")),
+            selected = if (prefs.holdOk == Prefs.HOLD_MENU || prefs.holdOk == Prefs.HOLD_DETAILS) prefs.holdOk else Prefs.HOLD_OFF,
+        ) { prefs.changeHoldOk(it) }
         Section("Server features")
         ServerFeaturesList()
         Section("About")
@@ -249,19 +235,7 @@ fun SettingsScreen(
     }
 }
 
-private fun skipLabel(v: String) =
-    when (v) {
-        Prefs.AUTO -> "Skip automatically"
-        Prefs.OFF -> "Don't skip"
-        else -> "Ask (show a Skip button)"
-    }
-
-private fun next(v: String) =
-    when (v) {
-        Prefs.ASK -> Prefs.AUTO
-        Prefs.AUTO -> Prefs.OFF
-        else -> Prefs.ASK
-    }
+private val SkipOptions = listOf(Opt(Prefs.ASK, "Ask (show a Skip button)"), Opt(Prefs.AUTO, "Skip automatically"), Opt(Prefs.OFF, "Don't skip"))
 
 @Composable
 private fun Section(title: String) {
@@ -553,42 +527,33 @@ private fun MenuSettings(libraries: List<com.mackandall.jdvr.data.LiveTvReposito
             }
         }
         Section("Options")
-        Choice(
+        Options(
             label = "Libraries in the menu",
             help = "One Libraries entry that opens and closes (OK or ►; ◄ closes it), or each library on its own line.",
-            value = if (prefs.librariesGrouped) "Grouped" else "Each on its own line",
-        ) { prefs.changeLibrariesGrouped(!prefs.librariesGrouped) }
+            options = listOf(Opt(true, "Grouped"), Opt(false, "Each on its own line")),
+            selected = prefs.librariesGrouped,
+        ) { prefs.changeLibrariesGrouped(it) }
         if (prefs.librariesGrouped) {
-            Choice(
+            Options(
                 label = "Libraries group starts",
                 help = "How the group is when the menu opens.",
-                value =
-                    when (prefs.librariesStart) {
-                        Prefs.OPEN -> "Open"
-                        Prefs.CLOSED -> "Closed"
-                        else -> "As last left"
-                    },
-            ) {
-                prefs.changeLibrariesStart(
-                    when (prefs.librariesStart) {
-                        Prefs.LAST -> Prefs.CLOSED
-                        Prefs.CLOSED -> Prefs.OPEN
-                        else -> Prefs.LAST
-                    },
-                )
-            }
+                options = listOf(Opt(Prefs.LAST, "As last left"), Opt(Prefs.CLOSED, "Closed"), Opt(Prefs.OPEN, "Open")),
+                selected = if (prefs.librariesStart == Prefs.OPEN || prefs.librariesStart == Prefs.CLOSED) prefs.librariesStart else Prefs.LAST,
+            ) { prefs.changeLibrariesStart(it) }
         }
-        Choice(
+        Options(
             label = "Settings, Sign out and Exit",
             help = "A row of icons under the menu (▼ from the last entry), or the last three entries.",
-            value = if (prefs.menuIcons) "Icons under the menu" else "Last in the list",
-        ) { prefs.changeMenuIcons(!prefs.menuIcons) }
+            options = listOf(Opt(true, "Icons under the menu"), Opt(false, "Last in the list")),
+            selected = prefs.menuIcons,
+        ) { prefs.changeMenuIcons(it) }
         // Icons beside the entries: a set (ui/MenuIcons.kt), how they move with focus, how big.
         val set = iconSetFor(prefs.menuIconSet)
-        Choice(
+        Options(
             label = "Menu icons",
             help = "An icon beside each entry. Line: thin outlines. Solid: filled shapes. Tile: outlines on a soft square.",
-            value = set?.name ?: "Off",
+            options = IconSets.map { Opt(it.key, it.name) } + Opt(Prefs.OFF, "Off"),
+            selected = if (set != null) prefs.menuIconSet else Prefs.OFF,
             preview =
                 set?.let { st ->
                     {
@@ -597,53 +562,26 @@ private fun MenuSettings(libraries: List<com.mackandall.jdvr.data.LiveTvReposito
                         }
                     }
                 },
-        ) {
-            val keys = IconSets.map { it.key } + Prefs.OFF
-            prefs.changeMenuIconSet(keys[(keys.indexOf(prefs.menuIconSet).coerceAtLeast(0) + 1) % keys.size])
-        }
+        ) { prefs.changeMenuIconSet(it) }
         if (set != null) {
-            Choice(
+            Options(
                 label = "Icon animation",
                 help = "As you move through the menu. Magnify: the focused entry's icon grows. Wave: it grows most, the ones beside it a little.",
-                value =
-                    when (prefs.menuIconMotion) {
-                        Prefs.MAGNIFY -> "Magnify"
-                        Prefs.WAVE -> "Wave"
-                        else -> "Off"
-                    },
-            ) {
-                prefs.changeMenuIconMotion(
-                    when (prefs.menuIconMotion) {
-                        Prefs.MAGNIFY -> Prefs.WAVE
-                        Prefs.WAVE -> Prefs.OFF
-                        else -> Prefs.MAGNIFY
-                    },
-                )
-            }
+                options = listOf(Opt(Prefs.MAGNIFY, "Magnify"), Opt(Prefs.WAVE, "Wave"), Opt(Prefs.OFF, "Off")),
+                selected = if (prefs.menuIconMotion == Prefs.MAGNIFY || prefs.menuIconMotion == Prefs.WAVE) prefs.menuIconMotion else Prefs.OFF,
+            ) { prefs.changeMenuIconMotion(it) }
             if (prefs.menuIconMotion != Prefs.OFF) {
-                Choice(
+                Options(
                     label = "Focused icon size",
                     help = "How big the focused icon grows. It always stays inside its entry, so it is never cut off.",
-                    value =
-                        when (prefs.menuIconSize) {
-                            Prefs.SMALL -> "Small"
-                            Prefs.LARGE -> "Large"
-                            else -> "Medium"
-                        },
+                    options = listOf(Opt(Prefs.SMALL, "Small"), Opt(Prefs.MEDIUM, "Medium"), Opt(Prefs.LARGE, "Large")),
+                    selected = if (prefs.menuIconSize == Prefs.SMALL || prefs.menuIconSize == Prefs.LARGE) prefs.menuIconSize else Prefs.MEDIUM,
                     preview = {
                         val k = menuIconGrowth(prefs.menuIconSize)
                         MenuGlyph(MenuIcon.Home, set, 22.dp, Jc.Muted, Jc.Focus)
                         MenuGlyph(MenuIcon.Home, set, 22.dp, Jc.Focus, Jc.Focus, Modifier.graphicsLayer { scaleX = k; scaleY = k })
                     },
-                ) {
-                    prefs.changeMenuIconSize(
-                        when (prefs.menuIconSize) {
-                            Prefs.SMALL -> Prefs.MEDIUM
-                            Prefs.MEDIUM -> Prefs.LARGE
-                            else -> Prefs.SMALL
-                        },
-                    )
-                }
+                ) { prefs.changeMenuIconSize(it) }
             }
         }
         var armed by remember { mutableStateOf(false) }
