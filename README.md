@@ -51,7 +51,8 @@ and restart Jellyfin.
 
 ## Screenshots
 
-Two of the themes: *Ode to Emby's Apple* (light) and *Midnight* (dark).
+Two of the themes: *Ode to Emby's Apple* (light) and *Midnight* (dark). The shows, films and
+channels are a made-up demo library, with artwork drawn for it.
 
 | | Ode to Emby's Apple | Midnight |
 |---|---|---|
@@ -64,8 +65,8 @@ Two of the themes: *Ode to Emby's Apple* (light) and *Midnight* (dark).
 | Movies Archive | ![Movies Archive, Apple theme](screenshots/apple-5-movies-archive.jpg) | ![Movies Archive, Midnight theme](screenshots/midnight-5-movies-archive.jpg) |
 | Movie details | ![Movie details, Apple theme](screenshots/apple-7-movie-details.jpg) | ![Movie details, Midnight theme](screenshots/midnight-7-movie-details.jpg) |
 
-Playing a recording: commercial breaks (orange) and recap/intro (purple) marked on the seek bar,
-with a skip prompt.
+Playing a recording: commercial breaks marked in orange on the seek bar (intros and recaps show
+in purple), with a skip prompt.
 
 ![Player with commercial marks](screenshots/apple-8-player-commercial-marks.jpg)
 
