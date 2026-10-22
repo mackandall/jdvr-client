@@ -6,7 +6,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
@@ -75,9 +78,12 @@ fun Button(
     leading: (@Composable () -> Unit)? = null,
     onClick: () -> Unit,
 ) {
+    // SageTV: the focused button is its glossy blue bar.
+    var focused by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    val sage = Jc.Style == UiStyle.Sage
     Surface(
         onClick = onClick,
-        modifier = if (LocalWideButtons.current) modifier.then(Modifier.fillMaxWidth()) else modifier,
+        modifier = (if (LocalWideButtons.current) modifier.then(Modifier.fillMaxWidth()) else modifier).onFocusChanged { focused = it.isFocused },
         shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(10.dp)),
         colors =
             ClickableSurfaceDefaults.colors(
@@ -91,7 +97,7 @@ fun Button(
         scale = ClickableSurfaceDefaults.scale(focusedScale = if (Jc.Light) 1.06f else 1.03f),
     ) {
         androidx.compose.foundation.layout.Row(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+            modifier = (if (sage && focused) Modifier.sageGloss() else Modifier).padding(horizontal = 16.dp, vertical = 12.dp),
             horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(10.dp),
             verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
         ) {
@@ -100,6 +106,20 @@ fun Button(
         }
     }
 }
+
+/** SageTV's selection: a glossy blue bar, light on top, a sharp band halfway down. */
+fun Modifier.sageGloss(): Modifier =
+    drawBehind {
+        drawRect(
+            androidx.compose.ui.graphics.Brush.verticalGradient(
+                0f to Color(0xFF5FB0FF),
+                0.48f to Color(0xFF2C7BE0),
+                0.52f to Color(0xFF1A5BC4),
+                1f to Color(0xFF2470D8),
+            ),
+        )
+        drawRect(Color.White.copy(alpha = 0.55f), size = androidx.compose.ui.geometry.Size(size.width, 1.dp.toPx()))
+    }
 
 private val TimeFormat = DateTimeFormatter.ofPattern("h:mm a")
 private val DayFormat = DateTimeFormatter.ofPattern("EEE MMM d")

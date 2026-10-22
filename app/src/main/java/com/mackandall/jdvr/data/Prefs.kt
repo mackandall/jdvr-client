@@ -94,8 +94,18 @@ class Prefs(
     var wash by mutableStateOf(p.getString("wash", "blue") ?: "blue")
         private set
 
+    /** Gemstone's colour (Settings › Gemstone colour): a key of [com.mackandall.jdvr.ui.Gems]. */
+    var gem by mutableStateOf(p.getString("gem", "emerald") ?: "emerald")
+        private set
+
+    fun changeGem(v: String) {
+        gem = v
+        com.mackandall.jdvr.ui.Jc.palette = com.mackandall.jdvr.ui.paletteFor(theme, v)
+        p.edit().putString("gem", v).apply()
+    }
+
     init {
-        com.mackandall.jdvr.ui.Jc.palette = com.mackandall.jdvr.ui.paletteFor(theme)
+        com.mackandall.jdvr.ui.Jc.palette = com.mackandall.jdvr.ui.paletteFor(theme, gem)
         com.mackandall.jdvr.ui.Jc.wash = com.mackandall.jdvr.ui.washFor(wash)
     }
 
@@ -107,7 +117,7 @@ class Prefs(
 
     fun changeTheme(v: String) {
         theme = v
-        com.mackandall.jdvr.ui.Jc.palette = com.mackandall.jdvr.ui.paletteFor(v)
+        com.mackandall.jdvr.ui.Jc.palette = com.mackandall.jdvr.ui.paletteFor(v, gem)
         p.edit().putString("theme", v).apply()
     }
 

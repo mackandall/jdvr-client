@@ -51,9 +51,11 @@ import com.mackandall.jdvr.data.Prefs
 fun SettingsScreen(
     entry: FocusRequester,
     libraries: List<com.mackandall.jdvr.data.LiveTvRepository.Library> = emptyList(),
+    // Straight to the menu's page (SageTV's Setup › Menu order).
+    openMenuPage: Boolean = false,
 ) {
     val prefs = Jdvr.prefs
-    var menuPage by remember { mutableStateOf(false) }
+    var menuPage by remember { mutableStateOf(openMenuPage) }
     var cameBack by remember { mutableStateOf(false) }
     val menuButton = remember { FocusRequester() }
     if (menuPage) {
@@ -75,10 +77,17 @@ fun SettingsScreen(
         Section("Appearance")
         Choice(
             label = "Theme",
-            help = "The colours of the whole app. Ode to Emby's Apple is light: frosted panels on a soft backdrop. Paper and Daylight are light and plain.",
+            help = "The colours of the whole app. Ode to Emby's Apple is light: frosted panels on a soft backdrop. Paper and Daylight are light and plain. SageTV and SageTV Gemstone also change Home into their main menu.",
             value = paletteFor(prefs.theme).name,
             modifier = Modifier.focusRequester(entry),
         ) { prefs.changeTheme(Palettes[(Palettes.indexOf(paletteFor(prefs.theme)) + 1) % Palettes.size].key) }
+        if (paletteFor(prefs.theme).style == UiStyle.Gem) {
+            Choice(
+                label = "Gemstone colour",
+                help = "The one colour Gemstone uses: focus, the menu's underline, the poster flow's glow.",
+                value = gemFor(prefs.gem).name,
+            ) { prefs.changeGem(Gems[(Gems.indexOf(gemFor(prefs.gem)) + 1) % Gems.size].key) }
+        }
         if (paletteFor(prefs.theme).let { it.light && it.wash }) {
             Choice(
                 label = "Backdrop",

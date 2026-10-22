@@ -88,8 +88,12 @@ private val RowHeight = 62.dp
 private data class GuideExtras(
     val buffers: Set<String> = emptySet(),
     val scanning: Map<String, Int?> = emptyMap(),
+    // Programmes a Recording Favourite will record (JellyDVR Schedule): SageTV's green cells.
+    val favourites: Set<String> = emptySet(),
 ) {
     fun isBuffer(p: Program) = p.id.toString().plainId() in buffers
+
+    fun isFavourite(p: Program) = p.id.toString().plainId() in favourites
 
     fun realRecording(p: Program) = p.isRecording && !isBuffer(p)
 
@@ -118,13 +122,16 @@ fun GuideScreen(
     onPlayRecording: (com.mackandall.jdvr.PlayRecording) -> Unit,
     // The channel the live player is on (null when it's closed).
     watching: UUID? = null,
+    // Opened at a later time (SageTV's "Tonight") or on a chosen channel ("Jump to a channel").
+    startAt: LocalDateTime? = null,
+    startChannel: UUID? = null,
 ) {
     val infoOnTop = Jdvr.prefs.guideInfo == com.mackandall.jdvr.data.Prefs.TOP
     val infoBelow = Jdvr.prefs.guideInfo == com.mackandall.jdvr.data.Prefs.BOTTOM
     // Above or below: the details on a band, the grid at full width.
     val infoBand = infoOnTop || infoBelow
     var channels by remember { mutableStateOf<List<Channel>?>(null) }
-    var windowStart by remember { mutableStateOf(floorToHalfHour(LocalDateTime.now())) }
+    var windowStart by remember { mutableStateOf(floorToHalfHour(maxOf(startAt ?: LocalDateTime.now(), LocalDateTime.now()))) }
     var programs by remember { mutableStateOf<Map<UUID, List<Program>>>(emptyMap()) }
     // The span `programs` covers for every channel (null until the first fetch lands).
     var loaded by remember { mutableStateOf<Pair<LocalDateTime, LocalDateTime>?>(null) }
@@ -153,7 +160,13 @@ fun GuideScreen(
     }
     LaunchedEffect(Unit) {
         while (true) {
-            extras = GuideExtras(Jdvr.liveTv.bufferPrograms(), Jdvr.liveTv.guideScanning())
+            val favourites =
+                if (Jc.Style == UiStyle.Sage) {
+                    Jdvr.liveTv.upcoming().orEmpty().filter { it.kind == "favourite" }.mapNotNull { it.programId?.plainId() }.toSet()
+                } else {
+                    emptySet()
+                }
+            extras = GuideExtras(Jdvr.liveTv.bufferPrograms(), Jdvr.liveTv.guideScanning(), favourites)
             delay(60_000)
         }
     }
@@ -341,8 +354,10 @@ fun GuideScreen(
     // Opening: the channel last focused in the guide, else the one last watched; its row scrolled
     // near the top so it's there to take focus.
     val openingOn = remember {
-        lastGuideChannel ?: runCatching { UUID.fromString(Jdvr.session.lastChannelId) }.getOrNull()
+        startChannel ?: lastGuideChannel ?: runCatching { UUID.fromString(Jdvr.session.lastChannelId) }.getOrNull()
     }
+    // Where the opening programme is looked for: now, or the time asked for.
+    val openingAt = remember { maxOf(startAt ?: LocalDateTime.now(), LocalDateTime.now()) }
     LaunchedEffect(channels) {
         val list = channels ?: return@LaunchedEffect
         if (focused != null || returnTo != null) return@LaunchedEffect
@@ -428,7 +443,7 @@ fun GuideScreen(
                         // The way back in (after the rail or a player): the programme picked to watch, else the last one on;
                         // opening the guide, what's on now on the channel last focused in it (else the one last watched).
                         val home =
-                            (returnTo ?: focused ?: openingOn?.let { ch -> programs[ch].orEmpty().firstOrNull { it.end.isAfter(LocalDateTime.now()) } })
+                            (returnTo ?: focused ?: openingOn?.let { ch -> programs[ch].orEmpty().firstOrNull { it.end.isAfter(openingAt) } })
                                 ?.takeIf { p -> list.any { it.id == p.channelId } }
                         LazyColumn(state = listState, contentPadding = PaddingValues(bottom = 40.dp), modifier = Modifier.onFocusChanged { gridHasFocus = it.hasFocus }) {
                             items(list, key = { it.id }) { ch ->
@@ -791,6 +806,16 @@ private fun ProgramCell(
     }
     val marks = Marks.parse(program.rawEpisodeTitle, symbols)
     val extras = LocalGuideExtras.current
+    // SageTV: red cells will record, green ones a Recording Favourite will; the focused one is glossy.
+    val sage = Jc.Style == UiStyle.Sage
+    var cellFocused by remember { mutableStateOf(false) }
+    val idle =
+        when {
+            sage && extras.isFavourite(program) -> Jc.Green.copy(alpha = 0.55f)
+            sage && extras.realRecording(program) -> Jc.Recording.copy(alpha = 0.45f)
+            extras.realRecording(program) -> Jc.Recording.copy(alpha = 0.14f)
+            else -> guidePanel()
+        }
     Surface(
         onClick = onClick,
         modifier =
@@ -800,7 +825,10 @@ private fun ProgramCell(
                 .fillMaxHeight()
                 .focusRequester(focus)
                 .then(if (entry != null) Modifier.focusRequester(entry) else Modifier)
-                .onFocusChangedCompat { if (it) onFocused() }
+                .onFocusChangedCompat {
+                    cellFocused = it
+                    if (it) onFocused()
+                }
                 .onPreviewKeyEvent { e ->
                     if (e.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                     when {
@@ -813,7 +841,7 @@ private fun ProgramCell(
         shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(8.dp)),
         colors =
             ClickableSurfaceDefaults.colors(
-                containerColor = if (extras.realRecording(program)) Jc.Recording.copy(alpha = 0.14f) else guidePanel(),
+                containerColor = idle,
                 focusedContainerColor = Jc.FocusFill,
                 contentColor = Jc.Text,
                 focusedContentColor = Jc.Text,
@@ -821,7 +849,7 @@ private fun ProgramCell(
         border = ClickableSurfaceDefaults.border(focusedBorder = Border(BorderStroke(2.dp, Jc.Focus))),
         scale = ClickableSurfaceDefaults.scale(focusedScale = 1f),
     ) {
-        Column(Modifier.fillMaxSize().padding(horizontal = 8.dp, vertical = 5.dp), verticalArrangement = Arrangement.Center) {
+        Column((if (sage && cellFocused) Modifier.sageGloss() else Modifier).fillMaxSize().padding(horizontal = 8.dp, vertical = 5.dp), verticalArrangement = Arrangement.Center) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 // Red for a recording; faint for a live TV buffer (only kept if someone presses Record).
                 if (program.isRecording) Box(Modifier.size(8.dp).background(Jc.Recording.copy(alpha = if (extras.isBuffer(program)) 0.35f else 1f), CircleShape))

@@ -103,6 +103,29 @@ fun AppRoot() {
         if (s != screen) backStack.add(screen)
         screen = s
     }
+    // How the next screen opens, from SageTV's submenus: the guide at a time or on a channel,
+    // Recorded Shows with a view and filter, Settings on its menu page. Cleared back on Home.
+    var guideAt by remember { mutableStateOf<java.time.LocalDateTime?>(null) }
+    var guideChannel by remember { mutableStateOf<UUID?>(null) }
+    var recordingsPreset by remember { mutableStateOf<com.mackandall.jdvr.ui.RecordingsPreset?>(null) }
+    var settingsMenuPage by remember { mutableStateOf(false) }
+    LaunchedEffect(screen) {
+        if (screen == Screen.Home) {
+            guideAt = null
+            guideChannel = null
+            recordingsPreset = null
+            settingsMenuPage = false
+        }
+    }
+    // The SageTV themes have no slide-out menu: Home is their menu. Back on it twice leaves the app.
+    val themedHome = Jc.Style != com.mackandall.jdvr.ui.UiStyle.Standard
+    var exitArmed by remember { mutableStateOf(false) }
+    LaunchedEffect(exitArmed) {
+        if (exitArmed) {
+            delay(3000)
+            exitArmed = false
+        }
+    }
     var railOpen by remember { mutableStateOf(false) }
     // The rail uses Right itself just now (Settings icon → Sign out, or opening Libraries).
     var railKeepsRight by remember { mutableStateOf(false) }
@@ -182,7 +205,7 @@ fun AppRoot() {
             }.onKeyEvent { e ->
                 // Left that nothing on the screen used: at the left edge (in the guide: at "now",
                 // nothing earlier to scroll to), so open the rail.
-                if (!railOpen && playingChannel == null && playingRecording == null &&
+                if (!railOpen && !themedHome && playingChannel == null && playingRecording == null &&
                     e.type == KeyEventType.KeyDown && e.key == Key.DirectionLeft
                 ) {
                     if (!focusManager.moveFocus(FocusDirection.Left)) railOpen = true
@@ -197,10 +220,16 @@ fun AppRoot() {
         // afterwards made it the newest handler, so it beat a screen's own (leave a show's episodes).
         // Back, as in Wholphin: from a section to where it was opened from (else Home), from Home
         // to the menu, and from the menu on Home out of the app.
+        val backActivity = androidx.compose.ui.platform.LocalContext.current as? android.app.Activity
         BackHandler(enabled = !railOpen && playingChannel == null && playingRecording == null) {
             when {
                 backStack.isNotEmpty() -> screen = backStack.removeAt(backStack.lastIndex)
                 screen != Screen.Home -> screen = Screen.Home
+                themedHome && exitArmed -> backActivity?.finish()
+                themedHome -> {
+                    exitArmed = true
+                    android.widget.Toast.makeText(backActivity, "Press Back again to exit", android.widget.Toast.LENGTH_SHORT).show()
+                }
                 else -> railOpen = true
             }
         }
@@ -220,7 +249,64 @@ fun AppRoot() {
             androidx.compose.runtime.CompositionLocalProvider(com.mackandall.jdvr.ui.LocalWatchLive provides { id: UUID -> playingChannel = id }) {
             when (screen) {
                 Screen.Home ->
-                    HomeScreen(
+                    if (Jc.Style == com.mackandall.jdvr.ui.UiStyle.Sage) {
+                        com.mackandall.jdvr.ui.SageHome(
+                            entry = entry,
+                            libraries = shownLibraries,
+                            showRecorded = hasDvr,
+                            showTrash = hasTrash,
+                            onOpenScreen = { goTo(it) },
+                            onOpenGuide = { at, ch ->
+                                guideAt = at
+                                guideChannel = ch
+                                goTo(Screen.Guide)
+                            },
+                            onOpenRecordings = {
+                                recordingsPreset = it
+                                goTo(Screen.RecordedShows)
+                            },
+                            onOpenLibrary = {
+                                libraryId = it
+                                goTo(Screen.Library)
+                            },
+                            onOpenMenuSettings = {
+                                settingsMenuPage = true
+                                goTo(Screen.Settings)
+                            },
+                            onPlayChannel = { playingChannel = it },
+                            onSignOut = {
+                                Jdvr.signOut()
+                                signedIn = false
+                            },
+                            onExit = { backActivity?.finish() },
+                        )
+                    } else if (Jc.Style == com.mackandall.jdvr.ui.UiStyle.Gem) {
+                        com.mackandall.jdvr.ui.GemHome(
+                            entry = entry,
+                            libraries = shownLibraries,
+                            showRecorded = hasDvr,
+                            showTrash = hasTrash,
+                            onOpenScreen = { goTo(it) },
+                            onOpenGuide = { ch ->
+                                guideChannel = ch
+                                goTo(Screen.Guide)
+                            },
+                            onOpenLibrary = {
+                                libraryId = it
+                                goTo(Screen.Library)
+                            },
+                            onOpenShow = {
+                                openShow = it
+                                goTo(Screen.RecordedShows)
+                            },
+                            onOpenLibraryItem = { lib, item ->
+                                libraryId = lib
+                                openLibItem = item
+                                goTo(Screen.Library)
+                            },
+                            onPlayChannel = { playingChannel = it },
+                        )
+                    } else HomeScreen(
                         entry = entry,
                         onPlayChannel = { playingChannel = it },
                         onPlayRecording = { playingRecording = it },
@@ -238,9 +324,9 @@ fun AppRoot() {
                         returnPoster = homePoster,
                         onReturned = { homePoster = null },
                     )
-                Screen.Guide -> GuideScreen(entry = entry, onPlay = { playingChannel = it }, onPlayRecording = { playingRecording = it }, watching = playingChannel)
+                Screen.Guide -> GuideScreen(entry = entry, onPlay = { playingChannel = it }, onPlayRecording = { playingRecording = it }, watching = playingChannel, startAt = guideAt, startChannel = guideChannel)
                 Screen.LiveTv -> ChannelsScreen(entry = entry, onPlay = { playingChannel = it })
-                Screen.RecordedShows -> RecordedShowsScreen(entry = entry, onPlay = { playingRecording = PlayRecording(it) }, openShowId = openShow, onShowOpened = { openShow = null }, onLeave = { if (backStack.isNotEmpty()) screen = backStack.removeAt(backStack.lastIndex) }, refresh = played, onPlayItem = { playingRecording = it })
+                Screen.RecordedShows -> RecordedShowsScreen(entry = entry, onPlay = { playingRecording = PlayRecording(it) }, openShowId = openShow, onShowOpened = { openShow = null }, onLeave = { if (backStack.isNotEmpty()) screen = backStack.removeAt(backStack.lastIndex) }, refresh = played, onPlayItem = { playingRecording = it }, preset = recordingsPreset)
                 Screen.Library ->
                     currentLibrary?.let { lib ->
                         androidx.compose.runtime.key(lib.id) { LibraryScreen(library = lib, entry = entry, refresh = played, onPlay = { playingRecording = it }, openItem = openLibItem, onItemOpened = { openLibItem = null }, onLeave = { if (backStack.isNotEmpty()) screen = backStack.removeAt(backStack.lastIndex) }) }
@@ -249,7 +335,7 @@ fun AppRoot() {
                 Screen.Scheduled -> ScheduledScreen(entry = entry, onPlayRecording = { playingRecording = it })
                 Screen.Series -> SeriesScreen(entry = entry)
                 Screen.Trash -> com.mackandall.jdvr.ui.TrashScreen(entry = entry)
-                Screen.Settings -> SettingsScreen(entry = entry, libraries = libraries)
+                Screen.Settings -> SettingsScreen(entry = entry, libraries = libraries, openMenuPage = settingsMenuPage)
             }
             }
         }

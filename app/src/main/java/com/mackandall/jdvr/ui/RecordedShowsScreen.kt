@@ -60,6 +60,16 @@ import java.util.UUID
 private fun local(iso: String?): LocalDateTime? = iso?.let { runCatching { LocalDateTime.ofInstant(Instant.parse(it), ZoneId.systemDefault()) }.getOrNull() }
 
 /**
+ * How Recorded Shows opens from SageTV's submenu (All Recordings, By Date, Unwatched, Archive): its
+ * view and filter for this visit only; the screen's own buttons still change the saved ones.
+ */
+data class RecordingsPreset(
+    val view: String? = null,
+    val filter: String? = null,
+    val unwatched: Boolean = false,
+)
+
+/**
  * Recorded Shows, as in the web client (Episode History's list): what the DVR recorded, newest first,
  * recordings folder only for now. A show opens its episodes; an episode or movie plays.
  */
@@ -72,7 +82,10 @@ fun RecordedShowsScreen(
     onLeave: () -> Unit = {},
     refresh: Int = 0,
     onPlayItem: (com.mackandall.jdvr.PlayRecording) -> Unit = { onPlay(it.itemId) },
+    preset: RecordingsPreset? = null,
 ) {
+    // Dropped once the screen's own View or Showing button is pressed.
+    var visit by remember { mutableStateOf(preset) }
     // A movie or one-off recording's details page (from the grid).
     var details by remember { mutableStateOf<UUID?>(null) }
     var badges by remember { mutableStateOf<Map<String, LiveTvRepository.CommercialBadge>>(emptyMap()) }
@@ -90,9 +103,10 @@ fun RecordedShowsScreen(
     var quickLine by remember { mutableStateOf<UUID?>(null) }
     // The list by date needs a newer Episode History; without it, the cards.
     var noDateList by remember { mutableStateOf(false) }
-    val byDate = Jdvr.prefs.recordingsView == Prefs.BY_DATE && !noDateList
+    val byDate = (visit?.view ?: Jdvr.prefs.recordingsView) == Prefs.BY_DATE && !noDateList
+    val unwatchedOnly = visit?.unwatched == true
 
-    val filter = Jdvr.prefs.recordingsFilter
+    val filter = visit?.filter ?: Jdvr.prefs.recordingsFilter
     // A move to the archive finished: the recording now lives elsewhere.
     val movesFinished by MoveWatcher.finished.collectAsState()
     LaunchedEffect(filter, reloadCards, movesFinished) {
@@ -135,23 +149,32 @@ fun RecordedShowsScreen(
         return
     }
 
+    // Gemstone: the focused show's fanart behind the wall, under black glass.
+    var focusedCard by remember { mutableStateOf<String?>(null) }
+    if (Jc.Style == UiStyle.Gem) {
+        androidx.compose.animation.Crossfade(targetState = focusedCard?.toUuid(), animationSpec = androidx.compose.animation.core.tween(600), label = "gem fanart") { id ->
+            if (id != null) AsyncImage(model = Jdvr.liveTv.backdropUrl(id), contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+        }
+        Box(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color(0xC708090C)))
+    }
     Column(Modifier.fillMaxSize().padding(start = 28.dp, top = 24.dp, end = 28.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             Column(Modifier.weight(1f)) {
                 Text("Recorded Shows", color = Jc.Text, fontSize = 28.sp, fontWeight = FontWeight.SemiBold)
                 Text(
-                    if (plain) "Jellyfin's recordings · newest first" else when (filter) {
+                    (if (plain) "Jellyfin's recordings · newest first" else when (filter) {
                         Prefs.ARCHIVED -> "Moved to the archive · newest first"
                         Prefs.ALL -> "Recordings folder and archive · newest first"
                         else -> "Recordings folder · newest first"
-                    },
+                    }) + if (unwatchedOnly && !byDate) " · unwatched only" else "",
                     color = Jc.Muted,
                     fontSize = 15.sp,
                 )
             }
             // Cards per show, or one line per recording by date with its channel.
             if (!plain) Button(if (byDate) "View: By date" else "View: By show") {
-                Jdvr.prefs.changeRecordingsView(if (Jdvr.prefs.recordingsView == Prefs.BY_DATE) Prefs.SHOWS else Prefs.BY_DATE)
+                Jdvr.prefs.changeRecordingsView(if (byDate) Prefs.SHOWS else Prefs.BY_DATE)
+                visit = null
             }
             // Live folder → Archive → Both (Episode History's; not on a plain server).
             if (!plain) Button(
@@ -168,10 +191,12 @@ fun RecordedShowsScreen(
                         else -> Prefs.CURRENT
                     },
                 )
+                visit = null
             }
         }
         Spacer(14)
-        val list = cards
+        // Unwatched (SageTV's submenu): shows with something new in them.
+        val list = cards?.let { all -> if (unwatchedOnly) all.filter { it.unplayedCount > 0 } else all }
         when {
             byDate && !plain && loaded -> RecordingsByDate(
                 filter = filter,
@@ -184,7 +209,7 @@ fun RecordedShowsScreen(
             )
             !loaded -> Text("Loading…", color = Jc.Muted, fontSize = 16.sp)
             list == null -> Text("Couldn't load the recordings from the server.", color = Jc.Amber, fontSize = 16.sp)
-            list.isEmpty() -> Text(if (filter == Prefs.ARCHIVED) "Nothing has been moved to the archive." else "Nothing recorded yet.", color = Jc.Muted, fontSize = 16.sp)
+            list.isEmpty() -> Text(if (unwatchedOnly) "Everything here has been watched." else if (filter == Prefs.ARCHIVED) "Nothing has been moved to the archive." else "Nothing recorded yet.", color = Jc.Muted, fontSize = 16.sp)
             else -> {
                 LaunchedEffect(Unit) {
                     returnTo?.let { id ->
@@ -224,7 +249,7 @@ fun RecordedShowsScreen(
                         RecordingCardView(
                             c,
                             badges[c.id.plainId()],
-                            m,
+                            m.onFocusChangedCompat { if (it) focusedCard = c.id },
                             onHold = if (!holdEnabled) null else { {
                                 returnTo = c.id
                                 holdOk(menu = { quick = c }, details = { if (c.type == "Series") openShow = c else details = c.id.toUuid() })
