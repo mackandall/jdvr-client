@@ -176,7 +176,7 @@ class LiveTvRepository {
     suspend fun record(
         programId: UUID,
         series: Boolean,
-    ) {
+    ) = io {
         val d = api.liveTvApi.getDefaultTimer(programId.toString()).content
         if (series) {
             api.liveTvApi.createSeriesTimer(d)
@@ -452,7 +452,7 @@ class LiveTvRepository {
     suspend fun reportProgress(
         p: LivePlayback,
         paused: Boolean,
-    ) {
+    ) = io {
         api.playStateApi.reportPlaybackProgress(
             PlaybackProgressInfo(
                 canSeek = false,
