@@ -160,6 +160,9 @@ fun HomeScreen(
                 }
             }
         }
+    // Channels whose only "recording" is a live TV buffer: their tuner shows a faint dot, not red.
+    val bufferChannels =
+        recordingNow.groupBy { it.channelNumber }.filterValues { rs -> rs.all { it.programId?.plainId() in bufferIds } }.keys.filterNotNull().toSet()
     val nextLines =
         upcoming.filter { !it.recordingNow && it.programId?.plainId() !in bufferIds }.take(5).map { u ->
             val start = localOf(u.start)
@@ -267,7 +270,7 @@ fun HomeScreen(
                         if (loaded && !hasLiveTv) {
                             NoLiveTvCard(liveEntry, Modifier.fillMaxSize(), onSearch = { onOpenScreen(com.mackandall.jdvr.Screen.Search) })
                         } else {
-                            LiveCard(last, fromStart, symbols, liveEntry, Modifier.fillMaxSize(), onPlayChannel, onPlayRecording, onGuide = { onOpenScreen(com.mackandall.jdvr.Screen.Guide) })
+                            LiveCard(last, fromStart, last?.now?.id?.toString()?.plainId() in bufferIds, symbols, liveEntry, Modifier.fillMaxSize(), onPlayChannel, onPlayRecording, onGuide = { onOpenScreen(com.mackandall.jdvr.Screen.Guide) })
                         }
                     }
                 }
@@ -277,7 +280,7 @@ fun HomeScreen(
                 }
                 val wn = animatedWeight(if (showNow) 2f else 0f)
                 if (wn > 0.01f) {
-                    ListTile("RECORDING NOW", nowLines, "Nothing is recording.", Modifier.weight(wn).fillMaxHeight(), homePanel(), homePanel2(), entryFor("now"), leftmost = !showLive && !showWeather)
+                    ListTile("RECORDING NOW", nowLines, if (loaded) "Nothing is recording." else "Loading…", Modifier.weight(wn).fillMaxHeight(), homePanel(), homePanel2(), entryFor("now"), leftmost = !showLive && !showWeather)
                 }
             }
         }
@@ -286,15 +289,15 @@ fun HomeScreen(
             Row(Modifier.weight(r2).fillMaxWidth().padding(bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 val wx = animatedWeight(if (showNext) 3f else 0f)
                 if (wx > 0.01f) {
-                    ListTile("RECORDING NEXT", nextLines, "Nothing more scheduled.", Modifier.weight(wx).fillMaxHeight(), homePanel(), homePanel2(), entryFor("next"), leftmost = true)
+                    ListTile("RECORDING NEXT", nextLines, if (loaded) "Nothing more scheduled." else "Loading…", Modifier.weight(wx).fillMaxHeight(), homePanel(), homePanel2(), entryFor("next"), leftmost = true)
                 }
                 val wa = animatedWeight(if (showAttention) 2f else 0f)
                 if (wa > 0.01f) {
-                    ListTile("NEEDS ATTENTION", attentionLines, "All recordings are fine.", Modifier.weight(wa).fillMaxHeight(), homePanel(), homePanel2(), entryFor("attention"), leftmost = !showNext)
+                    ListTile("NEEDS ATTENTION", attentionLines, if (loaded) "All recordings are fine." else "Loading…", Modifier.weight(wa).fillMaxHeight(), homePanel(), homePanel2(), entryFor("attention"), leftmost = !showNext)
                 }
                 val wt = animatedWeight(if (showTuners) 2f else 0f)
                 if (wt > 0.01f) {
-                    TunersTile(tuners, extras?.drive, Modifier.weight(wt).fillMaxHeight(), homePanel(), homePanel2())
+                    TunersTile(tuners, extras?.drive, Modifier.weight(wt).fillMaxHeight(), homePanel(), homePanel2(), loaded = loaded, bufferChannels = bufferChannels)
                 }
             }
         }
@@ -455,6 +458,8 @@ private fun HomeChip(
 private fun LiveCard(
     channel: Channel?,
     fromStart: UUID?,
+    // The programme's "recording" is only JellyDVR Live's buffer (kept from when someone tuned in).
+    buffer: Boolean,
     symbols: LiveTvRepository.MarkSymbols?,
     entry: FocusRequester,
     modifier: Modifier,
@@ -483,7 +488,11 @@ private fun LiveCard(
                     Box(Modifier.fillMaxHeight().fillMaxWidth(done.toFloat() / total).background(Jc.Focus, RoundedCornerShape(3.dp)))
                 }
                 Text(p.end.time(), color = Jc.Muted, fontSize = 13.sp)
-                if (p.isRecording) Text("● Recording", color = Jc.Recording, fontSize = 13.sp)
+                if (p.isRecording && buffer) {
+                    Text("● Buffer", color = Jc.Muted, fontSize = 13.sp)
+                } else if (p.isRecording) {
+                    Text("● Recording", color = Jc.Recording, fontSize = 13.sp)
+                }
             }
         }
         Box(Modifier.weight(1f))
@@ -492,8 +501,9 @@ private fun LiveCard(
             val live = deviceRights().liveTv
             // ◄ from here opens the menu (focus search would jump down to the first poster).
             Button(if (live) "Watch live" else "Live TV is off for this TV", primary = live, modifier = Modifier.focusRequester(entry).focusProperties { left = FocusRequester.Cancel }) { if (live) channel?.let { onPlayChannel(it.id) } }
+            // Short labels: with all three, "Watch from start" left Guide squeezed to one letter.
             if (fromStart != null) {
-                Button("Watch from start") { onPlayRecording(PlayRecording(fromStart, startMs = 0L, liveChannelId = channel?.id)) }
+                Button(if (buffer) "From tune-in" else "From start") { onPlayRecording(PlayRecording(fromStart, startMs = 0L, liveChannelId = channel?.id)) }
             }
             Button("Guide", onClick = onGuide)
         }

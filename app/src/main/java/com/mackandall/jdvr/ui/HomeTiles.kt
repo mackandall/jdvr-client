@@ -350,27 +350,36 @@ fun TunersTile(
     modifier: Modifier,
     background: Color,
     cell: Color,
+    // The first answer is in: until then, no tuners means "not yet".
+    loaded: Boolean = true,
+    // Channel numbers busy only with a live TV buffer: a faint dot, not the red of a recording.
+    bufferChannels: Set<String> = emptySet(),
 ) {
     HomeTileFrame(modifier, background) {
         val t = tuners
         val busy = t?.busy.orEmpty()
         TileLabel("TUNERS", t?.takeIf { it.capacity > 0 }?.let { "${busy.size} of ${it.capacity} in use" })
         if (t == null || t.capacity <= 0) {
-            Text("Not known on this server.", color = Jc.Muted, fontSize = 13.sp)
+            Text(if (loaded) "Not known on this server." else "Loading…", color = Jc.Muted, fontSize = 13.sp)
         } else {
             // Two to a row, busy ones first; more than four tuners: the count above says it.
-            val cells = (busy.map { b -> (b.recording.firstOrNull() ?: b.watching.firstOrNull() ?: b.channelName) to (b.recording.isNotEmpty()) } +
-                List((t.capacity - busy.size).coerceAtLeast(0)) { "Free" to false }).take(4)
+            val cells = (busy.map { b -> (b.recording.firstOrNull() ?: b.watching.firstOrNull() ?: b.channelName) to
+                    when {
+                        b.recording.isEmpty() -> Jc.Focus
+                        b.number in bufferChannels -> Jc.Recording.copy(alpha = 0.4f)
+                        else -> Jc.Recording
+                    } } +
+                List((t.capacity - busy.size).coerceAtLeast(0)) { "Free" to Color.Unspecified }).take(4)
             cells.chunked(2).forEach { pair ->
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    pair.forEach { (what, rec) ->
+                    pair.forEach { (what, dot) ->
                         Row(
                             Modifier.weight(1f).height(26.dp).background(cell, RoundedCornerShape(7.dp)).padding(horizontal = 8.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
                         ) {
                             val free = what == "Free"
-                            if (!free) Box(Modifier.size(7.dp).background(if (rec) Jc.Recording else Jc.Focus, RoundedCornerShape(50)))
+                            if (!free) Box(Modifier.size(7.dp).background(dot, RoundedCornerShape(50)))
                             Text(what, color = if (free) Jc.Muted else Jc.Text, fontSize = 12.sp, fontWeight = if (free) FontWeight.Normal else FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
                     }
