@@ -206,7 +206,7 @@ fun SageHome(
                                     buildList {
                                         add("All Recordings" to { onOpenRecordings(RecordingsPreset(view = Prefs.SHOWS, filter = Prefs.ALL)) })
                                         add("By Date" to { onOpenRecordings(RecordingsPreset(view = Prefs.BY_DATE)) })
-                                        add("Unwatched" to { onOpenRecordings(RecordingsPreset(view = Prefs.SHOWS, unwatched = true)) })
+                                        add("Unwatched" to { onOpenRecordings(RecordingsPreset(view = Prefs.SHOWS, filter = Prefs.ALL, unwatched = true)) })
                                         add("Archive" to { onOpenRecordings(RecordingsPreset(filter = Prefs.ARCHIVED)) })
                                         if (showTrash) add("Trash" to { onOpenScreen(Screen.Trash) })
                                     },
