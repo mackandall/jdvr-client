@@ -84,7 +84,7 @@ fun RecordedShowsScreen(
     onPlayItem: (com.mackandall.jdvr.PlayRecording) -> Unit = { onPlay(it.itemId) },
     preset: RecordingsPreset? = null,
 ) {
-    // Dropped once the screen's own View or Showing button is pressed.
+    // Its view goes when View is pressed, all of it when Showing is.
     var visit by remember { mutableStateOf(preset) }
     // A movie or one-off recording's details page (from the grid).
     var details by remember { mutableStateOf<UUID?>(null) }
@@ -174,7 +174,8 @@ fun RecordedShowsScreen(
             // Cards per show, or one line per recording by date with its channel.
             if (!plain) Button(if (byDate) "View: By date" else "View: By show") {
                 Jdvr.prefs.changeRecordingsView(if (byDate) Prefs.SHOWS else Prefs.BY_DATE)
-                visit = null
+                // Only the view: what's shown (Archive, Unwatched) stays.
+                visit = visit?.copy(view = null)
             }
             // Live folder → Archive → Both (Episode History's; not on a plain server).
             if (!plain) Button(

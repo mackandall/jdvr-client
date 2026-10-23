@@ -56,6 +56,7 @@ import com.mackandall.jdvr.data.LiveTvRepository
 import com.mackandall.jdvr.data.Prefs
 import com.mackandall.jdvr.data.toUuid
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.time.Duration
 import java.time.Instant
 import java.time.LocalDateTime
@@ -122,7 +123,7 @@ fun SageHome(
     val gem = Jc.Style == UiStyle.Gem
     var recordings by remember { mutableStateOf<List<LiveTvRepository.RecordingCard>>(emptyList()) }
     var channels by remember { mutableStateOf<List<Channel>>(emptyList()) }
-    var upcoming by remember { mutableStateOf<List<LiveTvRepository.Upcoming>>(emptyList()) }
+    var upcoming by remember { mutableStateOf<List<LiveTvRepository.Upcoming>?>(null) }
     var newCount by remember { mutableStateOf<Int?>(null) }
     var tuners by remember { mutableStateOf<LiveTvRepository.TunerStatus?>(null) }
     var drive by remember { mutableStateOf<LiveTvRepository.Drive?>(null) }
@@ -143,15 +144,21 @@ fun SageHome(
     }
     LaunchedEffect(Unit) {
         while (true) {
-            runCatching { Jdvr.liveTv.channels() }.getOrNull()?.let { channels = it }
-            upcoming = Jdvr.liveTv.schedule().orEmpty()
-            Jdvr.liveTv.recordedShows()?.let { cards ->
-                recordings = cards
-                newCount = cards.sumOf { it.unplayedCount }
+            // All at once: the channel list is slow on a small box, and the other panels needn't wait for it.
+            kotlinx.coroutines.coroutineScope {
+                launch { runCatching { Jdvr.liveTv.channels() }.getOrNull()?.let { channels = it } }
+                launch { upcoming = Jdvr.liveTv.schedule().orEmpty() }
+                launch {
+                    Jdvr.liveTv.recordedShows()?.let { cards ->
+                        recordings = cards
+                        newCount = cards.sumOf { it.unplayedCount }
+                    }
+                }
+                launch { tuners = Jdvr.liveTv.tuners(null) }
+                launch { drive = runCatching { Jdvr.liveTv.homeExtras() }.getOrNull()?.drive }
             }
-            tuners = Jdvr.liveTv.tuners(null)
-            drive = runCatching { Jdvr.liveTv.homeExtras() }.getOrNull()?.drive
-            delay(60_000)
+            // No channels yet (the server didn't answer, say just after the TV woke): try again soon.
+            delay(if (channels.isEmpty()) 5_000 else 60_000)
         }
     }
     val last = channels.firstOrNull { it.id.toString() == Jdvr.session.lastChannelId } ?: channels.firstOrNull()
@@ -161,6 +168,8 @@ fun SageHome(
             .take(4)
     val libs = libraries.inMenuOrder()
     val symbols = rememberMarkSymbols()
+    // What this TV may not do (JellyDVR Space's device rights) isn't in its menu, as in the rail.
+    val rights = deviceRights()
 
     // The menu: the Settings › Menu order, with SageTV's names; Home, Series and Trash live in submenus.
     val entries =
@@ -168,7 +177,7 @@ fun SageHome(
             prefs.menuOrder.filter { it !in prefs.hiddenMenu }.forEach { k ->
                 when (k) {
                     "livetv" ->
-                        add(
+                        if (rights.liveTv) add(
                             SageEntry(
                                 k, "Live TV",
                                 buildList {
@@ -208,11 +217,11 @@ fun SageHome(
                         add(
                             SageEntry(
                                 k, "Scheduled Recordings",
-                                listOf(
-                                    "Upcoming" to { onOpenScreen(Screen.Scheduled) },
-                                    "Series" to { onOpenScreen(Screen.Series) },
-                                    "Recording Favourites" to { onOpenScreen(Screen.Series) },
-                                ),
+                                buildList {
+                                    add("Upcoming" to { onOpenScreen(Screen.Scheduled) })
+                                    // One screen has both: Jellyfin's series recordings and Schedule's favourites.
+                                    if (rights.record) add("Series & Favourites" to { onOpenScreen(Screen.Series) })
+                                },
                             ),
                         )
                     "libraries" ->
@@ -236,8 +245,9 @@ fun SageHome(
     if (entries.isEmpty()) return
     val mainIndex = SageMenuState.main.coerceIn(0, entries.lastIndex)
     val current = entries[mainIndex]
-    // In the submenu: which entry (null: on the main column).
-    var subIndex by remember { mutableStateOf<Int?>(null) }
+    // In the submenu: which entry (null: on the main column). Back to the main column whenever the
+    // entry changes underneath (libraries or rights arriving add entries above it).
+    var subIndex by remember(current.key) { mutableStateOf<Int?>(null) }
     val subs = current.subs
 
     // OK on a main entry: its first submenu item (the default).
@@ -259,7 +269,7 @@ fun SageHome(
             when (current.key) {
                 "livetv", "guide" -> last?.now?.let { Jdvr.liveTv.imageUrl(it.id, 1080) }
                 "recorded" -> recordings.firstOrNull()?.id?.toUuid()?.let { Jdvr.liveTv.backdropUrl(it) }
-                "scheduled" -> upcoming.firstNotNullOfOrNull { it.programId?.toUuid() }?.let { Jdvr.liveTv.imageUrl(it, 1080) }
+                "scheduled" -> upcoming.orEmpty().firstNotNullOfOrNull { it.programId?.toUuid() }?.let { Jdvr.liveTv.imageUrl(it, 1080) }
                 "libraries" -> libraryItems?.firstOrNull()?.let { Jdvr.liveTv.backdropUrl(it.seriesId ?: it.id) }
                 else -> null
             }
@@ -274,11 +284,11 @@ fun SageHome(
                 val i = subIndex
                 when (e.key) {
                     Key.DirectionUp -> {
-                        if (i == null) SageMenuState.main = (mainIndex - 1 + entries.size) % entries.size else subIndex = (i - 1 + subs.size) % subs.size
+                        if (i == null || subs.isEmpty()) SageMenuState.main = (mainIndex - 1 + entries.size) % entries.size else subIndex = (i - 1 + subs.size) % subs.size
                         true
                     }
                     Key.DirectionDown -> {
-                        if (i == null) SageMenuState.main = (mainIndex + 1) % entries.size else subIndex = (i + 1) % subs.size
+                        if (i == null || subs.isEmpty()) SageMenuState.main = (mainIndex + 1) % entries.size else subIndex = (i + 1) % subs.size
                         true
                     }
                     Key.DirectionRight -> {
@@ -345,8 +355,8 @@ fun SageHome(
         // The main menu.
         val itemHeight = 40.dp
         val itemGap = 5.dp
-        // Gemstone's spaced capitals need a little more room.
-        val menuWidth = if (gem) 284.dp else 250.dp
+        // Room for the longest entry in bold (Scheduled Recordings) and its ▶.
+        val menuWidth = 290.dp
         Column(Modifier.padding(start = 82.dp, top = 108.dp).width(menuWidth), verticalArrangement = Arrangement.spacedBy(itemGap)) {
             entries.forEachIndexed { i, en ->
                 val on = i == mainIndex
@@ -396,6 +406,8 @@ fun SageHome(
                             fontSize = 21.sp,
                             fontWeight = if (on) FontWeight.Bold else FontWeight.Normal,
                             maxLines = 1,
+                            softWrap = false,
+                            overflow = TextOverflow.Ellipsis,
                         )
                     }
                     }
@@ -473,7 +485,7 @@ fun SageHome(
                     NextPanel(upcoming, now, 3)
                 }
                 "scheduled" -> {
-                    val recording = upcoming.filter { it.recordingNow }
+                    val recording = upcoming.orEmpty().filter { it.recordingNow }
                     if (recording.isNotEmpty()) {
                         SagePanel("RECORDING NOW") { recording.take(3).forEach { u -> PanelLine("● " + u.name, listOfNotNull(u.channelNumber, u.channelName).joinToString(" "), red = true) } }
                     }
@@ -518,7 +530,11 @@ fun SageHome(
 
     // Jump to a channel: pick one, the guide opens on it.
     if (picking) {
-        BackHandler { picking = false }
+        BackHandler {
+            picking = false
+            // The picker's row had focus; give it back to the menu.
+            runCatching { entry.requestFocus() }
+        }
         ChannelPicker(channels, last?.id, onPick = {
             picking = false
             onOpenGuide(null, it)
@@ -596,13 +612,14 @@ private fun LivePanel(
 
 @Composable
 private fun NextPanel(
-    upcoming: List<LiveTvRepository.Upcoming>,
+    // Null until the first answer: "Nothing scheduled" only once that's known.
+    upcoming: List<LiveTvRepository.Upcoming>?,
     now: LocalDateTime,
     count: Int,
 ) {
-    val next = upcoming.filter { !it.recordingNow }.take(count)
+    val next = upcoming.orEmpty().filter { !it.recordingNow }.take(count)
     SagePanel("RECORDING NEXT") {
-        if (next.isEmpty()) Text("Nothing scheduled.", color = Jc.Muted, fontSize = 14.sp)
+        if (upcoming == null) Text("Loading…", color = Jc.Muted, fontSize = 14.sp) else if (next.isEmpty()) Text("Nothing scheduled.", color = Jc.Muted, fontSize = 14.sp)
         next.forEach { u ->
             val start = localOf(u.start)
             val time = start?.let { if (it.toLocalDate() == now.toLocalDate()) it.time() else it.dayOfWeek.name.take(3).lowercase().replaceFirstChar { c -> c.uppercase() } + " " + it.time() } ?: ""

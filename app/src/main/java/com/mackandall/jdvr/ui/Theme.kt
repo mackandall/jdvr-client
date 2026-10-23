@@ -76,11 +76,11 @@ enum class UiStyle {
     // SageTV's default theme: Home is a vertical main menu with submenus, glossy blue selection.
     Sage,
 
-    // SageTV's Gemstone theme: fanart behind black glass, a menu across the top, a poster flow.
+    // SageTV's Gemstone theme: fanart behind black glass, the same side menu in one gem colour.
     Gem,
 }
 
-/** Gemstone's accent (Settings › Gemstone colour). */
+/** Gemstone's accent (the swatches under its card in the theme gallery). */
 data class Gem(
     val key: String,
     val name: String,
@@ -171,7 +171,7 @@ val Palettes =
             text = Color(0xFFFFFFFF), muted = Color(0xFF9DB6DA), focus = Color(0xFF5FB0FF), focusFill = Color(0xFF2470D8), onFocus = Color(0xFFFFFFFF),
             recording = Color(0xFFFF5A5A), green = Color(0xFF3FAE6E), sheet = Color(0xFF0E2A63), style = UiStyle.Sage,
         ),
-        // After SageTV's Gemstone theme: black glass over fanart, one gem colour (Settings › Gemstone colour).
+        // After SageTV's Gemstone theme: black glass over fanart, one gem colour (picked in the theme gallery).
         Palette(
             "gemstone", "SageTV Gemstone",
             ink = Color(0xFF0B0C0F), rail = Color(0xFF101115), panel = Color(0xFF0E0F13).copy(alpha = 0.82f), panel2 = Color(0xFF1C1F26), line = Color(0xFF2C3038),

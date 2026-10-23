@@ -94,7 +94,7 @@ class Prefs(
     var wash by mutableStateOf(p.getString("wash", "blue") ?: "blue")
         private set
 
-    /** Gemstone's colour (Settings › Gemstone colour): a key of [com.mackandall.jdvr.ui.Gems]. */
+    /** Gemstone's colour (the theme gallery's swatches): a key of [com.mackandall.jdvr.ui.Gems]. */
     var gem by mutableStateOf(p.getString("gem", "emerald") ?: "emerald")
         private set
 
