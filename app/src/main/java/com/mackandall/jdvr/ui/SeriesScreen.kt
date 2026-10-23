@@ -70,7 +70,10 @@ fun SeriesScreen(entry: FocusRequester) {
 
     fun act(block: suspend () -> String?) {
         scope.launch {
-            note = runCatching { block() }.getOrElse { "Didn't work: ${it.message}" }
+            note = runCatching { block() }.getOrElse {
+                android.util.Log.w("JDVR", "series action failed", it)
+                "Didn't work: ${it.message ?: it.javaClass.simpleName}"
+            }
             delay(1500) // the server schedules in the background
             reload++
         }

@@ -944,7 +944,8 @@ internal fun ProgramPanel(
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
-                    note = "Didn't work: ${e.message}"
+                    android.util.Log.w("JDVR", "guide action failed", e)
+                    note = "Didn't work: ${e.message ?: e.javaClass.simpleName}"
                     return@launch
                 }
             val done = onActed
