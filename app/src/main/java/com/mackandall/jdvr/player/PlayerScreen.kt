@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -29,6 +30,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.nativeKeyCode
 import androidx.compose.ui.input.key.onKeyEvent
@@ -893,7 +895,7 @@ private fun InfoBar(
         if (now != null) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                 Text(now.start.time(), color = Jc.Muted, fontSize = 14.sp)
-                LiveTimeline(now.start, now.end, watchingAt, bufferFrom, behindMs > 0, Modifier.width(520.dp))
+                LiveTimeline(now.start, now.end, watchingAt, bufferFrom, behindMs, Modifier.width(520.dp))
                 Text(now.end.time(), color = Jc.Muted, fontSize = 14.sp)
                 if (recording) Text("● Recording", color = Jc.Recording, fontSize = 14.sp)
             }
@@ -905,8 +907,9 @@ private fun InfoBar(
 
 /**
  * The programme's bar: what has aired before the buffer starts (faint), the buffer up to the moment
- * on screen (solid), the buffer still ahead of it up to live (the same colour, lighter), with a
- * dot where you are when you're behind.
+ * on screen (solid). Once you're behind: a thumb where you are, the buffer still ahead of you
+ * striped, a red LIVE tag over the live edge, and under the bar a bracket from you to live with
+ * how far behind that is.
  */
 @Composable
 private fun LiveTimeline(
@@ -914,8 +917,8 @@ private fun LiveTimeline(
     end: LocalDateTime,
     watchingAt: LocalDateTime,
     bufferFrom: LocalDateTime?,
-    // Far enough behind to say so (the HLS copy always runs a few seconds behind).
-    behind: Boolean,
+    // How far behind live, when far enough to say so (the HLS copy always runs a few seconds behind); else 0.
+    behindMs: Long,
     modifier: Modifier,
 ) {
     val total = Duration.between(start, end).seconds.coerceAtLeast(1).toFloat()
@@ -923,21 +926,70 @@ private fun LiveTimeline(
     val live = at(LocalDateTime.now())
     val watching = at(watchingAt).coerceAtMost(live)
     val from = bufferFrom?.let { at(it) }?.coerceAtMost(watching) ?: 0f
+    val behind = behindMs > 0
     val line = Jc.Line
     val focus = Jc.Focus
+    val red = Jc.Recording
+    val amber = Jc.Amber
     val aired = Jc.Muted.copy(alpha = 0.45f)
-    androidx.compose.foundation.Canvas(modifier.height(12.dp)) {
-        val h = 6.dp.toPx()
-        val y = (size.height - h) / 2
-        val r = androidx.compose.ui.geometry.CornerRadius(h / 2)
-        fun seg(a: Float, b: Float, c: Color) {
-            if (b > a) drawRoundRect(c, androidx.compose.ui.geometry.Offset(a * size.width, y), androidx.compose.ui.geometry.Size((b - a) * size.width, h), r)
+    // The bar's middle, with room for the LIVE tag above and the bracket and time below.
+    val mid = 30.dp
+    androidx.compose.foundation.layout.BoxWithConstraints(modifier.height(if (behind) 62.dp else 22.dp)) {
+        val w = maxWidth
+        val barMid = if (behind) mid else 11.dp
+        androidx.compose.foundation.Canvas(Modifier.fillMaxSize()) {
+            val h = 6.dp.toPx()
+            val y = barMid.toPx() - h / 2
+            val r = androidx.compose.ui.geometry.CornerRadius(h / 2)
+            fun seg(a: Float, b: Float, c: Color) {
+                if (b > a) drawRoundRect(c, androidx.compose.ui.geometry.Offset(a * size.width, y), androidx.compose.ui.geometry.Size((b - a) * size.width, h), r)
+            }
+            seg(0f, 1f, line)
+            seg(0f, from, aired)
+            seg(from, watching, focus)
+            if (!behind) return@Canvas
+            // The buffer ahead of you: stripes.
+            val a = watching * size.width
+            val b = live * size.width
+            if (b > a) {
+                drawRoundRect(focus.copy(alpha = 0.12f), androidx.compose.ui.geometry.Offset(a, y), androidx.compose.ui.geometry.Size(b - a, h), r)
+                val clip = androidx.compose.ui.graphics.Path().apply { addRoundRect(androidx.compose.ui.geometry.RoundRect(a, y, b, y + h, r)) }
+                clipPath(clip) {
+                    val step = 7.dp.toPx()
+                    var x = a - h
+                    while (x < b) {
+                        drawLine(focus.copy(alpha = 0.75f), androidx.compose.ui.geometry.Offset(x, y + h), androidx.compose.ui.geometry.Offset(x + h, y), strokeWidth = 3.dp.toPx())
+                        x += step
+                    }
+                }
+            }
+            // Live: a red tick.
+            drawRect(red, androidx.compose.ui.geometry.Offset(b - 1.dp.toPx(), barMid.toPx() - 9.dp.toPx()), androidx.compose.ui.geometry.Size(2.dp.toPx(), 18.dp.toPx()))
+            // The bracket from you to live, under the bar.
+            val by = barMid.toPx() + 12.dp.toPx()
+            val bh = 6.dp.toPx()
+            val sw = 1.dp.toPx()
+            drawLine(amber, androidx.compose.ui.geometry.Offset(a, by), androidx.compose.ui.geometry.Offset(a, by + bh), sw)
+            drawLine(amber, androidx.compose.ui.geometry.Offset(a, by + bh), androidx.compose.ui.geometry.Offset(b, by + bh), sw)
+            drawLine(amber, androidx.compose.ui.geometry.Offset(b, by), androidx.compose.ui.geometry.Offset(b, by + bh), sw)
+            // You: a thumb.
+            val tw = 8.dp.toPx()
+            val th = 22.dp.toPx()
+            val tl = androidx.compose.ui.geometry.Offset(a - tw / 2, barMid.toPx() - th / 2)
+            drawRoundRect(Color.Black.copy(alpha = 0.5f), tl + androidx.compose.ui.geometry.Offset(0f, 2.dp.toPx()), androidx.compose.ui.geometry.Size(tw, th), androidx.compose.ui.geometry.CornerRadius(tw / 2))
+            drawRoundRect(Color.White, tl, androidx.compose.ui.geometry.Size(tw, th), androidx.compose.ui.geometry.CornerRadius(tw / 2))
+            drawRoundRect(focus, tl, androidx.compose.ui.geometry.Size(tw, th), androidx.compose.ui.geometry.CornerRadius(tw / 2), style = androidx.compose.ui.graphics.drawscope.Stroke(2.dp.toPx()))
         }
-        seg(0f, 1f, line)
-        seg(0f, from, aired)
-        seg(watching, live, focus.copy(alpha = 0.4f))
-        seg(from, watching, focus)
-        if (behind) drawCircle(focus, size.height / 2, androidx.compose.ui.geometry.Offset(watching * size.width, size.height / 2))
+        if (behind) {
+            // LIVE over the live edge, and how far behind under the middle of the bracket.
+            Box(Modifier.offset(x = w * live - 40.dp, y = 0.dp).width(80.dp), contentAlignment = Alignment.Center) {
+                Text("● LIVE", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.background(red, RoundedCornerShape(4.dp)).padding(horizontal = 6.dp, vertical = 1.dp))
+            }
+            val sec = behindMs / 1000
+            Box(Modifier.offset(x = w * (watching + live) / 2 - 40.dp, y = mid + 18.dp).width(80.dp), contentAlignment = Alignment.Center) {
+                Text(if (sec >= 3600) "%d:%02d:%02d".format(sec / 3600, sec / 60 % 60, sec % 60) else "%d:%02d".format(sec / 60, sec % 60), color = amber, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+            }
+        }
     }
 }
 
