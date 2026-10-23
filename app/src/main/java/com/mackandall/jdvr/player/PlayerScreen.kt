@@ -345,6 +345,26 @@ fun PlayerScreen(
 
     val canHls = playback?.hlsUrl != null && hlsStartedAt != null
 
+    // How far behind live the picture is. Jellyfin's live HLS has no programme date-times, so the
+    // player's own live offset is unknown: the copy's end (its duration so far) is live instead.
+    fun behindLiveMs(): Long =
+        if (onHls) {
+            player.currentLiveOffset.takeIf { it != androidx.media3.common.C.TIME_UNSET }
+                ?: player.duration.takeIf { it != androidx.media3.common.C.TIME_UNSET }?.let { (it - player.currentPosition).coerceAtLeast(0) }
+                ?: 0L
+        } else {
+            // The direct stream paused (before the HLS copy takes over).
+            pausedAt?.let { Duration.between(it, Instant.now()).toMillis() } ?: 0L
+        }
+
+    // Where rewinding can go back to: the start of the HLS copy (about when you tuned in).
+    fun bufferFrom(behind: Long): LocalDateTime? =
+        when {
+            onHls -> LocalDateTime.now().minusNanos((behind + player.currentPosition) * 1_000_000)
+            hlsStartedAt != null -> LocalDateTime.now().minusNanos((android.os.SystemClock.elapsedRealtime() - hlsStartedAt!!) * 1_000_000)
+            else -> null
+        }
+
     fun switchToHls(
         positionMs: Long,
         play: Boolean,
@@ -371,14 +391,6 @@ fun PlayerScreen(
         showOsd()
     }
 
-    fun forward() {
-        if (!onHls) return
-        // No further than live.
-        val live = player.currentPosition + (player.currentLiveOffset.takeIf { it != androidx.media3.common.C.TIME_UNSET } ?: 0L)
-        player.seekTo(minOf(player.currentPosition + 30_000, live))
-        showOsd()
-    }
-
     // Back to live: the direct stream again (truly live, not the HLS copy's few seconds behind).
     fun toLive() {
         val p = playback ?: return
@@ -393,6 +405,13 @@ fun PlayerScreen(
             player.play()
         }
         pausedAt = null
+        showOsd()
+    }
+
+    fun forward() {
+        if (!onHls) return
+        // No further than live: within 30 s of it, back to the live stream itself.
+        if (behindLiveMs() <= 30_000) toLive() else player.seekTo(player.currentPosition + 30_000)
         showOsd()
     }
 
@@ -590,9 +609,9 @@ fun PlayerScreen(
         }
         if (!miniOpen && (tuning || System.currentTimeMillis() < osdUntil || error != null || actionsOpen || pausedAt != null)) {
             tick.let {
-                val offset = if (onHls) player.currentLiveOffset.takeIf { it != androidx.media3.common.C.TIME_UNSET } ?: 0L else 0L
+                val offset = behindLiveMs()
                 val realRecording = buffers.currentBuffer()?.kept == true || channel?.now?.let { it.timerId != null && it.id.toString().plainId() !in bufferIds } == true
-                InfoBar(channel, symbols, Modifier.align(Alignment.BottomCenter), behindMs = if (offset > 15_000) offset else 0L, recording = realRecording, formats = formats) {
+                InfoBar(channel, symbols, Modifier.align(Alignment.BottomCenter), behindMs = if (offset > 15_000) offset else 0L, recording = realRecording, formats = formats, watchingAt = LocalDateTime.now().minusNanos(offset * 1_000_000), bufferFrom = bufferFrom(offset)) {
                     if (actionsOpen) {
                         val b = buffers.currentBuffer()
                         val behind = onHls
@@ -833,6 +852,9 @@ private fun InfoBar(
     behindMs: Long = 0L,
     recording: Boolean = false,
     formats: PlayingFormats? = null,
+    // The moment on screen (live, or earlier when rewound), and how far back the buffer goes.
+    watchingAt: LocalDateTime = LocalDateTime.now(),
+    bufferFrom: LocalDateTime? = null,
     actions: @Composable () -> Unit = {},
 ) {
     val now = channel?.now
@@ -869,19 +891,53 @@ private fun InfoBar(
         val sub = listOfNotNull(now?.seasonEpisode, marks.title).joinToString(" · ")
         if (sub.isNotEmpty()) Text(sub, color = Jc.Text, fontSize = 16.sp)
         if (now != null) {
-            val total = Duration.between(now.start, now.end).toMinutes().coerceAtLeast(1)
-            val done = Duration.between(now.start, LocalDateTime.now()).toMinutes().coerceIn(0, total)
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                 Text(now.start.time(), color = Jc.Muted, fontSize = 14.sp)
-                Box(Modifier.width(520.dp).height(6.dp).background(Jc.Line, RoundedCornerShape(3.dp))) {
-                    Box(Modifier.fillMaxHeight().fillMaxWidth(done.toFloat() / total).background(Jc.Focus, RoundedCornerShape(3.dp)))
-                }
+                LiveTimeline(now.start, now.end, watchingAt, bufferFrom, behindMs > 0, Modifier.width(520.dp))
                 Text(now.end.time(), color = Jc.Muted, fontSize = 14.sp)
                 if (recording) Text("● Recording", color = Jc.Recording, fontSize = 14.sp)
             }
         }
         actions()
         Text("▲ / CH change channel · ▼ mini guide · 0–9 type a number · ← 10 s back · → 30 s ahead · OK controls · Back leave", color = Jc.Muted, fontSize = 13.sp)
+    }
+}
+
+/**
+ * The programme's bar: what has aired before the buffer starts (faint), the buffer up to the moment
+ * on screen (solid), the buffer still ahead of it up to live (the same colour, lighter), with a
+ * dot where you are when you're behind.
+ */
+@Composable
+private fun LiveTimeline(
+    start: LocalDateTime,
+    end: LocalDateTime,
+    watchingAt: LocalDateTime,
+    bufferFrom: LocalDateTime?,
+    // Far enough behind to say so (the HLS copy always runs a few seconds behind).
+    behind: Boolean,
+    modifier: Modifier,
+) {
+    val total = Duration.between(start, end).seconds.coerceAtLeast(1).toFloat()
+    fun at(t: LocalDateTime) = (Duration.between(start, t).seconds / total).coerceIn(0f, 1f)
+    val live = at(LocalDateTime.now())
+    val watching = at(watchingAt).coerceAtMost(live)
+    val from = bufferFrom?.let { at(it) }?.coerceAtMost(watching) ?: 0f
+    val line = Jc.Line
+    val focus = Jc.Focus
+    val aired = Jc.Muted.copy(alpha = 0.45f)
+    androidx.compose.foundation.Canvas(modifier.height(12.dp)) {
+        val h = 6.dp.toPx()
+        val y = (size.height - h) / 2
+        val r = androidx.compose.ui.geometry.CornerRadius(h / 2)
+        fun seg(a: Float, b: Float, c: Color) {
+            if (b > a) drawRoundRect(c, androidx.compose.ui.geometry.Offset(a * size.width, y), androidx.compose.ui.geometry.Size((b - a) * size.width, h), r)
+        }
+        seg(0f, 1f, line)
+        seg(0f, from, aired)
+        seg(watching, live, focus.copy(alpha = 0.4f))
+        seg(from, watching, focus)
+        if (behind) drawCircle(focus, size.height / 2, androidx.compose.ui.geometry.Offset(watching * size.width, size.height / 2))
     }
 }
 
