@@ -15,6 +15,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.layout.ContentScale
@@ -40,7 +45,22 @@ fun Backdrop(
         if (wideOk != false) {
             BoxWithConstraints(Modifier.fillMaxSize()) {
                 val w = maxWidth * 0.7f
-                Box(Modifier.align(Alignment.TopEnd).size(w, w * 9f / 16f)) {
+                // The picture itself fades out (to whatever is behind: the theme's own background,
+                // a gradient on some), rather than under a coat of one colour.
+                Box(
+                    Modifier
+                        .align(Alignment.TopEnd)
+                        .size(w, w * 9f / 16f)
+                        .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+                        .drawWithContent {
+                            drawContent()
+                            drawRect(
+                                Brush.horizontalGradient(0f to Color.Transparent, 0.28f to Color.Black.copy(alpha = 0.18f), 0.7f to Color.Black.copy(alpha = 0.85f), 1f to Color.Black),
+                                blendMode = BlendMode.DstIn,
+                            )
+                            drawRect(Brush.verticalGradient(0.45f to Color.Black, 0.96f to Color.Transparent), blendMode = BlendMode.DstIn)
+                        },
+                ) {
                     AsyncImage(
                         model = wide,
                         contentDescription = null,
@@ -49,17 +69,6 @@ fun Backdrop(
                         onError = { wideOk = false },
                         modifier = Modifier.fillMaxSize().alpha(if (wideOk == true) strength else 0f),
                     )
-                    Box(
-                        Modifier.fillMaxSize().background(
-                            Brush.horizontalGradient(
-                                0f to Jc.Ink,
-                                0.28f to Jc.Ink.copy(alpha = 0.82f),
-                                0.7f to Jc.Ink.copy(alpha = 0.15f),
-                                1f to Jc.Ink.copy(alpha = 0f),
-                            ),
-                        ),
-                    )
-                    Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0.45f to Jc.Ink.copy(alpha = 0f), 0.96f to Jc.Ink)))
                 }
             }
         }
