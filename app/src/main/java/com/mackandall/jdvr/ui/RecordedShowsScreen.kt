@@ -158,6 +158,16 @@ fun RecordedShowsScreen(
             if (id != null) AsyncImage(model = Jdvr.liveTv.backdropUrl(id), contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
         }
         Box(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color(0xC708090C)))
+    } else {
+        // The other themes: the focused show's picture at the top right (a NextPVR show's from its
+        // newest recording), once focus rests on a card.
+        var artCard by remember { mutableStateOf<LiveTvRepository.RecordingCard?>(null) }
+        LaunchedEffect(focusedCard, cards) {
+            if (artCard != null) kotlinx.coroutines.delay(300)
+            artCard = cards?.firstOrNull { it.id == focusedCard }
+        }
+        val artId = artCard?.let { (it.imageId ?: it.id).toUuid() }
+        FadingBackdrop(artId, artId?.let { Jdvr.liveTv.backdropUrl(it) }, artId?.let { Jdvr.liveTv.imageUrl(it, 720) }, strength = 0.85f)
     }
     Column(Modifier.fillMaxSize().padding(start = 28.dp, top = 24.dp, end = 28.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
