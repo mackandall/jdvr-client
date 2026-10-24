@@ -86,7 +86,7 @@ data class LivePlayback(
     val hlsUrl: String? = null,
 )
 
-class LiveTvRepository {
+class LiveTvRepository : TvBackend {
     private val json = Json { ignoreUnknownKeys = true }
 
     // The Jellyfin SDK reads replies on the calling thread: never the main one (Android forbids it).
@@ -96,7 +96,7 @@ class LiveTvRepository {
 
     // ---- channels and guide --------------------------------------------------------------
 
-    suspend fun channels(): List<Channel> =
+    override suspend fun channels(): List<Channel> =
         io {
         val items =
             api.liveTvApi
@@ -122,7 +122,7 @@ class LiveTvRepository {
             }.sortedWith(compareBy({ it.number.toDoubleOrNull() ?: Double.MAX_VALUE }, { it.name }))
     }
 
-    suspend fun programs(
+    override suspend fun programs(
         channelIds: List<UUID>,
         from: LocalDateTime,
         to: LocalDateTime,
@@ -143,9 +143,9 @@ class LiveTvRepository {
             .mapNotNull { toProgram(it) }
         }
 
-    suspend fun program(id: UUID): Program? = io { api.liveTvApi.getProgram(id.toString(), Jdvr.userId).content.let { toProgram(it) } }
+    override suspend fun program(id: UUID): Program? = io { api.liveTvApi.getProgram(id.toString(), Jdvr.userId).content.let { toProgram(it) } }
 
-    fun imageUrl(
+    override fun imageUrl(
         itemId: UUID,
         maxHeight: Int,
     ): String = api.imageApi.getItemImageUrl(itemId, ImageType.PRIMARY, maxHeight = maxHeight)
@@ -173,10 +173,10 @@ class LiveTvRepository {
 
     // ---- recording -------------------------------------------------------------------------
 
-    suspend fun record(
+    override suspend fun record(
         programId: UUID,
         series: Boolean,
-    ) = io {
+    ): Unit = io {
         val d = api.liveTvApi.getDefaultTimer(programId.toString()).content
         if (series) {
             api.liveTvApi.createSeriesTimer(d)
@@ -213,7 +213,7 @@ class LiveTvRepository {
      * DVR's own id, which JellyDVR Schedule's list gives (its timers.json); Jellyfin's API only
      * knows the first ("Timer … not found"), so the second is looked up among its timers.
      */
-    suspend fun cancelRecording(timerId: String) =
+    override suspend fun cancelRecording(timerId: String): Unit =
         io {
         val apiId = runCatching {
             api.liveTvApi.getTimers().content.items.firstOrNull { it.id == timerId || it.externalId == timerId }?.id
@@ -221,7 +221,7 @@ class LiveTvRepository {
         api.liveTvApi.cancelTimer(apiId)
     }
 
-    suspend fun cancelSeries(seriesTimerId: String) =
+    override suspend fun cancelSeries(seriesTimerId: String): Unit =
         io {
         api.liveTvApi.cancelSeriesTimer(seriesTimerId)
     }
@@ -229,7 +229,7 @@ class LiveTvRepository {
     // ---- playback --------------------------------------------------------------------------
 
     /** Opens the channel's live stream and works out how to play it. */
-    suspend fun startLive(channelId: UUID): LivePlayback =
+    override suspend fun startLive(channelId: UUID): LivePlayback =
         io {
         val response =
             api.mediaInfoApi
@@ -310,7 +310,7 @@ class LiveTvRepository {
     }
 
     /** Request the HLS playlist once, so the server starts the remux now (from tune-in). */
-    suspend fun warmHls(url: String) =
+    override suspend fun warmHls(url: String): Unit =
         io {
             runCatching {
                 // The server answers the variant playlist only once the first segments exist (~10 s).
@@ -344,7 +344,7 @@ class LiveTvRepository {
         val label: String?,
     )
 
-    suspend fun startItem(itemId: UUID): ItemPlayback =
+    override suspend fun startItem(itemId: UUID): ItemPlayback =
         io {
             val item = api.userLibraryApi.getItem(itemId, Jdvr.userId).content
             val response =
@@ -400,12 +400,12 @@ class LiveTvRepository {
             )
         }
 
-    suspend fun reportItem(
+    override suspend fun reportItem(
         p: ItemPlayback,
         positionMs: Long,
         paused: Boolean,
         event: String,
-    ) = io {
+    ): Unit = io {
         val ticks = positionMs * 10_000L
         when (event) {
             "start" ->
@@ -431,7 +431,7 @@ class LiveTvRepository {
         }
     }
 
-    suspend fun reportStart(p: LivePlayback) =
+    override suspend fun reportStart(p: LivePlayback): Unit =
         io {
         api.playStateApi.reportPlaybackStart(
             PlaybackStartInfo(
@@ -449,10 +449,10 @@ class LiveTvRepository {
         )
     }
 
-    suspend fun reportProgress(
+    override suspend fun reportProgress(
         p: LivePlayback,
         paused: Boolean,
-    ) = io {
+    ): Unit = io {
         api.playStateApi.reportPlaybackProgress(
             PlaybackProgressInfo(
                 canSeek = false,
@@ -470,10 +470,10 @@ class LiveTvRepository {
     }
 
     /** Closes a live stream nobody is playing (its player went away while it opened): frees the tuner. */
-    suspend fun closeLiveStream(id: String) = io { api.mediaInfoApi.closeLiveStream(id) }
+    override suspend fun closeLiveStream(id: String): Unit = io { api.mediaInfoApi.closeLiveStream(id) }
 
     /** Must carry the live stream id, or Jellyfin keeps the tuner open (found with Moonfin). */
-    suspend fun reportStopped(p: LivePlayback) =
+    override suspend fun reportStopped(p: LivePlayback): Unit =
         io {
         api.playStateApi.reportPlaybackStopped(
             PlaybackStopInfo(
@@ -533,7 +533,7 @@ class LiveTvRepository {
         )
 
     /** The user's libraries that hold videos (Live TV and playlists left out). */
-    suspend fun libraries(): List<Library> =
+    override suspend fun libraries(): List<Library> =
         io {
             api.userViewsApi.getUserViews(userId = Jdvr.userId).content.items
                 .filter { it.collectionType?.serialName !in setOf("livetv", "playlists", "music", "books", "photos") }
@@ -541,7 +541,7 @@ class LiveTvRepository {
         }
 
     /** A library's movies and shows, a page at a time: by name, or newest first. */
-    suspend fun libraryItems(
+    override suspend fun libraryItems(
         libraryId: UUID,
         newestFirst: Boolean,
         start: Int,
@@ -569,7 +569,7 @@ class LiveTvRepository {
      * Each item's letter ("#" for digits and symbols), in A–Z order: what the library's letter strip
      * jumps by. One small reply (names only), however big the library.
      */
-    suspend fun libraryLetters(libraryId: UUID): List<String> =
+    override suspend fun libraryLetters(libraryId: UUID): List<String> =
         io {
             api.itemsApi.getItems(
                 userId = Jdvr.userId,
@@ -585,7 +585,7 @@ class LiveTvRepository {
         }
 
     /** Movies and shows in every library whose name matches. */
-    suspend fun searchLibrary(term: String): List<LibItem> =
+    override suspend fun searchLibrary(term: String): List<LibItem> =
         io {
             api.itemsApi.getItems(
                 userId = Jdvr.userId,
@@ -599,7 +599,7 @@ class LiveTvRepository {
         }
 
     /** Guide programmes whose name matches, still to come or on now, soonest first. */
-    suspend fun searchGuide(term: String): List<Program> =
+    override suspend fun searchGuide(term: String): List<Program> =
         io {
             val now = LocalDateTime.now()
             api.itemsApi.getItems(
@@ -613,11 +613,11 @@ class LiveTvRepository {
             ).content.items.mapNotNull { toProgram(it) }.filter { it.end.isAfter(now) }.sortedBy { it.start }
         }
 
-    suspend fun seasons(seriesId: UUID): List<LibItem> =
+    override suspend fun seasons(seriesId: UUID): List<LibItem> =
         io { api.tvShowsApi.getSeasons(seriesId = seriesId, userId = Jdvr.userId, enableUserData = true).content.items.map { toLibItem(it) } }
 
     /** A show's episodes, in order (one season, or all of them). */
-    suspend fun episodes(
+    override suspend fun episodes(
         seriesId: UUID,
         seasonId: UUID?,
     ): List<LibItem> =
@@ -662,7 +662,7 @@ class LiveTvRepository {
         val cast get() = people.filter { it.kind == "Actor" || it.kind == "GuestStar" }
     }
 
-    suspend fun details(id: UUID): ItemDetails =
+    override suspend fun details(id: UUID): ItemDetails =
         io {
             val d = api.userLibraryApi.getItem(id, Jdvr.userId).content
             val source = d.mediaSources?.firstOrNull()
@@ -701,25 +701,25 @@ class LiveTvRepository {
             )
         }
 
-    fun backdropUrl(itemId: UUID): String = api.imageApi.getItemImageUrl(itemId, ImageType.BACKDROP, maxWidth = 1920)
+    override fun backdropUrl(itemId: UUID): String = api.imageApi.getItemImageUrl(itemId, ImageType.BACKDROP, maxWidth = 1920)
 
-    fun personImageUrl(personId: UUID): String = api.imageApi.getItemImageUrl(personId, ImageType.PRIMARY, maxHeight = 240)
+    override fun personImageUrl(personId: UUID): String = api.imageApi.getItemImageUrl(personId, ImageType.PRIMARY, maxHeight = 240)
 
-    suspend fun libItem(id: UUID): LibItem = io { toLibItem(api.userLibraryApi.getItem(id, Jdvr.userId).content) }
+    override suspend fun libItem(id: UUID): LibItem = io { toLibItem(api.userLibraryApi.getItem(id, Jdvr.userId).content) }
 
     /** A library's latest additions, as the web client's "Recently added in …" rows (episodes grouped by show). */
-    suspend fun latestIn(
+    override suspend fun latestIn(
         libraryId: UUID,
-        limit: Int = 16,
+        limit: Int,
     ): List<LibItem>? =
         runCatching {
             io { api.userLibraryApi.getLatestMedia(userId = Jdvr.userId, parentId = libraryId, limit = limit).content.map(::toLibItem) }
         }.getOrNull()
 
-    suspend fun setPlayed(
+    override suspend fun setPlayed(
         id: UUID,
         played: Boolean,
-    ) = io {
+    ): Unit = io {
         if (played) api.playStateApi.markPlayedItem(itemId = id, userId = Jdvr.userId) else api.playStateApi.markUnplayedItem(itemId = id, userId = Jdvr.userId)
     }
 
@@ -751,13 +751,13 @@ class LiveTvRepository {
     )
 
     /** Episode History's guide mark symbols (to show its marks as coloured chips). */
-    suspend fun markSymbols(): MarkSymbols? = plugin(HttpMethod.GET, "/EpisodeHistory/Symbols")
+    override suspend fun markSymbols(): MarkSymbols? = plugin(HttpMethod.GET, "/EpisodeHistory/Symbols")
 
     // Whether the Episode History plugin answers on this server: a yes is reused for 5 minutes (so
     // a plugin removed meanwhile stops being offered soon after); a no is asked again next time.
     private var episodeHistoryAt = 0L
 
-    suspend fun hasEpisodeHistory(): Boolean {
+    override suspend fun hasEpisodeHistory(): Boolean {
         if (System.currentTimeMillis() - episodeHistoryAt < 5 * 60_000) return true
         val yes = markSymbols() != null
         episodeHistoryAt = if (yes) System.currentTimeMillis() else 0L
@@ -783,7 +783,7 @@ class LiveTvRepository {
     )
 
     /** JellyDVR Schedule: was this airing skipped / moved, and is the show a Recording Favourite. */
-    suspend fun scheduleState(programId: UUID): ScheduleState? = plugin(HttpMethod.GET, "/JellyDvrSchedule/Program/$programId")
+    override suspend fun scheduleState(programId: UUID): ScheduleState? = plugin(HttpMethod.GET, "/JellyDvrSchedule/Program/$programId")
 
     @Serializable
     data class Message(
@@ -858,9 +858,9 @@ class LiveTvRepository {
     }
 
     /** "Other airings" of a library item or a guide entry (null without Episode History). */
-    suspend fun airings(
-        itemId: UUID? = null,
-        programId: UUID? = null,
+    override suspend fun airings(
+        itemId: UUID?,
+        programId: UUID?,
     ): AiringsResult? =
         plugin(
             HttpMethod.GET,
@@ -868,10 +868,10 @@ class LiveTvRepository {
             listOfNotNull(itemId?.let { "itemId" to it.toString() }, programId?.let { "programId" to it.toString() }).toMap(),
         )
 
-    suspend fun rerecordState(itemId: UUID): RerecordState? = plugin(HttpMethod.GET, "/EpisodeHistory/Item/$itemId/Rerecord")
+    override suspend fun rerecordState(itemId: UUID): RerecordState? = plugin(HttpMethod.GET, "/EpisodeHistory/Item/$itemId/Rerecord")
 
     /** Re-records a flawed recording at [programId], or the best airing found when null. */
-    suspend fun rerecord(
+    override suspend fun rerecord(
         itemId: UUID,
         programId: String?,
         reason: String?,
@@ -882,7 +882,7 @@ class LiveTvRepository {
             listOfNotNull(programId?.let { "programId" to it }, reason?.let { "reason" to it }).toMap(),
         )
 
-    suspend fun cancelRerecord(itemId: UUID): Boolean =
+    override suspend fun cancelRerecord(itemId: UUID): Boolean =
         runCatching { withContext(Dispatchers.IO) { api.request(method = HttpMethod.DELETE, pathTemplate = "/EpisodeHistory/Item/$itemId/Rerecord") } }.isSuccess
 
     @Serializable
@@ -899,10 +899,10 @@ class LiveTvRepository {
     )
 
     /** Which show a recording stands for, and the Recording Favourite covering it (if any). */
-    suspend fun favouriteForItem(itemId: UUID): FavouriteFor? = plugin(HttpMethod.GET, "/JellyDvrSchedule/Favourites/ForItem/$itemId")
+    override suspend fun favouriteForItem(itemId: UUID): FavouriteFor? = plugin(HttpMethod.GET, "/JellyDvrSchedule/Favourites/ForItem/$itemId")
 
     /** Deletes a recording: its file and the files beside it (Jellyfin's own delete). */
-    suspend fun deleteItem(itemId: UUID) = io { api.libraryApi.deleteItem(itemId) }
+    override suspend fun deleteItem(itemId: UUID): Unit = io { api.libraryApi.deleteItem(itemId) }
 
     @Serializable
     data class DeletedRecording(
@@ -952,19 +952,19 @@ class LiveTvRepository {
     )
 
     /** Episode History's trash: deleted recordings that can still be put back. Null without it. */
-    suspend fun trash(): TrashList? = plugin<TrashList>(HttpMethod.GET, "/EpisodeHistory/Trash")?.also { t -> trashDaysCache = (if (t.enabled) t.keepDays else null) to System.currentTimeMillis() }
+    override suspend fun trash(): TrashList? = plugin<TrashList>(HttpMethod.GET, "/EpisodeHistory/Trash")?.also { t -> trashDaysCache = (if (t.enabled) t.keepDays else null) to System.currentTimeMillis() }
 
     /** Puts a deleted recording back; false when it couldn't (something is already where it was). */
-    suspend fun restoreFromTrash(id: String): Boolean = plugin<TrashRestored>(HttpMethod.POST, "/EpisodeHistory/Trash/$id/Restore")?.restored == true
+    override suspend fun restoreFromTrash(id: String): Boolean = plugin<TrashRestored>(HttpMethod.POST, "/EpisodeHistory/Trash/$id/Restore")?.restored == true
 
-    suspend fun deleteFromTrash(id: String): Boolean = (plugin<TrashDeleted>(HttpMethod.DELETE, "/EpisodeHistory/Trash/$id")?.deleted ?: 0) > 0
+    override suspend fun deleteFromTrash(id: String): Boolean = (plugin<TrashDeleted>(HttpMethod.DELETE, "/EpisodeHistory/Trash/$id")?.deleted ?: 0) > 0
 
-    suspend fun emptyTrash(): Int? = plugin<TrashDeleted>(HttpMethod.DELETE, "/EpisodeHistory/Trash")?.deleted
+    override suspend fun emptyTrash(): Int? = plugin<TrashDeleted>(HttpMethod.DELETE, "/EpisodeHistory/Trash")?.deleted
 
     private var trashDaysCache: Pair<Int?, Long>? = null
 
     /** Days a delete stays in the trash, or null when deletes are for good (no trash). Asked again after 2 minutes. */
-    suspend fun trashDays(): Int? {
+    override suspend fun trashDays(): Int? {
         trashDaysCache?.let { (days, at) -> if (System.currentTimeMillis() - at < 120_000) return days }
         val t = trash()
         if (t == null) trashDaysCache = null to System.currentTimeMillis()
@@ -977,7 +977,7 @@ class LiveTvRepository {
      * a full one goes alone. Without that endpoint, Jellyfin's own delete. Returns how many
      * files went.
      */
-    suspend fun deleteRecording(itemId: UUID): DeletedRecording =
+    override suspend fun deleteRecording(itemId: UUID): DeletedRecording =
         plugin<DeletedRecording>(HttpMethod.DELETE, "/EpisodeHistory/Item/${itemId.toString().replace("-", "")}/Recording")
             ?: deleteItem(itemId).let { DeletedRecording(deleted = 1) }
 
@@ -1000,7 +1000,7 @@ class LiveTvRepository {
      * Episode History: the recordings being made right now behind an item (the item itself, or
      * for a show any of its episodes). Null on a server without that endpoint.
      */
-    suspend fun activeRecordings(itemId: UUID): ActiveRecordings? =
+    override suspend fun activeRecordings(itemId: UUID): ActiveRecordings? =
         plugin(HttpMethod.GET, "/EpisodeHistory/Item/${itemId.toString().replace("-", "")}/ActiveRecordings")
 
     @Serializable
@@ -1009,7 +1009,7 @@ class LiveTvRepository {
     )
 
     /** Stops the recording writing this item's file; what was recorded so far is kept. */
-    suspend fun stopRecording(recordingId: String): Boolean =
+    override suspend fun stopRecording(recordingId: String): Boolean =
         plugin<StoppedRecording>(HttpMethod.POST, "/EpisodeHistory/Item/${recordingId.replace("-", "")}/StopRecording")?.stopped == true
 
     @Serializable
@@ -1028,10 +1028,10 @@ class LiveTvRepository {
      * all would remove ([dryRun]), or delete them. With [archive] it's the archived copies
      * instead, and the recordings stay. Episode History only; null without it.
      */
-    suspend fun deleteShowRecordings(
+    override suspend fun deleteShowRecordings(
         seriesId: UUID,
         dryRun: Boolean,
-        archive: Boolean = false,
+        archive: Boolean,
     ): ShowDelete? =
         plugin(
             HttpMethod.DELETE,
@@ -1057,7 +1057,7 @@ class LiveTvRepository {
     )
 
     /** This device's rights; null without JellyDVR Space (or one too old to have them). */
-    suspend fun deviceRights(): DeviceRights? = plugin(HttpMethod.GET, "/JellyDvrSpace/Rights")
+    override suspend fun deviceRights(): DeviceRights? = plugin(HttpMethod.GET, "/JellyDvrSpace/Rights")
 
     // ---- Episode History on a guide programme --------------------------------------------------
 
@@ -1070,15 +1070,15 @@ class LiveTvRepository {
     )
 
     /** What Episode History knows about a guide programme: marked watched, a copy to play, forgettable. */
-    suspend fun ehProgram(programId: UUID): EhProgram? = plugin(HttpMethod.GET, "/EpisodeHistory/Program/${programId.toString().replace("-", "")}")
+    override suspend fun ehProgram(programId: UUID): EhProgram? = plugin(HttpMethod.GET, "/EpisodeHistory/Program/${programId.toString().replace("-", "")}")
 
-    suspend fun setProgramWatched(
+    override suspend fun setProgramWatched(
         programId: UUID,
         watched: Boolean,
-    ) = plugin<kotlinx.serialization.json.JsonObject>(if (watched) HttpMethod.POST else HttpMethod.DELETE, "/EpisodeHistory/Program/${programId.toString().replace("-", "")}/Watched")
+    ): kotlinx.serialization.json.JsonObject? = plugin<kotlinx.serialization.json.JsonObject>(if (watched) HttpMethod.POST else HttpMethod.DELETE, "/EpisodeHistory/Program/${programId.toString().replace("-", "")}/Watched")
 
     /** "Forget this episode": the history no longer counts it as recorded or watched (admins). */
-    suspend fun forgetProgram(programId: UUID) = plugin<kotlinx.serialization.json.JsonObject>(HttpMethod.DELETE, "/EpisodeHistory/Program/${programId.toString().replace("-", "")}/History")
+    override suspend fun forgetProgram(programId: UUID): kotlinx.serialization.json.JsonObject? = plugin<kotlinx.serialization.json.JsonObject>(HttpMethod.DELETE, "/EpisodeHistory/Program/${programId.toString().replace("-", "")}/History")
 
     @Serializable
     data class Forgot(
@@ -1104,10 +1104,10 @@ class LiveTvRepository {
      * show, an episode or a guide entry), so a series recording records them again ([dryRun]
      * counts). Administrators; null otherwise or without the plugin.
      */
-    suspend fun forgetShow(itemId: UUID, dryRun: Boolean): ShowForget? =
+    override suspend fun forgetShow(itemId: UUID, dryRun: Boolean): ShowForget? =
         plugin(HttpMethod.DELETE, "/EpisodeHistory/Item/${itemId.toString().replace("-", "")}/ShowHistory", if (dryRun) mapOf("dryRun" to "true") else emptyMap())
 
-    suspend fun forgetRecording(itemId: UUID): Forgot? =
+    override suspend fun forgetRecording(itemId: UUID): Forgot? =
         plugin(HttpMethod.DELETE, "/EpisodeHistory/Item/${itemId.toString().replace("-", "")}/History", mapOf("deleteRecording" to true))
 
     // ---- Comskip: commercial badges, scan, audio fix -------------------------------------------
@@ -1139,13 +1139,13 @@ class LiveTvRepository {
     )
 
     /** Comskip's badge per item (keys: ids without dashes); items never scanned are left out. */
-    suspend fun commercialBadges(ids: List<UUID>): Map<String, CommercialBadge> =
+    override suspend fun commercialBadges(ids: List<UUID>): Map<String, CommercialBadge> =
         ids.chunked(250).flatMap { chunk ->
             plugin<CommercialBadges>(HttpMethod.GET, "/ComskipSegments/Badges", mapOf("ids" to chunk.joinToString(",") { it.toString().replace("-", "") }))?.items.orEmpty().entries
         }.associate { it.key.plainId() to it.value }
 
     /** Scan (again) for commercials; admins. */
-    suspend fun scanCommercials(itemId: UUID): Message? = plugin(HttpMethod.POST, "/ComskipSegments/Detect/$itemId", mapOf("force" to true))
+    override suspend fun scanCommercials(itemId: UUID): Message? = plugin(HttpMethod.POST, "/ComskipSegments/Detect/$itemId", mapOf("force" to true))
 
     @Serializable
     data class CommercialStatus(
@@ -1158,7 +1158,7 @@ class LiveTvRepository {
     }
 
     /** Where Comskip is with an item: scanning now, found breaks, none, failed. */
-    suspend fun commercialStatus(itemId: UUID): CommercialStatus? = plugin(HttpMethod.GET, "/ComskipSegments/Status/$itemId")
+    override suspend fun commercialStatus(itemId: UUID): CommercialStatus? = plugin(HttpMethod.GET, "/ComskipSegments/Status/$itemId")
 
     @Serializable
     data class Cleared(
@@ -1170,10 +1170,10 @@ class LiveTvRepository {
      * Removes the commercials Comskip found (a scan that shouldn't have happened): only the
      * commercial marks go, and automatic detection leaves the item alone afterwards.
      */
-    suspend fun removeCommercials(itemId: UUID): Cleared? = plugin(HttpMethod.POST, "/ComskipSegments/Clear/$itemId", mapOf("keep" to true))
+    override suspend fun removeCommercials(itemId: UUID): Cleared? = plugin(HttpMethod.POST, "/ComskipSegments/Clear/$itemId", mapOf("keep" to true))
 
     /** Trim the stray 2.0 / 5.1 audio at the start and end of a recording; admins. */
-    suspend fun fixAudioFormat(itemId: UUID): Message? = plugin(HttpMethod.POST, "/ComskipSegments/AudioTrim/Apply/$itemId")
+    override suspend fun fixAudioFormat(itemId: UUID): Message? = plugin(HttpMethod.POST, "/ComskipSegments/AudioTrim/Apply/$itemId")
 
     @Serializable
     data class ArchiveChoice(
@@ -1227,7 +1227,7 @@ class LiveTvRepository {
      * Comskip plugin: "Starts here (this recording)" at [seconds]; editors. [keyframe]: [seconds] is
      * a keyframe picked from [keyframes], and a cut starts exactly there.
      */
-    suspend fun setProgramStart(itemId: UUID, seconds: Double, keyframe: Boolean = false): ProgramStartResult? =
+    override suspend fun setProgramStart(itemId: UUID, seconds: Double, keyframe: Boolean): ProgramStartResult? =
         plugin(HttpMethod.POST, "/ComskipSegments/ProgramStart/$itemId", mapOf("seconds" to seconds, "keyframe" to keyframe))
 
     @Serializable
@@ -1238,11 +1238,11 @@ class LiveTvRepository {
     )
 
     /** The keyframes either side of [seconds]: a cut can only start on one (Comskip plugin; editors). */
-    suspend fun keyframes(itemId: UUID, seconds: Double): Keyframes? =
+    override suspend fun keyframes(itemId: UUID, seconds: Double): Keyframes? =
         plugin(HttpMethod.GET, "/ComskipSegments/ProgramStart/$itemId/Keyframes", mapOf("seconds" to seconds))
 
     /** The picture at [seconds] of a recording, to choose a keyframe by. */
-    suspend fun frame(itemId: UUID, seconds: Double, width: Int = 400): androidx.compose.ui.graphics.ImageBitmap? =
+    override suspend fun frame(itemId: UUID, seconds: Double, width: Int): androidx.compose.ui.graphics.ImageBitmap? =
         try {
             val r = withContext(Dispatchers.IO) {
                 api.request(
@@ -1261,7 +1261,7 @@ class LiveTvRepository {
         }
 
     /** "Remember card (all recordings)": the frame at [seconds] is the channel's card before its programs; editors. */
-    suspend fun rememberStartCard(itemId: UUID, seconds: Double): ProgramStartResult? =
+    override suspend fun rememberStartCard(itemId: UUID, seconds: Double): ProgramStartResult? =
         plugin(HttpMethod.POST, "/ComskipSegments/ProgramStart/$itemId/Card", mapOf("seconds" to seconds))
 
     @Serializable
@@ -1290,19 +1290,19 @@ class LiveTvRepository {
     }
 
     /** Comskip plugin: whether this user may edit recordings (administrators, and users the plugin allows), and what a trim keeps. */
-    suspend fun editing(): Editing? = plugin(HttpMethod.GET, "/ComskipSegments/Editing")
+    override suspend fun editing(): Editing? = plugin(HttpMethod.GET, "/ComskipSegments/Editing")
 
     /** The recording's program start (a skip marker), and whether a trim's original was kept; editors. */
-    suspend fun programStartStatus(itemId: UUID): ProgramStartStatus? = plugin(HttpMethod.GET, "/ComskipSegments/ProgramStart/$itemId")
+    override suspend fun programStartStatus(itemId: UUID): ProgramStartStatus? = plugin(HttpMethod.GET, "/ComskipSegments/ProgramStart/$itemId")
 
     /** Remove the program start's skip marker; editors. */
-    suspend fun clearProgramStart(itemId: UUID): ProgramStartResult? = plugin(HttpMethod.DELETE, "/ComskipSegments/ProgramStart/$itemId")
+    override suspend fun clearProgramStart(itemId: UUID): ProgramStartResult? = plugin(HttpMethod.DELETE, "/ComskipSegments/ProgramStart/$itemId")
 
     /** Put a trimmed recording's kept original back; editors. */
-    suspend fun undoTrim(itemId: UUID): ProgramStartResult? = plugin(HttpMethod.POST, "/ComskipSegments/ProgramStart/$itemId/Undo")
+    override suspend fun undoTrim(itemId: UUID): ProgramStartResult? = plugin(HttpMethod.POST, "/ComskipSegments/ProgramStart/$itemId/Undo")
 
     /** Look for a remembered card in the recording's opening minutes; editors. */
-    suspend fun findProgramStart(itemId: UUID): ProgramStartResult? =
+    override suspend fun findProgramStart(itemId: UUID): ProgramStartResult? =
         plugin(HttpMethod.POST, "/ComskipSegments/ProgramStart/$itemId/Find")
 
     @Serializable
@@ -1320,26 +1320,26 @@ class LiveTvRepository {
     }
 
     /** Comskip plugin: recordings being cut right now (program start, audio format), with progress; everyone. */
-    suspend fun cuts(): List<CutJob>? = plugin(HttpMethod.GET, "/ComskipSegments/Cuts")
+    override suspend fun cuts(): List<CutJob>? = plugin(HttpMethod.GET, "/ComskipSegments/Cuts")
 
     /** Stop a cut while the original is still untouched; editors. */
-    suspend fun stopCut(itemId: UUID): Message? = plugin(HttpMethod.POST, "/ComskipSegments/Cuts/$itemId/Stop")
+    override suspend fun stopCut(itemId: UUID): Message? = plugin(HttpMethod.POST, "/ComskipSegments/Cuts/$itemId/Stop")
 
     /** JellyDVR Space: recordings being moved to the archive right now, with progress; admins. */
-    suspend fun moving(): List<MoveProgress>? = plugin(HttpMethod.GET, "/JellyDvrSpace/Moving")
+    override suspend fun moving(): List<MoveProgress>? = plugin(HttpMethod.GET, "/JellyDvrSpace/Moving")
 
     /** JellyDVR Space: whether the item is a DVR recording, and the archive locations it can go to; admins. */
-    suspend fun archiveChoices(itemId: UUID): ArchiveChoices? = plugin(HttpMethod.GET, "/JellyDvrSpace/Archive/$itemId")
+    override suspend fun archiveChoices(itemId: UUID): ArchiveChoices? = plugin(HttpMethod.GET, "/JellyDvrSpace/Archive/$itemId")
 
     /** Move a recording to an archive location (in the background on the server); admins. */
-    suspend fun archive(itemId: UUID, target: String): Message? =
+    override suspend fun archive(itemId: UUID, target: String): Message? =
         plugin(HttpMethod.POST, "/JellyDvrSpace/Archive/$itemId", mapOf("target" to target))
 
-    suspend fun recordInstead(programId: UUID): Message? = plugin(HttpMethod.POST, "/JellyDvrSchedule/RecordInstead/$programId")
+    override suspend fun recordInstead(programId: UUID): Message? = plugin(HttpMethod.POST, "/JellyDvrSchedule/RecordInstead/$programId")
 
-    suspend fun addFavourite(programId: UUID): Message? = plugin(HttpMethod.POST, "/JellyDvrSchedule/Favourites/FromItem/$programId")
+    override suspend fun addFavourite(programId: UUID): Message? = plugin(HttpMethod.POST, "/JellyDvrSchedule/Favourites/FromItem/$programId")
 
-    suspend fun removeFavourite(ruleId: String): Message? = plugin(HttpMethod.DELETE, "/JellyDvrSchedule/Favourites/$ruleId")
+    override suspend fun removeFavourite(ruleId: String): Message? = plugin(HttpMethod.DELETE, "/JellyDvrSchedule/Favourites/$ruleId")
 
     @Serializable
     data class BusyInput(
@@ -1386,7 +1386,7 @@ class LiveTvRepository {
 
     /** What the DVR recorded, newest first, from the recordings folders ("current"). */
     /** Episode History's recordings: "current" (live recordings folder), "archived", or "all". */
-    suspend fun recordedShows(filter: String = "current"): List<RecordingCard>? =
+    override suspend fun recordedShows(filter: String): List<RecordingCard>? =
         plugin<RecordingCards>(HttpMethod.GET, "/EpisodeHistory/Recordings", mapOf("filter" to filter, "limit" to 200))?.cards
 
     @Serializable
@@ -1431,7 +1431,7 @@ class LiveTvRepository {
     )
 
     /** Every recording, newest first, one each with its channel. Null on an older Episode History. */
-    suspend fun recordingsByDate(filter: String = "current"): DateRecordings? =
+    override suspend fun recordingsByDate(filter: String): DateRecordings? =
         plugin(HttpMethod.GET, "/EpisodeHistory/Recordings/ByDate", mapOf("filter" to filter))
 
     @Serializable
@@ -1455,9 +1455,9 @@ class LiveTvRepository {
     )
 
     /** A show's recordings, newest first (archived ones left out: recordings folder only for now). */
-    suspend fun showRecordings(
+    override suspend fun showRecordings(
         seriesId: String,
-        filter: String = "current",
+        filter: String,
     ): List<EpisodeRecording>? =
         plugin<EpisodeRecordings>(HttpMethod.GET, "/EpisodeHistory/Recordings/Series/$seriesId")?.recordings?.filter {
             when (filter) {
@@ -1467,7 +1467,7 @@ class LiveTvRepository {
             }
         }
 
-    fun imageUrl(
+    override fun imageUrl(
         itemId: String,
         maxHeight: Int,
     ): String? = itemId.toUuid()?.let { imageUrl(it, maxHeight) }
@@ -1475,9 +1475,9 @@ class LiveTvRepository {
     // ---- Series recordings and Recording Favourites ------------------------------------------
 
     /** Saves a series recording's options (new only, any channel / time, padding, keep…). */
-    suspend fun updateSeriesTimer(t: org.jellyfin.sdk.model.api.SeriesTimerInfoDto) = io { api.liveTvApi.updateSeriesTimer(t.id!!, t) }
+    override suspend fun updateSeriesTimer(t: org.jellyfin.sdk.model.api.SeriesTimerInfoDto): Unit = io { api.liveTvApi.updateSeriesTimer(t.id!!, t) }
 
-    suspend fun seriesTimers(): List<org.jellyfin.sdk.model.api.SeriesTimerInfoDto> =
+    override suspend fun seriesTimers(): List<org.jellyfin.sdk.model.api.SeriesTimerInfoDto> =
         io { api.liveTvApi.getSeriesTimers().content.items }
 
     @Serializable
@@ -1506,14 +1506,14 @@ class LiveTvRepository {
         @SerialName("Favourites") val favourites: List<FavouriteEntry> = emptyList(),
     )
 
-    suspend fun favourites(): FavouritesList? = plugin(HttpMethod.GET, "/JellyDvrSchedule/Favourites")
+    override suspend fun favourites(): FavouritesList? = plugin(HttpMethod.GET, "/JellyDvrSchedule/Favourites")
 
-    suspend fun setFavouriteEnabled(
+    override suspend fun setFavouriteEnabled(
         ruleId: String,
         enabled: Boolean,
     ): Message? = plugin(HttpMethod.POST, "/JellyDvrSchedule/Favourites/$ruleId", body = "{\"Enabled\":$enabled}")
 
-    suspend fun addFavouriteByTitle(
+    override suspend fun addFavouriteByTitle(
         title: String,
         keyword: Boolean,
     ): Message? =
@@ -1542,20 +1542,20 @@ class LiveTvRepository {
         @SerialName("RecordingNow") val recordingNow: Boolean = false,
     )
 
-    suspend fun upcoming(): List<Upcoming>? = plugin(HttpMethod.GET, "/JellyDvrSchedule/Upcoming")
+    override suspend fun upcoming(): List<Upcoming>? = plugin(HttpMethod.GET, "/JellyDvrSchedule/Upcoming")
 
     /**
      * What will record: JellyDVR Schedule's list, or, on a server without it, Jellyfin's own
      * scheduled recordings in the same shape (no Recording Favourites there). Null only when
      * neither answers.
      */
-    suspend fun schedule(): List<Upcoming>? = upcoming() ?: jellyfinTimers()
+    override suspend fun schedule(): List<Upcoming>? = upcoming() ?: jellyfinTimers()
 
     /**
      * Whether this server is a DVR: it has Live TV channels, or has recorded something. False only
      * when both answers say no; an unanswered call counts as yes (keep what's shown).
      */
-    suspend fun hasDvr(): Boolean {
+    override suspend fun hasDvr(): Boolean {
         val channels = runCatching { io { api.liveTvApi.getLiveTvChannels(userId = Jdvr.userId, limit = 1).content.totalRecordCount } }.getOrNull() ?: return true
         if (channels > 0) return true
         val recordings = runCatching { io { api.liveTvApi.getRecordings(userId = Jdvr.userId, limit = 1).content.totalRecordCount } }.getOrNull() ?: return true
@@ -1589,7 +1589,7 @@ class LiveTvRepository {
      * Jellyfin's own list of recordings, newest first, one card per recording (no grouping into
      * shows): Recorded Shows on a server without Episode History.
      */
-    suspend fun jellyfinRecordings(): List<RecordingCard>? =
+    override suspend fun jellyfinRecordings(): List<RecordingCard>? =
         runCatching {
             io {
                 api.liveTvApi.getRecordings(
@@ -1619,7 +1619,7 @@ class LiveTvRepository {
      * Jellyfin's "recently added" (newest first, episodes and movies, not grouped), as cards: Home's
      * row on a server without Episode History.
      */
-    suspend fun recentlyAdded(limit: Int = 5): List<RecordingCard>? =
+    override suspend fun recentlyAdded(limit: Int): List<RecordingCard>? =
         runCatching {
             io {
                 api.userLibraryApi.getLatestMedia(
@@ -1656,7 +1656,7 @@ class LiveTvRepository {
     )
 
     /** Jellyfin's segments for a finished recording (Comskip's breaks, Intro Skipper's intros). */
-    suspend fun segments(itemId: UUID): List<Segment> =
+    override suspend fun segments(itemId: UUID): List<Segment> =
         io {
             runCatching {
                 api.mediaSegmentsApi.getItemSegments(itemId).content.items.map {
@@ -1686,7 +1686,7 @@ class LiveTvRepository {
      * Commercials found so far in a recording still being made (Comskip's live scan); Jellyfin has
      * none for it until it finishes. First: still in progress.
      */
-    suspend fun liveSegments(itemId: UUID): Pair<Boolean, List<Segment>> {
+    override suspend fun liveSegments(itemId: UUID): Pair<Boolean, List<Segment>> {
         val r = plugin<LiveSegments>(HttpMethod.GET, "/ComskipSegments/Live/${itemId.toString().replace("-", "")}") ?: return false to emptyList()
         return r.inProgress to r.items.map { Segment(it.type, it.startTicks / 10_000L, it.endTicks / 10_000L) }
     }
@@ -1710,11 +1710,11 @@ class LiveTvRepository {
     )
 
     /** The channel's buffers, oldest first; the last is the programme on now. */
-    suspend fun buffers(channelId: UUID): List<Buffer> =
+    override suspend fun buffers(channelId: UUID): List<Buffer> =
         plugin<Buffers>(HttpMethod.GET, "/JellyDvrLive/Channel/${channelId.toString().replace("-", "")}")?.buffers.orEmpty()
 
     /** Ask JellyDVR Live to start buffering the channel now (Pause), skipping its surfing delay. */
-    suspend fun startBuffering(channelId: UUID): List<Buffer> =
+    override suspend fun startBuffering(channelId: UUID): List<Buffer> =
         plugin<Buffers>(HttpMethod.POST, "/JellyDvrLive/Channel/${channelId.toString().replace("-", "")}/Start")?.buffers.orEmpty()
 
     @Serializable
@@ -1726,13 +1726,13 @@ class LiveTvRepository {
      * Guide programmes that are only a live TV buffer (JellyDVR Live's, not kept), in a plain
      * lower-case no-dash form: their timers look like recordings everywhere else.
      */
-    suspend fun bufferPrograms(): Set<String> =
+    override suspend fun bufferPrograms(): Set<String> =
         plugin<BufferPrograms>(HttpMethod.GET, "/JellyDvrLive/Programs")?.programIds.orEmpty().map { it.plainId() }.toSet()
 
     /** The buffer an item is, if it is one (for Keep in the player). */
-    suspend fun bufferOfItem(itemId: UUID): Buffer? = plugin(HttpMethod.GET, "/JellyDvrLive/Item/${itemId.toString().replace("-", "")}")
+    override suspend fun bufferOfItem(itemId: UUID): Buffer? = plugin(HttpMethod.GET, "/JellyDvrLive/Item/${itemId.toString().replace("-", "")}")
 
-    suspend fun keepBuffer(
+    override suspend fun keepBuffer(
         bufferId: String,
         keep: Boolean,
     ): Buffer? = plugin(if (keep) HttpMethod.POST else HttpMethod.DELETE, "/JellyDvrLive/Keep/$bufferId")
@@ -1747,7 +1747,7 @@ class LiveTvRepository {
      * leaves kept buffers, real recordings, and channels someone else is watching). Runs on its
      * own scope so it finishes even as the player closes.
      */
-    fun stopBuffering(channelId: UUID) {
+    override fun stopBuffering(channelId: UUID) {
         kotlinx.coroutines.MainScope().launch {
             plugin<Stopped>(HttpMethod.POST, "/JellyDvrLive/Channel/${channelId.toString().replace("-", "")}/Stop")
         }
@@ -1769,11 +1769,11 @@ class LiveTvRepository {
     )
 
     /** Programmes being recorded now whose recording Comskip is scanning live (the guide's CS tag), with minutes found so far. */
-    suspend fun guideScanning(): Map<String, Int?> =
+    override suspend fun guideScanning(): Map<String, Int?> =
         plugin<GuideBadges>(HttpMethod.GET, "/ComskipSegments/Badges/Guide")?.programs.orEmpty().filter { it.state == "scanning" }.associate { it.programId.plainId() to it.minutes }
 
     /** The recording of a programme being recorded now, as a library item (Comskip plugin). */
-    suspend fun recordingOfProgram(programId: UUID): UUID? {
+    override suspend fun recordingOfProgram(programId: UUID): UUID? {
         val key = programId.toString().replace("-", "")
         return plugin<GuideBadges>(HttpMethod.GET, "/ComskipSegments/Badges/Guide")
             ?.programs
@@ -1804,9 +1804,9 @@ class LiveTvRepository {
     )
 
     /** Episode History's part of Home: what needs attention, and the recordings drive. Null without it. */
-    suspend fun homeExtras(): HomeExtras? = plugin(HttpMethod.GET, "/EpisodeHistory/Home")
+    override suspend fun homeExtras(): HomeExtras? = plugin(HttpMethod.GET, "/EpisodeHistory/Home")
 
-    suspend fun tuners(channelId: UUID?): TunerStatus? = plugin(HttpMethod.GET, "/JellyDvrSchedule/Tuners", if (channelId == null) emptyMap() else mapOf("channelId" to channelId.toString()))
+    override suspend fun tuners(channelId: UUID?): TunerStatus? = plugin(HttpMethod.GET, "/JellyDvrSchedule/Tuners", if (channelId == null) emptyMap() else mapOf("channelId" to channelId.toString()))
 }
 
 /** An id compared across APIs: some send dashes, some don't. */
