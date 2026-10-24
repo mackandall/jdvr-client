@@ -158,7 +158,8 @@ fun DetailsPage(
                 if (det.audio.isNotEmpty()) Info("Audio", det.audio.first() + if (det.audio.size > 1) "  +${det.audio.size - 1}" else "")
                 if (det.subtitles.isNotEmpty()) Info("Subtitles", det.subtitles.take(2).joinToString(", ") + if (det.subtitles.size > 2) "  +${det.subtitles.size - 2}" else "")
                 det.file?.let { Info("File", it) }
-                det.location?.let { Info("Stored", it) }
+                // Live folder or archive (JellyDVR Space); NextPVR has one place, so nothing to say.
+                det.location?.takeUnless { Jdvr.isNextPvr }?.let { Info("Stored", it) }
                 commercials?.let { Info("Commercials", it.label) }
             }
 

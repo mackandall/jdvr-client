@@ -106,7 +106,8 @@ fun RecordedShowsScreen(
     val byDate = (visit?.view ?: Jdvr.prefs.recordingsView) == Prefs.BY_DATE && !noDateList
     val unwatchedOnly = visit?.unwatched == true
 
-    val filter = visit?.filter ?: Jdvr.prefs.recordingsFilter
+    // NextPVR has no archive: always its recordings (whatever was picked on a Jellyfin server).
+    val filter = if (Jdvr.isNextPvr) Prefs.CURRENT else visit?.filter ?: Jdvr.prefs.recordingsFilter
     // A move to the archive finished: the recording now lives elsewhere.
     val movesFinished by MoveWatcher.finished.collectAsState()
     LaunchedEffect(filter, reloadCards, movesFinished) {
@@ -163,7 +164,7 @@ fun RecordedShowsScreen(
             Column(Modifier.weight(1f)) {
                 Text("Recorded Shows", color = Jc.Text, fontSize = 28.sp, fontWeight = FontWeight.SemiBold)
                 Text(
-                    (if (plain) "Jellyfin's recordings · newest first" else when (filter) {
+                    (if (plain) "Jellyfin's recordings · newest first" else if (Jdvr.isNextPvr) "NextPVR's recordings · newest first" else when (filter) {
                         Prefs.ARCHIVED -> "Moved to the archive · newest first"
                         Prefs.ALL -> "Recordings folder and archive · newest first"
                         else -> "Recordings folder · newest first"
@@ -179,7 +180,7 @@ fun RecordedShowsScreen(
                 visit = visit?.copy(view = null)
             }
             // Live folder → Archive → Both (Episode History's; not on a plain server).
-            if (!plain) Button(
+            if (!plain && !Jdvr.isNextPvr) Button(
                 when (filter) {
                     Prefs.ARCHIVED -> "Showing: Archive"
                     Prefs.ALL -> "Showing: Both"

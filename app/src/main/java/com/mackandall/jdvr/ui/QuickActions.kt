@@ -231,5 +231,5 @@ private fun subtitleOf(
         if (i.season != null && i.episode != null) "S${i.season}:E${i.episode}" else null,
         i.year?.toString(),
         i.runtimeMin?.takeIf { it > 0 && i.type != "Series" }?.let { "$it min" },
-        d?.location,
+        d?.location?.takeUnless { Jdvr.isNextPvr },
     ).joinToString(" · ").ifEmpty { null }
