@@ -898,6 +898,24 @@ class NextPvrBackend(
             (scanning + marked).mapKeys { it.key.toString().plainId() }
         }
 
+    // A show: "scanning" while one of its recordings is, else how many are scanned (! when one failed).
+    override suspend fun showCommercialBadges(showIds: List<String>): Map<String, CommercialBadge> {
+        val wanted = showIds.toSet()
+        val shows = recordings().filter { it.done && it.isSeries && showId(it.name) in wanted }.groupBy { showId(it.name) }
+        if (shows.isEmpty()) return emptyMap()
+        val each = commercialBadges(shows.values.flatten().map { it.uuid })
+        return shows.mapNotNull { (show, recs) ->
+            val states = recs.mapNotNull { each[it.uuid.toString().plainId()]?.state }
+            val badge =
+                when {
+                    "scanning" in states -> CommercialBadge(state = "scanning")
+                    states.isEmpty() -> return@mapNotNull null
+                    else -> CommercialBadge(state = "summary", done = states.count { it == "found" || it == "none" }, total = recs.size, failed = "failed" in states)
+                }
+            show.plainId() to badge
+        }.toMap()
+    }
+
     override suspend fun scanCommercials(itemId: UUID): Message? = null
 
     override suspend fun commercialStatus(itemId: UUID): CommercialStatus? = null

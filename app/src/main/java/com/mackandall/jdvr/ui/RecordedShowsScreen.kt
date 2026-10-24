@@ -116,7 +116,8 @@ fun RecordedShowsScreen(
         plain = shows == null
         cards = shows ?: Jdvr.liveTv.jellyfinRecordings()
         // Comskip's badges for the cards (a show's: how many of its recordings are scanned).
-        badges = cards?.mapNotNull { it.id.toUuid() }?.let { ids -> runCatching { Jdvr.liveTv.commercialBadges(ids) }.getOrNull() }.orEmpty()
+        badges = cards?.mapNotNull { it.id.toUuid() }?.let { ids -> runCatching { Jdvr.liveTv.commercialBadges(ids) }.getOrNull() }.orEmpty() +
+            cards?.filter { it.id.toUuid() == null }?.map { it.id }?.let { ids -> runCatching { Jdvr.liveTv.showCommercialBadges(ids) }.getOrNull() }.orEmpty()
         loaded = true
         // Asked to open a show (from Home): straight to its episodes.
         openShowId?.let { id -> cards?.firstOrNull { it.id == id }?.let { openShow = it } }
@@ -243,7 +244,8 @@ fun RecordedShowsScreen(
                     state = gridState,
                     horizontalArrangement = Arrangement.spacedBy(16.dp),
                     verticalArrangement = Arrangement.spacedBy(18.dp),
-                    contentPadding = PaddingValues(bottom = 40.dp),
+                    // Top: room for the focused card, which grows (the grid crops what's above it).
+                    contentPadding = PaddingValues(top = 12.dp, bottom = 40.dp),
                 ) {
                     itemsIndexed(list, key = { _, c -> c.id }) { i, c ->
                         var m: Modifier = Modifier
