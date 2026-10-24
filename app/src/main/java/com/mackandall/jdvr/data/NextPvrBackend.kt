@@ -267,7 +267,8 @@ class NextPvrBackend(
         val done get() = status == "ready" || status == "recording"
         val channelId = o.int("channelId")
         val positionS = o.long("playbackPosition") ?: 0
-        val watched = o.bool("watched") == true
+        // NextPVR keeps only where playback stopped: near the end counts as watched.
+        val watched get() = seconds > 0 && positionS >= seconds * 9 / 10
         val startUtc get() = Instant.ofEpochSecond(start).toString()
         val seasonEpisode get() = if (season != null && episode != null) "S$season:E$episode" else null
 
@@ -376,7 +377,8 @@ class NextPvrBackend(
             audio = info.filterKeys { it.endsWith(":Audio Desc") }.values.toList(),
             subtitles = info.filterKeys { it.endsWith(":Subtitle") }.values.toList(),
             file = listOfNotNull(info["Filename"]?.substringAfterLast('.')?.uppercase(), info["Size"]).joinToString(" · ").ifEmpty { null },
-            location = "NextPVR",
+            // The screens offer Delete (not "delete from the archive") for the live recordings folder.
+            location = "Live recordings folder",
             recordedAt = time(r.start),
             canDelete = true,
         )
@@ -435,6 +437,66 @@ class NextPvrBackend(
 
     override suspend fun recordingOfProgram(programId: UUID): UUID? =
         recordings().firstOrNull { it.done && it.o.int("epgEventId") == nextPvrId(programId) }?.uuid
+
+    /** Watched: the position at the end; not watched: no position (NextPVR has no flag of its own). */
+    override suspend fun setPlayed(
+        id: UUID,
+        played: Boolean,
+    ) {
+        val r = recording(id)
+        if (played) call("recording.watched.set", mapOf("recording_id" to r.id, "position" to r.seconds)) else call("recording.watched.clear", mapOf("recording_id" to r.id))
+    }
+
+    /**
+     * Other airings of a guide entry or a recording, from NextPVR's own guide search: the same
+     * episode (by its title) on any channel, or for a movie every showing of it.
+     */
+    override suspend fun airings(
+        itemId: UUID?,
+        programId: UUID?,
+    ): AiringsResult? {
+        val (title, episode, isMovie) =
+            when {
+                programId != null -> (program(programId) ?: return null).let { Triple(it.name, it.rawEpisodeTitle, !it.isSeries) }
+                itemId != null && itemId.mostSignificantBits == RECORDING -> recording(itemId).let { Triple(it.name, it.episodeTitle, !it.isSeries) }
+                else -> return null
+            }
+        val channels = runCatching { channelInfo() }.getOrDefault(emptyMap())
+        val tuners = runCatching { call("system.status").jsonObject["status"]?.jsonArray?.size }.getOrNull() ?: 0
+        val now = System.currentTimeMillis() / 1000
+        val found =
+            call("channel.listings.search", mapOf("title" to title)).jsonObject["listings"]?.jsonArray.orEmpty().map { it.jsonObject }
+                .filter { it.str("name").equals(title, true) && (it.long("end") ?: 0) > now }
+                .filter { episode == null || it.str("subtitle").equals(episode, true) }
+                .sortedBy { it.long("start") }
+        return AiringsResult(
+            title = title,
+            isMovie = isMovie,
+            tuners = tuners,
+            airings =
+                found.map { o ->
+                    val id = o.int("id") ?: 0
+                    val ch = o.int("channelId")
+                    val start = o.long("start") ?: 0
+                    val end = o.long("end") ?: 0
+                    Airing(
+                        programId = programUuid(id).toString(),
+                        name = o.str("name").orEmpty(),
+                        episodeTitle = o.str("subtitle"),
+                        start = Instant.ofEpochSecond(start).toString(),
+                        end = Instant.ofEpochSecond(end).toString(),
+                        channelId = ch?.let { channelUuid(it).toString() },
+                        channelName = o.str("channelName") ?: ch?.let { channels[it]?.str("channelName") },
+                        channelNumber = o.str("channelNumber") ?: ch?.let { channels[it]?.str("channelNumberFormated") },
+                        hasLogo = ch?.let { channels[it]?.bool("channelIcon") } == true,
+                        recording = if (o.int("recording_id") != null) "recording" else null,
+                        tuners = tuners,
+                        isThis = programId != null && programUuid(id) == programId,
+                        onNow = start <= now && end > now,
+                    )
+                },
+        )
+    }
 
     // ---- series recordings ------------------------------------------------------------------
 
@@ -516,21 +578,11 @@ class NextPvrBackend(
         limit: Int,
     ): List<LibItem>? = null
 
-    override suspend fun setPlayed(
-        id: UUID,
-        played: Boolean,
-    ) = Unit
-
     override suspend fun markSymbols(): MarkSymbols? = null
 
     override suspend fun hasEpisodeHistory(): Boolean = false
 
     override suspend fun scheduleState(programId: UUID): ScheduleState? = null
-
-    override suspend fun airings(
-        itemId: UUID?,
-        programId: UUID?,
-    ): AiringsResult? = null
 
     override suspend fun rerecordState(itemId: UUID): RerecordState? = null
 

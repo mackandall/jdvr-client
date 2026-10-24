@@ -241,7 +241,7 @@ fun GuideScreen(
     var airingsFor by remember { mutableStateOf<Program?>(null) }
 
     // Focus gone from the actions panel (◄ to the menu, or back into the grid): it closes. After a
-    // moment, so a button the panel swaps for another (Record → Don't record) doesn't close it.
+    // moment, so a button the panel swaps for another (Record → Cancel recording) doesn't close it.
     var panelHasFocus by remember { mutableStateOf(false) }
     var panelHadFocus by remember(selected?.id) { mutableStateOf(false) }
     LaunchedEffect(panelHasFocus, selected?.id) {
@@ -1031,10 +1031,11 @@ internal fun ProgramPanel(
                                 }
                             }
                         } else if (p.isRecording && !isBuffer) {
-                            Button("Don't record this", modifier = recordModifier, leading = { Dot(Jc.Recording) }) {
+                            // Under way it stops (what's recorded so far is kept); later, it won't record.
+                            Button(if (p.isOn()) "Stop recording" else "Cancel recording", modifier = recordModifier, leading = { Dot(Jc.Recording) }) {
                                 act {
                                     Jdvr.liveTv.cancelRecording(p.timerId!!)
-                                    "Recording cancelled."
+                                    if (p.isOn()) "Recording stopped: what was recorded so far is kept." else "Recording cancelled."
                                 }
                             }
                         } else {
@@ -1069,8 +1070,9 @@ internal fun ProgramPanel(
                         }
                     },
                     right = {
-                        // Every later airing of it, with tuner clashes and commercial-free channels (Episode History).
-                        if (eh != null) {
+                        // Every later airing of it, with tuner clashes and commercial-free channels (Episode
+                        // History); on NextPVR, from its own guide search.
+                        if (eh != null || Jdvr.isNextPvr) {
                             Button("Other airings", modifier = Modifier.fillMaxWidth()) {
                                 if (onOtherAirings != null) onOtherAirings(p) else airingsHere = true
                             }

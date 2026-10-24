@@ -48,7 +48,7 @@ private fun localTime(iso: String): LocalDateTime? = runCatching { LocalDateTime
 /**
  * Scheduled recordings, as a compact list grouped by day (JellyDVR Schedule's fast list): what will
  * record, when, on which channel, and why (series / Recording Favourite / one-off). OK on one offers
- * "Don't record this".
+ * "Cancel recording".
  */
 @Composable
 fun ScheduledScreen(
@@ -204,7 +204,7 @@ private fun ScheduleRow(
                     }
                     Button(
                         when {
-                            !r.recordingNow -> "Don't record this"
+                            !r.recordingNow -> "Cancel recording"
                             armed -> "Press again to stop recording"
                             else -> "Stop this recording"
                         },
