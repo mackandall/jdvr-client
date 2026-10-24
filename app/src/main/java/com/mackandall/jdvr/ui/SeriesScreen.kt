@@ -31,6 +31,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -97,16 +102,19 @@ fun SeriesScreen(entry: FocusRequester) {
         }
     }
 
-    // NextPVR: its own series options, over the list.
-    var nextPvrEditing by remember { mutableStateOf<String?>(null) }
-    nextPvrEditing?.let { id ->
-        NextPvrSeriesOptions(
-            onDone = { msg ->
-                nextPvrEditing = null
-                if (msg != null) act { msg }
-            },
-            ruleId = id,
-        )
+    // NextPVR: its own options over the list, as the rule is (a series, a keyword rule, a manual
+    // recording), or "new keyword" / "new manual" for the buttons beside the list.
+    var nextPvrEditing by remember { mutableStateOf<Pair<String, String?>?>(null) }
+    nextPvrEditing?.let { (kind, id) ->
+        val done = { msg: String? ->
+            nextPvrEditing = null
+            if (msg != null) act { msg }
+        }
+        when (kind) {
+            "keyword" -> NextPvrKeywordRule(onDone = done, ruleId = id)
+            "manual" -> NextPvrManualRecording(onDone = done, ruleId = id)
+            else -> NextPvrSeriesOptions(onDone = done, ruleId = id)
+        }
     }
 
     editing?.let { t ->
@@ -134,7 +142,7 @@ fun SeriesScreen(entry: FocusRequester) {
         Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
             // Jellyfin series recordings.
             Column(Modifier.weight(1f).fillMaxHeight()) {
-                Text("Series recordings", color = Jc.Text, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+                Text(if (Jdvr.isNextPvr) "Recording rules" else "Series recordings", color = Jc.Text, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
                 Text(if (Jdvr.isNextPvr) "NextPVR's recurring recordings · when tuners clash, the higher one records" else "Jellyfin's: tied to the guide's id for the show", color = Jc.Muted, fontSize = 13.sp)
                 Spacer(8)
                 val list = series
@@ -147,19 +155,31 @@ fun SeriesScreen(entry: FocusRequester) {
                                 SeriesRow(
                                     s,
                                     if (s == list.first()) Modifier.focusRequester(entry) else Modifier,
-                                    onEdit = { if (Jdvr.isNextPvr) nextPvrEditing = s.id else editing = s },
+                                    onEdit = { if (Jdvr.isNextPvr) nextPvrEditing = (s.serviceName ?: "series") to s.id else editing = s },
                                     // NextPVR: its priority order, moved a place at a time.
                                     rank = if (Jdvr.isNextPvr) i + 1 else null,
                                     onMove = if (Jdvr.isNextPvr) ({ higher -> move(s, higher) }) else null,
                                 ) {
                                     act {
                                         Jdvr.liveTv.cancelSeries(s.id!!)
-                                        "Series recording cancelled: ${s.name}"
+                                        (if (s.serviceName == "keyword" || s.serviceName == "manual") "Removed: " else "Series recording cancelled: ") + s.name
                                     }
                                 }
                             }
                         }
                 }
+            }
+            // NextPVR: new keyword rules and manual recordings (they join the list on the left).
+            // Narrow: the rules' rows need the room for their buttons.
+            if (Jdvr.isNextPvr) Column(Modifier.width(280.dp).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("New rule", color = Jc.Text, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+                Text("Joins the list, at the bottom", color = Jc.Muted, fontSize = 13.sp)
+                Spacer(4)
+                Button("+ Keyword rule", modifier = if (series?.isEmpty() == true) Modifier.focusRequester(entry) else Modifier) { nextPvrEditing = "keyword" to null }
+                Text("Every airing with a word or name in its title, description or cast.", color = Jc.Muted, fontSize = 14.sp)
+                Spacer(6)
+                Button("+ Manual recording") { nextPvrEditing = "manual" to null }
+                Text("A channel and a time: once, or every day, week, weekday or weekend.", color = Jc.Muted, fontSize = 14.sp)
             }
             // Recording Favourites (a Jellyfin plugin's: not on NextPVR).
             if (!Jdvr.isNextPvr) Column(Modifier.weight(1f).fillMaxHeight()) {
@@ -260,7 +280,17 @@ private fun SeriesRow(
                 Button("▲ Higher", modifier = Modifier.padding(end = 8.dp)) { move(true) }
                 Button("▼ Lower", modifier = Modifier.padding(end = 8.dp)) { move(false) }
             }
-            Button(if (armed) "Press again: cancel the series" else "Cancel series recording", leading = { SeriesDots(height = 14.dp, crossed = true) }) {
+            // NextPVR's keyword rules and manual recordings aren't a series.
+            val what =
+                when (s.serviceName) {
+                    "keyword" -> "keyword rule"
+                    "manual" -> "manual recording"
+                    else -> null
+                }
+            Button(
+                if (armed) "Press again: " + (what?.let { "remove the $it" } ?: "cancel the series") else what?.let { "Remove ${it}" } ?: "Cancel series recording",
+                leading = { SeriesDots(height = 14.dp, crossed = true) },
+            ) {
                 if (armed) onCancel() else armed = true
             }
         }
@@ -392,11 +422,29 @@ internal fun EditRow(
     help: String,
     value: String,
     modifier: Modifier = Modifier,
+    // ◀ ▶ step back and forward (a channel, a time); OK still does [onClick].
+    onStep: ((Int) -> Unit)? = null,
     onClick: () -> Unit,
 ) {
     androidx.tv.material3.Surface(
         onClick = onClick,
-        modifier = modifier.fillMaxWidth(0.8f),
+        modifier =
+            modifier.fillMaxWidth(0.8f).then(
+                if (onStep == null) {
+                    Modifier
+                } else {
+                    Modifier.onPreviewKeyEvent { e ->
+                        val by =
+                            when (e.key) {
+                                Key.DirectionLeft -> -1
+                                Key.DirectionRight -> 1
+                                else -> return@onPreviewKeyEvent false
+                            }
+                        if (e.type == KeyEventType.KeyDown) onStep(by)
+                        true
+                    }
+                },
+            ),
         shape = androidx.tv.material3.ClickableSurfaceDefaults.shape(RoundedCornerShape(10.dp)),
         colors = androidx.tv.material3.ClickableSurfaceDefaults.colors(containerColor = Jc.Panel, focusedContainerColor = Jc.FocusFill, contentColor = Jc.Text, focusedContentColor = Jc.Text),
         border = androidx.tv.material3.ClickableSurfaceDefaults.border(focusedBorder = androidx.tv.material3.Border(BorderStroke(2.dp, Jc.Focus))),
@@ -407,7 +455,7 @@ internal fun EditRow(
                 Text(label, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
                 Text(help, color = Jc.Muted, fontSize = 13.sp)
             }
-            Text(value, color = Jc.Focus, fontSize = 16.sp, modifier = Modifier.width(280.dp))
+            Text(if (onStep != null) "◀ $value ▶" else value, color = Jc.Focus, fontSize = 16.sp, modifier = Modifier.width(280.dp))
         }
     }
 }

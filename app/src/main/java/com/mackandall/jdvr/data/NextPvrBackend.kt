@@ -32,6 +32,9 @@ import java.time.LocalDateTime
 import java.time.ZoneId
 import java.util.UUID
 
+/** Where a keyword rule looks: the title, the title or description, or the cast and crew. */
+enum class KeywordMatch { TITLE, ANYWHERE, PEOPLE }
+
 /**
  * A NextPVR server, through the JSON API its Kodi add-on (pvr.nextpvr) uses: a session signed in
  * with the PIN, then /service?method=…&sid=…. NextPVR's ids are numbers; the screens use UUIDs, so
@@ -583,9 +586,28 @@ class NextPvrBackend(
      * NextPVR's recurring rules, in the shape the Series screen shows (padding there is minutes),
      * highest priority first (NextPVR's lowest number: it wins when tuners clash).
      */
-    override suspend fun seriesTimers(): List<org.jellyfin.sdk.model.api.SeriesTimerInfoDto> =
-        call("recording.recurring.list").jsonObject["recurrings"]?.jsonArray.orEmpty().map { it.jsonObject }.sortedBy { it.int("priority") ?: Int.MAX_VALUE }.map { r ->
-            val period = r.str("period").orEmpty()
+    override suspend fun seriesTimers(): List<org.jellyfin.sdk.model.api.SeriesTimerInfoDto> {
+        // What each rule has scheduled: a keyword rule shows what it caught.
+        val scheduled = runCatching { recordings().filter { it.status == "pending" }.groupBy { it.o.int("recurringParent") ?: 0 } }.getOrDefault(emptyMap())
+        return call("recording.recurring.list").jsonObject["recurrings"]?.jsonArray.orEmpty().map { it.jsonObject }.sortedBy { it.int("priority") ?: Int.MAX_VALUE }.map { r ->
+            val period = r.str("period").orEmpty().replace('\u202f', ' ')
+            val type = r.int("type") ?: 2
+            val kind = ruleKind(r)
+            val what =
+                when {
+                    kind == "keyword" -> keywordOf(r.str("advancedRules").orEmpty())?.let { (k, m) -> "“$k” " + when (m) {
+                        KeywordMatch.TITLE -> "in the title"
+                        KeywordMatch.ANYWHERE -> "in the title or description"
+                        KeywordMatch.PEOPLE -> "in the cast or crew"
+                    } } ?: "rule: ${r.str("advancedRules").orEmpty()}"
+                    // Types 3–6 record one timeslot: NextPVR words it "2:30 AM - 3:00 AM (Daily)".
+                    type in 3..6 -> period
+                    period.contains("new", true) -> "new episodes only"
+                    else -> "all episodes"
+                }
+            val mine = scheduled[r.int("id")].orEmpty().sortedBy { it.start }
+            // The channel only when the rule records on any.
+            val next = mine.firstOrNull()?.let { "next ${time(it.start).day()} ${time(it.start).time()}" + (it.o.str("channel")?.takeIf { (r.int("channelID") ?: 0) == 0 }?.let { c -> " on $c" } ?: "") }
             org.jellyfin.sdk.model.api.SeriesTimerInfoDto(
                 id = r.int("id")?.toString(),
                 // Switched off in its options: still listed, records nothing.
@@ -594,8 +616,10 @@ class NextPvrBackend(
                 recordAnyChannel = (r.int("channelID") ?: 0) == 0 || period.contains("all channels", true),
                 // Types 3–6 record one timeslot (daily, weekly, weekdays, weekends).
                 recordAnyTime = (r.int("type") ?: 2) !in 3..6,
-                // A timeslot rule's slot as NextPVR words it: "2:30 AM - 3:00 AM (Daily)".
-                overview = period.replace('\u202f', ' ').takeIf { (r.int("type") ?: 2) in 3..6 },
+                // Which airings, then what's scheduled ("3 scheduled · next Mon 3:00 PM KFOR-DT").
+                overview = listOfNotNull(what, if (mine.isEmpty()) "nothing scheduled" else "${mine.size} scheduled", next).joinToString(" · "),
+                // "series", "keyword" or "manual": which options its Edit opens.
+                serviceName = kind,
                 recordNewOnly = period.contains("new", true),
                 skipEpisodesInLibrary = false,
                 keepUpTo = r.int("keep") ?: 0,
@@ -608,6 +632,15 @@ class NextPvrBackend(
                 dayPattern = null,
                 days = emptyList(),
             )
+        }
+    }
+
+    /** "keyword" (an advanced rule), "manual" (a timeslot set by hand, not from the guide) or "series". */
+    private fun ruleKind(r: JsonObject): String =
+        when {
+            r.int("type") == 8 || r.str("advancedRules") != null -> "keyword"
+            (r.int("type") ?: 2) in 3..6 && r.str("epgTitle").isNullOrEmpty() -> "manual"
+            else -> "series"
         }
 
     override suspend fun updateSeriesTimer(t: org.jellyfin.sdk.model.api.SeriesTimerInfoDto): Unit = error("NextPVR's series are changed with its own options")
@@ -727,6 +760,157 @@ class NextPvrBackend(
         }
         call("recording.recurring.save", params)
     }
+
+    // ---- keyword rules and manual recordings --------------------------------------------------
+
+    /** Channels to pick from for a rule: id and "4.1 KFOR-DT", in the server's order (every group). */
+    suspend fun ruleChannels(): List<Pair<Int, String>> =
+        call("channel.list").jsonObject["channels"]?.jsonArray.orEmpty().map { it.jsonObject }.mapNotNull { c ->
+            val id = c.int("channelId") ?: return@mapNotNull null
+            id to listOfNotNull(c.str("channelNumberFormated"), c.str("channelName")).joinToString(" ")
+        }
+
+    /**
+     * A keyword rule: records whatever matches [keyword] (NextPVR's web page's Keyword type, which
+     * it keeps as an advanced rule). [custom] is an advanced rule written some other way, kept as
+     * it is. [channelId] 0: any channel.
+     */
+    data class KeywordRule(
+        val id: Int?,
+        val name: String,
+        val keyword: String,
+        val match: KeywordMatch,
+        val custom: String?,
+        val channelId: Int,
+        val keep: Int,
+        val prePadding: Int,
+        val postPadding: Int,
+        val directory: String?,
+        val enabled: Boolean,
+    )
+
+    fun newKeywordRule(
+        keyword: String,
+        defaults: SeriesDefaults,
+    ) = KeywordRule(null, "", keyword, KeywordMatch.TITLE, null, 0, 0, defaults.prePadding, defaults.postPadding, null, true)
+
+    suspend fun keywordRule(id: String): KeywordRule? =
+        rule(id)?.let { r ->
+            val rules = r.str("advancedRules").orEmpty()
+            val parsed = keywordOf(rules)
+            KeywordRule(
+                id = r.int("id"),
+                name = r.str("name").orEmpty(),
+                keyword = parsed?.first.orEmpty(),
+                match = parsed?.second ?: KeywordMatch.TITLE,
+                custom = rules.takeIf { parsed == null },
+                channelId = r.int("channelID") ?: 0,
+                keep = r.int("keep") ?: 0,
+                prePadding = r.int("prePadding") ?: 0,
+                postPadding = r.int("postPadding") ?: 0,
+                directory = r.str("directoryID")?.trim('[', ']')?.takeIf { it.isNotEmpty() },
+                enabled = r.bool("enabled") ?: true,
+            )
+        }
+
+    /** Saves a keyword rule, new or in place; NextPVR schedules what it matches straight away. */
+    suspend fun saveKeywordRule(r: KeywordRule) {
+        val params = mutableMapOf<String, Any?>(
+            "recurring_type" to "advanced",
+            "name" to r.name.ifBlank { r.keyword.ifBlank { r.custom.orEmpty() } },
+            "channel" to r.channelId,
+            "advanced" to (r.custom ?: keywordQuery(r.keyword, r.match)),
+            "keep" to r.keep,
+            "pre_padding" to r.prePadding,
+            "post_padding" to r.postPadding,
+            "directory_id" to r.directory,
+        )
+        if (r.id != null) {
+            params["recurring_id"] = r.id
+            params["enabled"] = r.enabled
+        }
+        call("recording.recurring.save", params)
+    }
+
+    /**
+     * A recording by channel and time rather than from the guide: [repeat] 0 once, or NextPVR's
+     * timeslot types (3 daily, 4 weekly, 5 Monday to Friday, 6 weekends) from [start] on.
+     */
+    data class ManualRule(
+        val id: Int?,
+        val name: String,
+        val channelId: Int,
+        val repeat: Int,
+        val start: LocalDateTime,
+        val minutes: Int,
+        val keep: Int,
+        val prePadding: Int,
+        val postPadding: Int,
+        val directory: String?,
+        val enabled: Boolean,
+    )
+
+    /** A new manual recording: on [channelId] for [start]–[end] when opened from the guide, else the next half hour. */
+    fun newManualRule(
+        channelId: UUID?,
+        start: LocalDateTime?,
+        end: LocalDateTime?,
+        defaults: SeriesDefaults,
+    ): ManualRule {
+        val now = LocalDateTime.now().withSecond(0).withNano(0)
+        val from = start?.takeIf { it.isAfter(now) } ?: now.plusMinutes((30 - now.minute % 30).toLong())
+        val minutes = if (start != null && end != null) java.time.Duration.between(start, end).toMinutes().toInt().coerceIn(5, 600) else 60
+        return ManualRule(null, "", channelId?.let { nextPvrId(it) } ?: 0, 0, from, minutes, 0, defaults.prePadding, defaults.postPadding, null, true)
+    }
+
+    suspend fun manualRule(id: String): ManualRule? =
+        rule(id)?.let { r ->
+            val start = r.long("startTimeTicks") ?: return null
+            ManualRule(
+                id = r.int("id"),
+                name = r.str("name").orEmpty(),
+                channelId = r.int("channelID") ?: 0,
+                repeat = r.int("type") ?: 3,
+                start = time(start),
+                minutes = (((r.long("endTimeTicks") ?: start) - start) / 60).toInt().coerceAtLeast(5),
+                keep = r.int("keep") ?: 0,
+                prePadding = r.int("prePadding") ?: 0,
+                postPadding = r.int("postPadding") ?: 0,
+                directory = r.str("directoryID")?.trim('[', ']')?.takeIf { it.isNotEmpty() },
+                enabled = r.bool("enabled") ?: true,
+            )
+        }
+
+    /** Saves a manual recording: once (recording.save) or as a timeslot rule, new or in place. */
+    suspend fun saveManualRule(
+        r: ManualRule,
+        channelName: String,
+    ) {
+        val start = r.start.atZone(zone).toEpochSecond()
+        val name = r.name.ifBlank { "$channelName ${r.start.time()}" }
+        val padding = mapOf("pre_padding" to r.prePadding, "post_padding" to r.postPadding, "directory_id" to r.directory)
+        if (r.repeat == 0) {
+            call("recording.save", mapOf("name" to name, "channel" to r.channelId, "time_t" to start, "duration" to r.minutes * 60) + padding)
+            return
+        }
+        val params = mutableMapOf<String, Any?>(
+            "recurring_type" to r.repeat,
+            "name" to name,
+            "channel_id" to r.channelId,
+            "start_time" to start,
+            "end_time" to start + r.minutes * 60,
+            "keep" to r.keep,
+        )
+        params += padding
+        if (r.id != null) {
+            params["recurring_id"] = r.id
+            params["enabled"] = r.enabled
+        }
+        call("recording.recurring.save", params)
+    }
+
+    private suspend fun rule(id: String): JsonObject? =
+        call("recording.recurring.list").jsonObject["recurrings"]?.jsonArray.orEmpty().map { it.jsonObject }.firstOrNull { it.int("id")?.toString() == id }
 
     // ---- scheduled recordings ---------------------------------------------------------------
 
@@ -1218,6 +1402,32 @@ class NextPvrBackend(
         fun recordingUuid(id: Int) = UUID(RECORDING, id.toLong())
 
         fun nextPvrId(id: UUID): Int = id.leastSignificantBits.toInt()
+
+        /** The advanced rule NextPVR's web page writes for a keyword (a ' doubled, as in SQL). */
+        fun keywordQuery(
+            keyword: String,
+            match: KeywordMatch,
+        ): String {
+            val k = keyword.trim().replace("'", "''")
+            return when (match) {
+                KeywordMatch.TITLE -> "title like '%$k%'"
+                KeywordMatch.ANYWHERE -> "(title like '%$k%' or description like '%$k%')"
+                KeywordMatch.PEOPLE -> "(cast_member like '%$k%' or crew like '%$k%')"
+            }
+        }
+
+        /**
+         * The keyword and match of an advanced rule written as [keywordQuery] writes them, or as
+         * Kodi's add-on does ("KEYWORD: x": NextPVR searches the description too); null for any
+         * other rule.
+         */
+        fun keywordOf(rules: String): Pair<String, KeywordMatch>? {
+            val r = rules.trim()
+            if (r.startsWith("KEYWORD:", ignoreCase = true)) return r.substringAfter(':').trim() to KeywordMatch.ANYWHERE
+            val k = Regex("""^\(?(?:title|cast_member) like '%(.*?)%'""").find(r)?.groupValues?.get(1) ?: return null
+            val keyword = k.replace("''", "'")
+            return KeywordMatch.entries.firstOrNull { keywordQuery(keyword, it) == r }?.let { keyword to it }
+        }
 
         fun md5(s: String): String = MessageDigest.getInstance("MD5").digest(s.toByteArray()).joinToString("") { "%02x".format(it) }
 

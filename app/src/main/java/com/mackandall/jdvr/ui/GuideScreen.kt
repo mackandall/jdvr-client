@@ -956,6 +956,8 @@ internal fun ProgramPanel(
 
     // NextPVR's series options, opened by Record series.
     var seriesOptions by remember { mutableStateOf(false) }
+    // NextPVR: a keyword rule or a manual recording, started from this programme.
+    var nextPvrRule by remember { mutableStateOf<String?>(null) }
 
     fun act(block: suspend () -> String?) {
         scope.launch {
@@ -993,6 +995,11 @@ internal fun ProgramPanel(
             channelName = channel?.name,
             programStart = program.start,
         )
+    }
+
+    when (nextPvrRule) {
+        "keyword" -> NextPvrKeywordRule(onDone = { msg -> nextPvrRule = null; if (msg != null) act { msg } }, keyword = program.name)
+        "manual" -> NextPvrManualRecording(onDone = { msg -> nextPvrRule = null; if (msg != null) act { msg } }, channelId = program.channelId, start = program.start, end = program.end)
     }
 
     // The panel is as wide as its two columns of buttons need; the header and note wrap to that.
@@ -1116,6 +1123,10 @@ internal fun ProgramPanel(
                             Button("Other airings", modifier = Modifier.fillMaxWidth()) {
                                 if (onOtherAirings != null) onOtherAirings(p) else airingsHere = true
                             }
+                        }
+                        if (Jdvr.isNextPvr && rights.record) {
+                            Button("Keyword rule", modifier = Modifier.fillMaxWidth()) { nextPvrRule = "keyword" }
+                            Button("Manual recording", modifier = Modifier.fillMaxWidth()) { nextPvrRule = "manual" }
                         }
                         if (airingsHere) {
                             AiringsDialog(programId = p.id, onNote = { msg -> if (onActed != null) onActed(msg) }, onDismiss = { airingsHere = false })

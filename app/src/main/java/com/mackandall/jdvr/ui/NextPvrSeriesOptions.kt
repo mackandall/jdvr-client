@@ -45,21 +45,21 @@ private val Types =
         6 to "Weekends, this timeslot",
         7 to "All episodes, all channels",
     )
-private val KeepChoices = listOf(0, 1, 2, 3, 5, 10, 20)
-private val PreChoices = listOf(0, 1, 2, 3, 5, 10, 15)
-private val PostChoices = listOf(0, 1, 2, 3, 5, 10, 15, 30, 60)
+internal val KeepChoices = listOf(0, 1, 2, 3, 5, 10, 20)
+internal val PreChoices = listOf(0, 1, 2, 3, 5, 10, 15)
+internal val PostChoices = listOf(0, 1, 2, 3, 5, 10, 15, 30, 60)
 
-private fun <T> stepFrom(
+internal fun <T> stepFrom(
     list: List<T>,
     current: T,
 ): T = list[(list.indexOf(current) + 1).mod(list.size)]
 
-private fun nearest(
+internal fun nearest(
     list: List<Int>,
     value: Int,
 ): Int = list.minByOrNull { kotlin.math.abs(it - value) } ?: value
 
-private fun minutes(
+internal fun minutes(
     m: Int,
     word: String,
     default: Int,

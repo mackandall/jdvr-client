@@ -415,12 +415,14 @@ private var PendingCode: PendingQuickConnect? = null
  * screen. Leaving it (Back, ▲▼) ends typing.
  */
 @Composable
-private fun Field(
+internal fun Field(
     label: String,
     value: String,
     onChange: (String) -> Unit,
     keyboard: KeyboardType = KeyboardType.Text,
     secret: Boolean = false,
+    // On the box (not typing): a focus requester, say.
+    modifier: Modifier = Modifier,
 ) {
     var editing by remember { mutableStateOf(false) }
     // Typing ends when the box loses focus, but only once it has had it (it starts unfocused).
@@ -436,7 +438,7 @@ private fun Field(
                     hadFocus = false
                     editing = true
                 },
-                modifier = Modifier.fillMaxWidth().focusRequester(box),
+                modifier = modifier.fillMaxWidth().focusRequester(box),
                 shape = androidx.tv.material3.ClickableSurfaceDefaults.shape(RoundedCornerShape(10.dp)),
                 colors = androidx.tv.material3.ClickableSurfaceDefaults.colors(containerColor = Jc.Panel2, focusedContainerColor = Jc.Panel2, contentColor = Jc.Text, focusedContentColor = Jc.Text),
                 border =
