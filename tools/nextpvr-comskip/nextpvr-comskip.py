@@ -9,6 +9,9 @@ finished (status READY), its channel and genres; no NextPVR sign-in is needed. S
 nextpvr-comskip.conf beside this script (all optional; see DEFAULTS).
 
 Run as a service (systemd user unit, see install.sh), or once by hand: --once [--dry-run].
+
+While it runs it answers on http://<this machine>:<port>/api/status (JDVR's "scanning" and "scan
+failed" badges): {"items": {"<recording file>": {"state": "scanning|found|none|retry|failed", ...}}}.
 """
 
 import argparse
@@ -17,7 +20,9 @@ import json
 import os
 import subprocess
 import sys
+import threading
 import time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -46,6 +51,8 @@ DEFAULTS = {
     "max_attempts": "3",
     # CPU priority for Comskip (19 = lowest).
     "nice": "15",
+    # Port for the status page (JDVR's badges); 0: none.
+    "port": "8867",
 }
 
 STATE = HERE / "nextpvr-comskip-state.json"
@@ -191,6 +198,37 @@ def tidy(state):
         save_state(state)
 
 
+class Status(BaseHTTPRequestHandler):
+    """GET /api/status: what's been scanned, from the state file (written whole, so always complete)."""
+
+    def do_GET(self):
+        if self.path.split("?")[0] != "/api/status":
+            self.send_error(404)
+            return
+        try:
+            body = STATE.read_bytes()
+        except OSError:
+            body = b'{"items": {}}'
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, *args):
+        pass
+
+
+def serve(port):
+    try:
+        server = ThreadingHTTPServer(("", port), Status)
+    except OSError as e:
+        log(f"No status page on port {port}: {e}")
+        return
+    threading.Thread(target=server.serve_forever, name="status", daemon=True).start()
+    log(f"Status on port {port}: /api/status")
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--config", default=str(HERE / "nextpvr-comskip.conf"))
@@ -199,8 +237,13 @@ def main():
     args = ap.parse_args()
     cfg = load_config(Path(args.config))
     state = load_state()
-    if not STATE.exists():
-        save_state(state)
+    # A scan cut short (stopped or restarted mid-scan) goes again.
+    for item in state["items"].values():
+        if item.get("state") == "scanning":
+            item["state"] = "retry"
+    save_state(state)
+    if not args.dry_run and cfg.getint("port"):
+        serve(cfg.getint("port"))
     dirs = recording_dirs(cfg)
     log(f"Watching {', '.join(dirs) or 'nothing'} every {cfg['interval']} s")
     while True:

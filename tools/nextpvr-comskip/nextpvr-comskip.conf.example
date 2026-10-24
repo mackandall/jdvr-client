@@ -18,3 +18,5 @@
 #max_attempts = 3
 # CPU priority for Comskip (19 = lowest).
 #nice = 15
+# Port for the status page (JDVR reads it for its badges); 0 turns it off.
+#port = 8867

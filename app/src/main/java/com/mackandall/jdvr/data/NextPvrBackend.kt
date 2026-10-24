@@ -848,15 +848,54 @@ class NextPvrBackend(
         }
     }
 
-    // A badge only for recordings with an .edl (never scanned: none, as on Jellyfin).
+    @Volatile private var scannerAt = 0L
+
+    @Volatile private var scannerItems: Map<String, JsonObject>? = null
+
+    private val scannerHttp by lazy {
+        Jdvr.http.newBuilder()
+            .connectTimeout(2, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(3, java.util.concurrent.TimeUnit.SECONDS)
+            .build()
+    }
+
+    /**
+     * The Comskip scanner beside NextPVR (tools/nextpvr-comskip, port 8867), by recording file:
+     * what it's scanning or gave up on. Asked every 10 s at most; with no scanner there, every 5 min.
+     */
+    private suspend fun scanner(): Map<String, JsonObject>? {
+        val now = System.currentTimeMillis()
+        if (scannerAt != 0L && now - scannerAt < (if (scannerItems == null) 300_000 else 10_000)) return scannerItems
+        scannerAt = now
+        val url = baseUrl.toHttpUrl().newBuilder().port(8867).encodedPath("/api/status").query(null).build()
+        scannerItems =
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    scannerHttp.newCall(okhttp3.Request.Builder().url(url).build()).execute().use { r ->
+                        if (!r.isSuccessful) error("scanner answered ${r.code}")
+                        json.parseToJsonElement(r.body.string()).jsonObject["items"]?.jsonObject.orEmpty().mapValues { it.value.jsonObject }
+                    }
+                }
+            }.getOrNull()
+        return scannerItems
+    }
+
+    // A badge for recordings the scanner is on or gave up on, then for those with an .edl (never
+    // scanned: none, as on Jellyfin).
     override suspend fun commercialBadges(ids: List<UUID>): Map<String, CommercialBadge> =
         coroutineScope {
-            ids.filter { it.mostSignificantBits == RECORDING }.chunked(8).flatMap { chunk ->
-                chunk.map { id -> async { edl(id)?.let { id to it } } }.awaitAll().filterNotNull()
-            }.associate { (id, breaks) ->
-                val minutes = ((breaks.sumOf { it.endMs - it.startMs } + 30_000) / 60_000).toInt()
-                id.toString().plainId() to CommercialBadge(state = if (breaks.isEmpty()) "none" else "found", minutes = minutes)
-            }
+            val wanted = ids.filter { it.mostSignificantBits == RECORDING }
+            val busy = scanner().orEmpty().filterValues { it.str("state") in setOf("scanning", "failed") }
+            val files = if (busy.isEmpty()) emptyMap() else recordings().associate { it.uuid to it.o.str("file") }
+            val scanning = wanted.mapNotNull { id -> busy[files[id]]?.str("state")?.let { id to CommercialBadge(state = it) } }.toMap()
+            val marked =
+                (wanted - scanning.keys).chunked(8).flatMap { chunk ->
+                    chunk.map { id -> async { edl(id)?.let { id to it } } }.awaitAll().filterNotNull()
+                }.associate { (id, breaks) ->
+                    val minutes = ((breaks.sumOf { it.endMs - it.startMs } + 30_000) / 60_000).toInt()
+                    id to CommercialBadge(state = if (breaks.isEmpty()) "none" else "found", minutes = minutes)
+                }
+            (scanning + marked).mapKeys { it.key.toString().plainId() }
         }
 
     override suspend fun scanCommercials(itemId: UUID): Message? = null
