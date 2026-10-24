@@ -213,8 +213,8 @@ private fun SeriesRow(
             ).joinToString(" · ")
         Text(details, color = Jc.Muted, fontSize = 14.sp)
         Row(Modifier.padding(top = 4.dp)) {
-            Button("Edit", modifier = modifier, onClick = onEdit)
-            Button(if (armed) "Press again: cancel the series" else "Cancel series recording", modifier = Modifier.padding(start = 8.dp)) {
+            Button("Edit", modifier = modifier.padding(end = 8.dp), onClick = onEdit)
+            Button(if (armed) "Press again: cancel the series" else "Cancel series recording", leading = { SeriesDots(height = 14.dp, crossed = true) }) {
                 if (armed) onCancel() else armed = true
             }
         }
