@@ -624,7 +624,8 @@ fun PlayerScreen(
             tick.let {
                 val offset = behindLiveMs()
                 val realRecording = buffers.currentBuffer()?.kept == true || channel?.now?.let { it.timerId != null && it.id.toString().plainId() !in bufferIds } == true
-                InfoBar(channel, symbols, Modifier.align(Alignment.BottomCenter), behindMs = if (offset > 15_000) offset else 0L, recording = realRecording, formats = formats, watchingAt = LocalDateTime.now().minusNanos(offset * 1_000_000), bufferFrom = bufferFrom(offset), pausedAt = pausedAt) {
+                // Paused: behind from the first second, never "● LIVE" beside the Paused line.
+                InfoBar(channel, symbols, Modifier.align(Alignment.BottomCenter), behindMs = if (offset > 15_000) offset else if (pausedAt != null) offset.coerceAtLeast(1_000) else 0L, recording = realRecording, formats = formats, watchingAt = LocalDateTime.now().minusNanos(offset * 1_000_000), bufferFrom = bufferFrom(offset), pausedAt = pausedAt) {
                     if (actionsOpen) {
                         val b = buffers.currentBuffer()
                         val behind = onHls
