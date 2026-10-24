@@ -7,7 +7,7 @@ here=$(cd "$(dirname "$0")" && pwd)
 dest="$HOME/comskip"
 mkdir -p "$dest" "$HOME/.config/systemd/user"
 if [ "$here" != "$dest" ]; then
-    cp "$here/nextpvr-comskip.py" "$here/nextpvr-comskip.conf.example" "$dest/"
+    cp "$here/nextpvr-comskip.py" "$here/nextpvr-comskip.html" "$here/nextpvr-comskip.conf.example" "$dest/"
     for f in comskip comskip.ini; do
         [ -e "$dest/$f" ] || cp "$here/$f" "$dest/"
     done

@@ -15,13 +15,17 @@ prompt and the ✂ badges. NextPVR deletes the `.edl` along with the recording.
   Comskips.
 - **Retries and catching up.** A failed scan is tried again (3 times by default), and recordings
   made before it was installed are scanned too.
-- **Status.** JDVR shows "scanning" and "scan failed" on recordings, read from
-  `http://<NextPVR machine>:8867/api/status`.
+- **A page** at `http://<NextPVR machine>:8867/`: what it's scanning (with time left), what's
+  waiting, every result with its breaks and ad time, and the settings. Anyone on your network can
+  look. Changing settings or rescanning needs the NextPVR PIN. The page signs in to NextPVR the way
+  its own clients do, with a salted hash, so the PIN never leaves the browser and isn't stored.
+- **Status in JDVR.** JDVR shows "scanning" and "scan failed" on recordings, read from
+  `/api/status` on the same port.
 - **No script in NextPVR's `scripts` folder.** NextPVR switches off its own auto transcoding when
   a PostProcessing script exists. This runs beside NextPVR and leaves that alone.
 
 It works from the files alone: the `.xml` NextPVR writes beside each recording says when it's
-finished, plus its channel and genres. No NextPVR PIN is needed.
+finished, plus its channel and genres. Scanning needs no NextPVR PIN.
 
 ## Install (Linux, on the NextPVR machine)
 
@@ -38,11 +42,15 @@ The log is at `journalctl --user -u nextpvr-comskip -f`. To try one pass without
 
 ## Settings
 
-Optional, in `~/comskip/nextpvr-comskip.conf` (see `nextpvr-comskip.conf.example`):
+Set them on the page, or in `~/comskip/nextpvr-comskip.conf` (see `nextpvr-comskip.conf.example`).
+All of them are optional:
 
 - Commercial-free channels to skip, or only some channels.
 - Genres to skip, for example News or Sports.
 - How long a file has to stay unchanged before it's scanned.
-- Number of attempts, CPU priority, and the status port (`0` turns it off).
+- Shows never scanned, for one show on a channel that's otherwise scanned.
+- Number of attempts, CPU priority, and the port (`0` turns the page off).
 
-Restart after changing them: `systemctl --user restart nextpvr-comskip`.
+Changes apply from the scanner's next look, with no restart. The exception is the port, which
+needs `systemctl --user restart nextpvr-comskip`. A rescan only replaces marks the scanner made
+itself, and it leaves alone a recording the settings now exclude.

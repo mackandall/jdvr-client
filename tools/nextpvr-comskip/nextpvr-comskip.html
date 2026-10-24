@@ -1,0 +1,422 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Comskip for NextPVR</title>
+<style>
+:root {
+  --bg: #0e121a; --panel: #161c27; --panel2: #1e2633; --line: #2a3446;
+  --text: #e8ecf2; --muted: #9aa4b3; --soft: #c3cad6;
+  --accent: #3dd68c; --onaccent: #06150d; --blue: #7cc0ff; --chip: #12263d; --chipline: #2f6fae;
+  --amber: #f5a623; --red: #ff6b6b; --green: #1f7a45;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+main { max-width: 1180px; margin: 0 auto; padding: 24px 16px 48px; display: flex; flex-direction: column; gap: 20px; }
+h1 { margin: 0; font-size: 28px; }
+h2 { margin: 0 0 10px; font-size: 18px; }
+p { margin: 0; }
+.muted { color: var(--muted); }
+.small { font-size: 13px; }
+header { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-start; justify-content: space-between; }
+header p { color: var(--muted); font-size: 14px; overflow-wrap: anywhere; }
+.pill { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 999px; background: var(--panel2); font-size: 14px; white-space: nowrap; }
+.dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); }
+.dot.off { background: var(--red); }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 18px; min-width: 0; }
+.grid3 { display: grid; grid-template-columns: 2fr 1.4fr 1fr; gap: 16px; }
+@media (max-width: 860px) { .grid3 { grid-template-columns: 1fr; } }
+.lock { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; border-color: #5a4a22; }
+.lock p { flex: 1 1 320px; color: var(--soft); }
+.lock.open { border-color: #24563d; }
+input, select { font: inherit; color: var(--text); background: var(--panel2); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; min-height: 40px; }
+input:focus-visible, select:focus-visible, button:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+button { font: inherit; min-height: 40px; padding: 8px 16px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel2); color: var(--text); cursor: pointer; }
+button.primary { background: var(--accent); border-color: var(--accent); color: var(--onaccent); font-weight: 600; }
+button.warn { border-color: #6b3a3a; }
+button:disabled { opacity: 0.45; cursor: not-allowed; }
+.big { font-size: 20px; font-weight: 700; }
+.bar { height: 8px; border-radius: 4px; background: var(--panel2); overflow: hidden; margin: 12px 0 6px; }
+.bar > div { height: 100%; background: var(--accent); transition: width 0.8s; }
+.row { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.counts { display: flex; gap: 22px; }
+.counts div { display: flex; flex-direction: column; }
+.counts .n { font-size: 30px; font-weight: 700; }
+.queue { margin: 6px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
+.queue li { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+.head h2 { margin: 0; margin-right: auto; }
+table { width: 100%; border-collapse: collapse; }
+th { text-align: left; font-size: 13px; color: var(--muted); font-weight: 500; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+td { padding: 10px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+td .ep { display: block; color: var(--muted); font-size: 13px; }
+.result { display: inline-block; padding: 3px 9px; border-radius: 6px; font-size: 13px; font-weight: 600; background: var(--panel2); }
+.result.found { background: var(--green); color: #fff; }
+.result.failed { background: #5a2323; color: #ffd6d6; }
+.result.retry, .result.queued { background: #4a3c17; color: #ffe2a8; }
+@media (max-width: 700px) {
+  thead { display: none; }
+  table, tbody, tr, td { display: block; width: 100%; }
+  tr { border-bottom: 1px solid var(--line); padding: 8px 0; }
+  td { border: 0; padding: 3px 0; }
+  td[data-label]::before { content: attr(data-label) ": "; color: var(--muted); font-size: 13px; }
+}
+.chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.chip { min-height: 38px; padding: 7px 13px; font-size: 14px; border: 1px solid var(--chipline); background: var(--chip); color: #cfe6ff; }
+.chip[aria-pressed="false"] { border-color: var(--line); background: transparent; color: var(--muted); text-decoration: line-through; }
+.tag { display: inline-flex; align-items: center; gap: 6px; padding: 4px 6px 4px 12px; border-radius: 8px; background: var(--panel2); }
+.tag button { min-height: 28px; padding: 0 9px; border: 0; background: transparent; color: var(--muted); }
+.fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; margin-top: 16px; }
+.fields label, .block > span:first-child { display: block; font-size: 13px; color: var(--muted); margin-bottom: 5px; }
+.fields input, .fields select { width: 100%; }
+.block { margin-top: 18px; }
+.check { display: flex; align-items: center; gap: 10px; margin-top: 16px; }
+.check input { min-height: auto; width: 18px; height: 18px; }
+.actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; align-items: center; }
+.note { color: var(--amber); font-size: 14px; }
+.ok { color: var(--accent); font-size: 14px; }
+fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div>
+      <h1>Comskip for NextPVR</h1>
+      <p id="where">Loading…</p>
+    </div>
+    <span class="pill"><span class="dot" id="alive"></span><span id="aliveText">Connecting…</span></span>
+  </header>
+
+  <div class="card lock" id="lock"></div>
+
+  <section class="grid3">
+    <div class="card" id="now"></div>
+    <div class="card" id="waiting"></div>
+    <div class="card" id="sofar"></div>
+  </section>
+
+  <section class="card">
+    <div class="head">
+      <h2>Scanned</h2>
+      <span id="histNote" class="note"></span>
+      <label for="filter" class="muted small">Show</label>
+      <select id="filter">
+        <option value="all">All</option>
+        <option value="found">With ads</option>
+        <option value="none">No ads</option>
+        <option value="problem">Failed or waiting to retry</option>
+      </select>
+    </div>
+    <div id="history"></div>
+  </section>
+
+  <section class="card">
+    <div class="head">
+      <h2>Settings</h2>
+      <span class="muted small">Saved in nextpvr-comskip.conf · they apply from the next look, no restart</span>
+    </div>
+    <fieldset id="settings"></fieldset>
+  </section>
+</main>
+
+<script>
+"use strict";
+
+// MD5 (NextPVR signs in with md5(":" + md5(PIN) + ":" + salt)).
+function md5(str) {
+  const S = [7, 12, 17, 22, 5, 9, 14, 20, 4, 11, 16, 23, 6, 10, 15, 21];
+  const K = [];
+  for (let i = 0; i < 64; i++) K[i] = Math.floor(Math.abs(Math.sin(i + 1)) * 4294967296) >>> 0;
+  const bytes = new TextEncoder().encode(str);
+  const len = bytes.length;
+  const blocks = ((len + 8) >>> 6) + 1;
+  const w = new Uint32Array(blocks * 16);
+  for (let i = 0; i < len; i++) w[i >> 2] |= bytes[i] << ((i % 4) * 8);
+  w[len >> 2] |= 0x80 << ((len % 4) * 8);
+  w[blocks * 16 - 2] = (len * 8) >>> 0;
+  w[blocks * 16 - 1] = Math.floor(len / 0x20000000);
+  let a0 = 0x67452301, b0 = 0xefcdab89, c0 = 0x98badcfe, d0 = 0x10325476;
+  for (let j = 0; j < w.length; j += 16) {
+    let A = a0, B = b0, C = c0, D = d0;
+    for (let i = 0; i < 64; i++) {
+      let F, g;
+      if (i < 16) { F = (B & C) | (~B & D); g = i; }
+      else if (i < 32) { F = (D & B) | (~D & C); g = (5 * i + 1) % 16; }
+      else if (i < 48) { F = B ^ C ^ D; g = (3 * i + 5) % 16; }
+      else { F = C ^ (B | ~D); g = (7 * i) % 16; }
+      F = (F + A + K[i] + w[j + g]) >>> 0;
+      A = D; D = C; C = B;
+      const r = S[(i >> 4) * 4 + (i % 4)];
+      B = (B + ((F << r) | (F >>> (32 - r)))) >>> 0;
+    }
+    a0 = (a0 + A) >>> 0; b0 = (b0 + B) >>> 0; c0 = (c0 + C) >>> 0; d0 = (d0 + D) >>> 0;
+  }
+  return [a0, b0, c0, d0].map((x) => [0, 8, 16, 24].map((s) => ((x >>> s) & 255).toString(16).padStart(2, "0")).join("")).join("");
+}
+
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+
+let token = null;
+try { token = sessionStorage.getItem("token"); } catch (e) {}
+let data = null;
+// Settings being changed on the page (not saved yet): what the form shows instead of the server's.
+let draft = null;
+let message = "";
+let armedAll = false;
+
+function setToken(t) {
+  token = t;
+  try { t ? sessionStorage.setItem("token", t) : sessionStorage.removeItem("token"); } catch (e) {}
+}
+
+async function api(path, body) {
+  const opts = { headers: {} };
+  if (token) opts.headers["X-Token"] = token;
+  if (body !== undefined) {
+    opts.method = "POST";
+    opts.headers["Content-Type"] = "application/json";
+    opts.body = JSON.stringify(body);
+  }
+  const r = await fetch(path, opts);
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || "The scanner answered " + r.status);
+  return j;
+}
+
+const minsec = (s) => s == null ? "" : `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`;
+const length = (s) => s >= 60 ? `${Math.floor(s / 60)}m ${s % 60}s` : `${s}s`;
+const gb = (b) => !b ? "" : b >= 1e9 ? (b / 1e9).toFixed(1) + " GB" : Math.round(b / 1e6) + " MB";
+const clock = (t) => t ? new Date(t * 1000).toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit" }) : "";
+// "2026-10-24 03:30:00" → "3:30 AM".
+const hm = (s) => { const d = s ? new Date(s.replace(" ", "T")) : null; return d && !isNaN(d) ? d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : ""; };
+
+function result(r) {
+  switch (r.state) {
+    case "found": return `<span class="result found">${r.breaks} break${r.breaks === 1 ? "" : "s"} · ${length(r.ads)}</span>`;
+    case "none": return `<span class="result">No ads</span>`;
+    case "failed": return `<span class="result failed" title="${esc(r.error)}">Failed${r.error ? ": " + esc(r.error) : ""}</span>`;
+    case "retry": return `<span class="result retry" title="${esc(r.error)}">Will retry (tried ${r.attempts})</span>`;
+    case "queued": return r.skipped ? `<span class="result">Not scanned: ${esc(r.skipped)}</span>` : `<span class="result queued">Queued</span>`;
+    default: return esc(r.state);
+  }
+}
+
+function renderLock() {
+  const el = $("lock");
+  el.classList.toggle("open", data.unlocked);
+  if (data.unlocked) {
+    el.innerHTML = `<p>Unlocked: you can change settings and rescan. It locks again after half an hour without changes.</p>
+      <button type="button" id="relock">Lock</button>`;
+    $("relock").onclick = () => { setToken(null); refresh(); };
+    return;
+  }
+  // Re-rendering would wipe what's being typed.
+  if ($("pin")) return;
+  el.innerHTML = `<p>Anyone on your network can look. To change settings or rescan, unlock with the NextPVR PIN. It's checked by NextPVR and never kept.</p>
+    <label for="pin" class="muted small">NextPVR PIN</label>
+    <input id="pin" type="password" inputmode="numeric" autocomplete="off" size="8">
+    <button type="button" class="primary" id="unlock">Unlock</button>
+    <span id="lockNote" class="note"></span>`;
+  const go = async () => {
+    $("lockNote").textContent = "";
+    try {
+      const c = await api("/api/unlock");
+      const pin = $("pin").value;
+      const r = await api("/api/unlock", { challenge: c.challenge, md5: md5(":" + md5(pin) + ":" + c.salt) });
+      setToken(r.token);
+      refresh();
+    } catch (e) {
+      $("lockNote").textContent = e.message;
+    }
+  };
+  $("unlock").onclick = go;
+  $("pin").onkeydown = (e) => { if (e.key === "Enter") go(); };
+}
+
+function renderNow() {
+  const n = data.now;
+  if (!n) {
+    $("now").innerHTML = `<h2>Scanning now</h2><p class="muted">Nothing: ${data.queue.length ? "about to start." : "all caught up."}</p>`;
+    return;
+  }
+  const so = Math.max(0, Date.now() / 1000 - n.since);
+  const pct = n.estimate ? Math.min(99, Math.round((so / n.estimate) * 100)) : null;
+  $("now").innerHTML = `<h2>Scanning now</h2>
+    <div class="big">${esc(n.show)}</div>
+    <div class="muted">${esc([n.episode, n.channel, n.start && `recorded ${hm(n.start)}–${hm(n.end)}`, gb(n.bytes)].filter(Boolean).join(" · "))}</div>
+    <div class="bar"><div style="width:${pct ?? 5}%"></div></div>
+    <div class="row muted small"><span>${pct != null ? pct + "% · " : ""}${minsec(so)} so far</span>
+      <span>${n.estimate ? (so < n.estimate ? "about " + minsec(n.estimate - so) + " left" : "nearly done") : "first scan: no estimate yet"}</span></div>`;
+}
+
+function renderWaiting() {
+  const q = data.queue;
+  const list = q.slice(0, 5).map((r) => `<li>${esc(r.show)} <span class="muted">${esc([r.episode, r.channel].filter(Boolean).join(" · "))}</span></li>`).join("");
+  $("waiting").innerHTML = `<h2>Waiting</h2>
+    ${q.length ? `<ul class="queue">${list}</ul>${q.length > 5 ? `<p class="muted small">and ${q.length - 5} more</p>` : ""}` : `<p class="muted">Nothing else to scan.${data.now ? "" : ` Next look in ${data.next_look} s.`}</p>`}
+    <p class="muted small" style="margin-top:8px">Recording now: ${esc(data.recording.join(", ") || "nothing")}. A recording is scanned ${Math.round(data.settings.settle / 60)} min after it ends, newest first, one at a time.</p>`;
+}
+
+function renderSoFar() {
+  const c = data.counts;
+  $("sofar").innerHTML = `<h2>So far</h2><div class="counts">
+    <div><span class="n">${c.found}</span><span class="muted small">with ads</span></div>
+    <div><span class="n">${c.none}</span><span class="muted small">no ads</span></div>
+    <div><span class="n">${c.failed}</span><span class="muted small">failed</span></div></div>`;
+}
+
+function renderHistory() {
+  const f = $("filter").value;
+  const rows = data.history.filter((r) => f === "all" || r.state === f || (f === "problem" && (r.state === "failed" || r.state === "retry")));
+  if (!rows.length) {
+    $("history").innerHTML = `<p class="muted">${data.history.length ? "None of these." : "Nothing scanned yet."}</p>`;
+    return;
+  }
+  const lockedTip = data.unlocked ? "" : ' title="Unlock with the NextPVR PIN to rescan"';
+  $("history").innerHTML = `<table><thead><tr><th>Recording</th><th>Channel</th><th>Result</th><th>Scanned</th><th>Took</th><th><span style="position:absolute;left:-9999px">Actions</span></th></tr></thead><tbody>
+    ${rows.map((r) => `<tr>
+      <td><strong>${esc(r.show)}</strong><span class="ep">${esc(r.episode)}</span></td>
+      <td data-label="Channel">${esc(r.channel)}</td>
+      <td>${result(r)}</td>
+      <td data-label="Scanned">${esc(clock(r.finished))}</td>
+      <td data-label="Took">${esc(minsec(r.took))}</td>
+      <td><button type="button" class="rescan" data-file="${esc(r.file)}" ${data.unlocked && r.state !== "queued" ? "" : "disabled"}${lockedTip}>Rescan</button></td>
+    </tr>`).join("")}</tbody></table>`;
+  for (const b of document.querySelectorAll(".rescan")) {
+    b.onclick = async () => {
+      b.disabled = true;
+      try {
+        const r = await api("/api/rescan", { file: b.dataset.file });
+        $("histNote").textContent = r.queued ? "" : "Not rescanned: Settings leave it out (its channel, genre or show), so its marks would just go.";
+      } catch (e) { $("histNote").textContent = e.message; }
+      refresh();
+    };
+  }
+}
+
+const SETTLE = [[60, "1 minute"], [120, "2 minutes"], [300, "5 minutes"], [600, "10 minutes"]];
+const NICE = [[19, "Lowest"], [15, "Low (recordings come first)"], [0, "Normal"]];
+const TRIES = [[1, "1 attempt"], [3, "3 attempts"], [5, "5 attempts"]];
+const list = (s) => s.split(",").map((x) => x.trim()).filter(Boolean);
+function options(choices, value) {
+  const v = Number(value);
+  const all = choices.some(([c]) => c === v) ? choices : [...choices, [v, String(value)]];
+  return all.map(([c, label]) => `<option value="${c}" ${c === v ? "selected" : ""}>${esc(label)}</option>`).join("");
+}
+
+function renderSettings() {
+  const s = draft || data.settings;
+  const locked = !data.unlocked;
+  const off = new Set(list(s.skip_channels).map((x) => x.toLowerCase()));
+  const shows = list(s.skip_shows);
+  const offCount = data.channels.filter((c) => off.has(c.toLowerCase())).length;
+  $("settings").disabled = locked;
+  $("settings").innerHTML = `
+    ${locked ? `<p class="note" style="margin-bottom:12px">Locked: unlock above to change these.</p>` : ""}
+    <div class="block" style="margin-top:0">
+      <span>Channels to scan</span>
+      <span class="muted small">Off: never scanned (commercial-free channels).</span>
+      <div class="chips">${data.channels.map((c) => `<button type="button" class="chip" data-ch="${esc(c)}" aria-pressed="${!off.has(c.toLowerCase())}">${esc(c)}${off.has(c.toLowerCase()) ? " · off" : ""}</button>`).join("") || `<span class="muted">The channel list comes from NextPVR when you unlock.</span>`}</div>
+      <p class="muted small" style="margin-top:6px">${offCount ? offCount + " off." : "All on."}${data.only_channels ? ` The file also has only_channels = ${esc(data.only_channels)}: only those are scanned.` : ""}</p>
+    </div>
+    <div class="fields">
+      <div><label for="genres">Genres never scanned</label><input id="genres" value="${esc(s.skip_genres)}" placeholder="e.g. News, Sports"></div>
+      <div><label for="settle">Scan after a recording ends</label><select id="settle">${options(SETTLE, s.settle)}</select></div>
+      <div><label for="nice">CPU priority</label><select id="nice">${options(NICE, s.nice)}</select></div>
+      <div><label for="tries">Give up after</label><select id="tries">${options(TRIES, s.max_attempts)}</select></div>
+    </div>
+    <label class="check"><input type="checkbox" id="backfill" ${s.backfill === "true" ? "checked" : ""}>Also scan recordings made before the scanner</label>
+    <div class="block">
+      <span>Shows never scanned</span>
+      <span class="muted small">For one show on a channel that's otherwise scanned.</span>
+      <div class="chips">
+        ${shows.map((x) => `<span class="tag">${esc(x)}<button type="button" class="unshow" data-show="${esc(x)}" aria-label="Remove ${esc(x)}">×</button></span>`).join("")}
+        <input id="newShow" list="showList" placeholder="Show title" style="width:200px">
+        <datalist id="showList">${data.shows.filter((x) => !shows.includes(x)).map((x) => `<option value="${esc(x)}">`).join("")}</datalist>
+        <button type="button" id="addShow">+ Add</button>
+      </div>
+    </div>
+    <div class="actions">
+      <button type="button" class="primary" id="save" ${draft ? "" : "disabled"}>Save settings</button>
+      ${draft ? `<button type="button" id="undo">Undo changes</button>` : ""}
+      <button type="button" class="warn" id="all">${armedAll ? "Press again: scan all again" : "Scan everything again"}</button>
+      <span id="msg" class="${message.startsWith("Saved") || message.startsWith("Queued") ? "ok" : "note"}">${esc(message)}</span>
+    </div>`;
+  if (locked) return;
+  const change = (k, v) => { draft = { ...(draft || data.settings), [k]: v }; renderSettings(); };
+  for (const b of document.querySelectorAll(".chip")) {
+    b.onclick = () => {
+      const name = b.dataset.ch;
+      const cur = list(s.skip_channels);
+      const next = off.has(name.toLowerCase()) ? cur.filter((x) => x.toLowerCase() !== name.toLowerCase()) : [...cur, name];
+      change("skip_channels", next.join(", "));
+    };
+  }
+  $("genres").onchange = (e) => change("skip_genres", e.target.value);
+  $("settle").onchange = (e) => change("settle", e.target.value);
+  $("nice").onchange = (e) => change("nice", e.target.value);
+  $("tries").onchange = (e) => change("max_attempts", e.target.value);
+  $("backfill").onchange = (e) => change("backfill", e.target.checked ? "true" : "false");
+  for (const b of document.querySelectorAll(".unshow")) b.onclick = () => change("skip_shows", shows.filter((x) => x !== b.dataset.show).join(", "));
+  const addShow = () => { const v = $("newShow").value.replace(/,/g, " ").trim(); if (v && !shows.includes(v)) change("skip_shows", [...shows, v].join(", ")); };
+  $("addShow").onclick = addShow;
+  $("newShow").onkeydown = (e) => { if (e.key === "Enter") addShow(); };
+  $("save").onclick = async () => {
+    try {
+      await api("/api/settings", draft);
+      draft = null;
+      message = "Saved.";
+    } catch (e) { message = e.message; }
+    refresh();
+  };
+  if ($("undo")) $("undo").onclick = () => { draft = null; message = ""; renderSettings(); };
+  $("all").onclick = async () => {
+    if (!armedAll) {
+      armedAll = true;
+      renderSettings();
+      setTimeout(() => { armedAll = false; if (data) renderSettings(); }, 4000);
+      return;
+    }
+    armedAll = false;
+    try { const r = await api("/api/rescan", { all: true }); message = `Queued ${r.queued} recording${r.queued === 1 ? "" : "s"} to scan again (ones Settings leave out keep their marks).`; } catch (e) { message = e.message; }
+    refresh();
+  };
+}
+
+function render() {
+  $("where").textContent = `${data.host} · recordings in ${data.dirs.join(", ") || "(none found)"}`;
+  $("alive").className = "dot";
+  $("aliveText").textContent = data.now ? "Scanning" : `Running · looks every ${data.interval} s`;
+  renderLock();
+  renderNow();
+  renderWaiting();
+  renderSoFar();
+  renderHistory();
+  // Not while something in the form has focus (it would lose what's being typed or picked).
+  if (!$("settings").contains(document.activeElement)) renderSettings();
+}
+
+let timer = null;
+async function refresh() {
+  clearTimeout(timer);
+  try {
+    const was = data && data.unlocked;
+    data = await api("/api/overview");
+    // The token ran out (or the scanner restarted).
+    if (token && !data.unlocked) setToken(null);
+    if (was && !data.unlocked) draft = null;
+    render();
+  } catch (e) {
+    $("alive").className = "dot off";
+    $("aliveText").textContent = "Not answering";
+  }
+  timer = setTimeout(refresh, data && data.now ? 2000 : 5000);
+}
+$("filter").onchange = () => data && renderHistory();
+refresh();
+</script>
+</body>
+</html>

@@ -10,18 +10,30 @@ nextpvr-comskip.conf beside this script (all optional; see DEFAULTS).
 
 Run as a service (systemd user unit, see install.sh), or once by hand: --once [--dry-run].
 
-While it runs it answers on http://<this machine>:<port>/api/status (JDVR's "scanning" and "scan
-failed" badges): {"items": {"<recording file>": {"state": "scanning|found|none|retry|failed", ...}}}.
+While it runs it answers on http://<this machine>:<port>/:
+  /                 a page: what it's scanning, what's waiting, what it found, its settings
+  /api/status       JDVR's "scanning" and "scan failed" badges:
+                    {"items": {"<recording file>": {"state": "scanning|found|none|queued|retry|failed", ...}}}
+  /api/overview     everything the page shows
+Looking is open to the network. Changes (settings, rescans) need the NextPVR PIN: the page signs in
+to NextPVR through the scanner the way NextPVR's own clients do (a salted hash, so the PIN never
+leaves the browser), and gets a token for half an hour.
 """
 
 import argparse
 import configparser
+import hashlib
 import json
 import os
+import re
+import secrets
+import socket
 import subprocess
 import sys
 import threading
 import time
+import urllib.parse
+import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -45,17 +57,33 @@ DEFAULTS = {
     "only_channels": "",
     # Genres never scanned (e.g. News, Sports), comma separated.
     "skip_genres": "",
+    # Shows never scanned (titles as NextPVR shows them), comma separated: one show on a channel
+    # that's otherwise scanned.
+    "skip_shows": "",
     # Recordings that finished before the scanner first ran are scanned too (oldest last).
     "backfill": "true",
     # Attempts before a recording is given up on (shown as failed).
     "max_attempts": "3",
     # CPU priority for Comskip (19 = lowest).
     "nice": "15",
-    # Port for the status page (JDVR's badges); 0: none.
+    # Port for the page and JDVR's badges; 0: none.
     "port": "8867",
+    # NextPVR, for checking the PIN when the page unlocks (and its channel list).
+    "nextpvr_url": "http://127.0.0.1:8866",
 }
 
+# What the page can change (the rest stays as set in the file).
+EDITABLE = ("skip_channels", "skip_genres", "skip_shows", "settle", "nice", "max_attempts", "backfill")
+
 STATE = HERE / "nextpvr-comskip-state.json"
+# Seconds before a failed scan is tried again.
+RETRY_AFTER = 600
+PAGE = HERE / "nextpvr-comskip.html"
+
+# The state is shared with the page's server thread: changes and saves under this lock.
+LOCK = threading.RLock()
+# Set to look for work straight away (a rescan, new settings) rather than after the interval.
+WAKE = threading.Event()
 
 
 def log(msg):
@@ -113,14 +141,31 @@ def load_state():
 
 
 def save_state(state):
-    tmp = STATE.with_suffix(".tmp")
-    tmp.write_text(json.dumps(state, indent=1))
-    tmp.replace(STATE)
+    with LOCK:
+        tmp = STATE.with_suffix(".tmp")
+        tmp.write_text(json.dumps(state, indent=1))
+        tmp.replace(STATE)
+
+
+def excluded(cfg, meta):
+    """Why the settings leave this recording out (its .xml as from info()), or None."""
+    if not meta:
+        return None
+    channel = {meta.get("channel", "").lower(), meta.get("channel_OID", "").lower()} - {""}
+    if channel & names(cfg["skip_channels"]):
+        return "channel switched off"
+    only = names(cfg["only_channels"])
+    if only and not channel & only:
+        return "not in only_channels"
+    if {g.lower() for g in meta["genres"]} & names(cfg["skip_genres"]):
+        return "genre never scanned"
+    if meta.get("title", "").lower() in names(cfg["skip_shows"]):
+        return "show never scanned"
+    return None
 
 
 def candidates(cfg, state):
     """Finished recordings without an .edl that the settings allow, newest first."""
-    skip_ch, only_ch, skip_genre = names(cfg["skip_channels"]), names(cfg["only_channels"]), names(cfg["skip_genres"])
     settle = cfg.getint("settle")
     backfill = cfg.getboolean("backfill")
     max_attempts = cfg.getint("max_attempts")
@@ -147,25 +192,28 @@ def candidates(cfg, state):
             item = state["items"].get(str(ts), {})
             if item.get("attempts", 0) >= max_attempts:
                 continue
-            if meta:
-                channel = {meta.get("channel", "").lower(), meta.get("channel_OID", "").lower()} - {""}
-                if channel & skip_ch:
-                    continue
-                if only_ch and not channel & only_ch:
-                    continue
-                if {g.lower() for g in meta["genres"]} & skip_genre:
-                    continue
+            # A failed scan waits a while before the next try (the same moment would fail the same way).
+            if item.get("state") == "retry" and now - item.get("finished", 0) < RETRY_AFTER:
+                continue
+            if excluded(cfg, meta):
+                continue
             out.append((mtime, ts))
     return [ts for _, ts in sorted(out, reverse=True)]
 
 
 def scan(cfg, ts, state):
     key = str(ts)
-    item = state["items"].setdefault(key, {})
-    item["attempts"] = item.get("attempts", 0) + 1
-    item["state"] = "scanning"
-    item["since"] = time.time()
-    save_state(state)
+    with LOCK:
+        item = state["items"].setdefault(key, {})
+        item["attempts"] = item.get("attempts", 0) + 1
+        item["state"] = "scanning"
+        item["since"] = time.time()
+        try:
+            item["bytes"] = ts.stat().st_size
+        except OSError:
+            pass
+        item.pop("error", None)
+        save_state(state)
     log(f"Scanning {ts.name} (attempt {item['attempts']})")
     cmd = ["nice", "-n", cfg["nice"], cfg["comskip"], f"--ini={cfg['comskip_ini']}", f"--output={ts.parent}", str(ts)]
     t0 = time.time()
@@ -176,44 +224,316 @@ def scan(cfg, ts, state):
         code, err = -1, [str(e)]
     edl = ts.with_suffix(".edl")
     # Comskip: 0 = commercials found, 1 = none found; either way the scan is done.
-    if code in (0, 1):
-        if not edl.exists():
-            edl.write_text("")
-        breaks = [l for l in edl.read_text().splitlines() if l.strip()]
-        item.update(state="found" if breaks else "none", breaks=len(breaks), finished=time.time())
-        log(f"Done in {time.time() - t0:.0f} s: {len(breaks)} break(s) in {ts.name}")
-    else:
-        failed = item["attempts"] >= cfg.getint("max_attempts")
-        item.update(state="failed" if failed else "retry", error=" ".join(err) or f"exit {code}", finished=time.time())
-        log(f"Comskip failed on {ts.name} (exit {code}{': ' + ' '.join(err) if err else ''})" + ("; giving up" if failed else "; will retry"))
-    save_state(state)
+    with LOCK:
+        if code in (0, 1):
+            if not edl.exists():
+                edl.write_text("")
+            breaks = [l for l in edl.read_text().splitlines() if l.strip()]
+            item.update(state="found" if breaks else "none", breaks=len(breaks), finished=time.time())
+            # How fast scans go (bytes and seconds so far), for the page's time left.
+            if item.get("bytes"):
+                b, sec = state.get("speed", [0, 0])
+                state["speed"] = [b + item["bytes"], sec + (item["finished"] - item["since"])]
+            log(f"Done in {time.time() - t0:.0f} s: {len(breaks)} break(s) in {ts.name}")
+        else:
+            failed = item["attempts"] >= cfg.getint("max_attempts")
+            item.update(state="failed" if failed else "retry", error=" ".join(err) or f"exit {code}", finished=time.time())
+            log(f"Comskip failed on {ts.name} (exit {code}{': ' + ' '.join(err) if err else ''})" + ("; giving up" if failed else "; will retry"))
+        save_state(state)
 
 
 def tidy(state):
     """Forget recordings that are gone (deleted in NextPVR)."""
-    gone = [k for k in state["items"] if not Path(k).exists()]
-    for k in gone:
-        del state["items"][k]
-    if gone:
-        save_state(state)
+    with LOCK:
+        gone = [k for k in state["items"] if not Path(k).exists()]
+        for k in gone:
+            del state["items"][k]
+        if gone:
+            save_state(state)
 
 
-class Status(BaseHTTPRequestHandler):
-    """GET /api/status: what's been scanned, from the state file (written whole, so always complete)."""
+# ---- the page --------------------------------------------------------------------------------
 
-    def do_GET(self):
-        if self.path.split("?")[0] != "/api/status":
-            self.send_error(404)
-            return
+
+class Run:
+    """What the main loop and the page share."""
+
+    config_path = None
+    cfg = None
+    state = None
+    # Waiting to be scanned (from the last look), and when the next look is.
+    queue = []
+    next_look = 0.0
+
+
+def edl_seconds(ts):
+    """Total length of the commercials in a recording's .edl."""
+    total = 0.0
+    try:
+        for line in ts.with_suffix(".edl").read_text().splitlines():
+            parts = line.split()
+            if len(parts) >= 2:
+                total += max(0.0, float(parts[1]) - float(parts[0]))
+    except (OSError, ValueError):
+        pass
+    return round(total)
+
+
+def describe(ts):
+    """A recording as the page shows it, from its .xml (or its file name without one)."""
+    meta = info(ts) or {}
+    episode = ""
+    if meta.get("season") and meta.get("episode"):
+        episode = f"S{meta['season']}E{meta['episode']}"
+    if meta.get("subtitle"):
+        episode = f"{episode} · {meta['subtitle']}" if episode else meta["subtitle"]
+    return {
+        "file": str(ts),
+        "show": meta.get("title") or ts.stem,
+        "episode": episode,
+        "channel": meta.get("channel", ""),
+        "start": meta.get("startTime", ""),
+        "end": meta.get("endTime", ""),
+        "genres": meta.get("genres", []),
+    }
+
+
+def recording_now(cfg):
+    """Recordings still being written (NextPVR keeps a .ts.map beside them)."""
+    out = []
+    for d in recording_dirs(cfg):
+        for m in Path(d).rglob("*.ts.map"):
+            out.append(describe(Path(str(m)[: -len(".map")]))["show"])
+    return out
+
+
+def overview(unlocked):
+    cfg, state = Run.cfg, Run.state
+    with LOCK:
+        items = {k: dict(v) for k, v in state["items"].items()}
+    history, now = [], None
+    b, sec = state.get("speed", [0, 0])
+    rate = b / sec if sec > 0 else 0
+    for key, v in items.items():
+        ts = Path(key)
+        row = describe(ts) | {
+            "state": v.get("state"),
+            # A queued one the settings now leave out: says why rather than waiting forever.
+            "skipped": excluded(cfg, info(ts)) if v.get("state") == "queued" else None,
+            "breaks": v.get("breaks", 0),
+            "ads": edl_seconds(ts) if v.get("state") == "found" else 0,
+            "attempts": v.get("attempts", 0),
+            "error": v.get("error", ""),
+            "since": v.get("since"),
+            "finished": v.get("finished"),
+            "took": round(v["finished"] - v["since"]) if v.get("finished") and v.get("since") and v.get("state") != "scanning" else None,
+            "bytes": v.get("bytes"),
+        }
+        if v.get("state") == "scanning":
+            row["estimate"] = round(v["bytes"] / rate) if rate and v.get("bytes") else None
+            now = row
+        else:
+            history.append(row)
+    history.sort(key=lambda r: r.get("finished") or 0, reverse=True)
+    channels = state.get("channels") or sorted({r["channel"] for r in history if r["channel"]})
+    settings = {k: cfg[k] for k in EDITABLE}
+    return {
+        "host": socket.gethostname(),
+        "dirs": recording_dirs(cfg),
+        "interval": cfg.getint("interval"),
+        "next_look": max(0, round(Run.next_look - time.time())),
+        "now": now,
+        "queue": [describe(ts) for ts in Run.queue if not now or str(ts) != now["file"]],
+        "recording": recording_now(cfg),
+        "counts": {s: sum(1 for r in history if r["state"] == s) for s in ("found", "none", "failed", "retry", "queued")},
+        "history": history,
+        "settings": settings,
+        "only_channels": cfg["only_channels"],
+        "channels": channels,
+        "shows": sorted({r["show"] for r in history} | {q["show"] for q in map(describe, Run.queue)}),
+        "unlocked": unlocked,
+    }
+
+
+def write_settings(path, values):
+    """Sets keys in the .conf, keeping its comments: a "#key =" or "key =" line becomes "key = value"."""
+    lines = path.read_text().splitlines() if path.exists() else ["[scanner]"]
+    if not any(l.strip() == "[scanner]" for l in lines):
+        lines.insert(0, "[scanner]")
+    for key, value in values.items():
+        value = str(value).replace("\n", " ").strip()
+        pattern = re.compile(rf"^\s*#?\s*{re.escape(key)}\s*=")
+        for i, line in enumerate(lines):
+            if pattern.match(line):
+                lines[i] = f"{key} = {value}"
+                break
+        else:
+            lines.append(f"{key} = {value}")
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text("\n".join(lines) + "\n")
+    tmp.replace(path)
+
+
+class NextPvr:
+    """Checks the PIN the NextPVR way: a session and its salt, then md5(":" + md5(PIN) + ":" + salt)."""
+
+    # Sessions handed to the page to sign in with, by challenge id: (sid, when).
+    pending = {}
+    # Tokens for changes: token → expiry.
+    tokens = {}
+    failures = []
+
+    @staticmethod
+    def get(cfg, method, **params):
+        q = urllib.parse.urlencode({"method": method, "format": "json"} | params)
+        with urllib.request.urlopen(f"{cfg['nextpvr_url'].rstrip('/')}/service?{q}", timeout=10) as r:
+            return json.loads(r.read())
+
+    @classmethod
+    def challenge(cls, cfg):
+        r = cls.get(cfg, "session.initiate", ver="1.0", device="Comskip scanner")
+        cid = secrets.token_urlsafe(12)
+        now = time.time()
+        with LOCK:
+            cls.pending = {k: v for k, v in cls.pending.items() if now - v[1] < 120}
+            cls.pending[cid] = (r["sid"], now)
+        return {"challenge": cid, "salt": r["salt"]}
+
+    @classmethod
+    def login(cls, cfg, cid, md5):
+        now = time.time()
+        with LOCK:
+            cls.failures = [t for t in cls.failures if now - t < 300]
+            if len(cls.failures) >= 5:
+                return None, "Too many wrong PINs: wait a few minutes."
+            sid = cls.pending.pop(cid, (None, 0))[0]
+        if not sid:
+            return None, "That took too long: try again."
+        r = cls.get(cfg, "session.login", sid=sid, md5=md5)
+        if r.get("stat") != "ok":
+            with LOCK:
+                cls.failures.append(now)
+            return None, "Wrong PIN."
+        # While signed in: NextPVR's channel list, for the channel switches.
         try:
-            body = STATE.read_bytes()
-        except OSError:
-            body = b'{"items": {}}'
-        self.send_response(200)
-        self.send_header("Content-Type", "application/json")
+            chans = cls.get(cfg, "channel.list", sid=sid).get("channels", [])
+            names = [c["channelName"] for c in chans if c.get("channelName")]
+            if names:
+                with LOCK:
+                    Run.state["channels"] = names
+                    save_state(Run.state)
+        except (OSError, ValueError, KeyError):
+            pass
+        token = secrets.token_urlsafe(24)
+        with LOCK:
+            cls.tokens = {t: e for t, e in cls.tokens.items() if e > now}
+            cls.tokens[token] = now + 1800
+        return token, None
+
+    @classmethod
+    def valid(cls, token):
+        now = time.time()
+        with LOCK:
+            if token and cls.tokens.get(token, 0) > now:
+                cls.tokens[token] = now + 1800
+                return True
+        return False
+
+
+def rescan(keys):
+    """Scans these again: their .edl goes and they're queued (only recordings this scanner scanned,
+    and only ones the settings still let it scan)."""
+    n = 0
+    with LOCK:
+        for key in keys:
+            item = Run.state["items"].get(key)
+            if item is None or item.get("state") == "scanning":
+                continue
+            # Its marks would go and nothing would replace them.
+            if excluded(Run.cfg, info(Path(key))):
+                continue
+            Path(key).with_suffix(".edl").unlink(missing_ok=True)
+            Run.state["items"][key] = {"attempts": 0, "state": "queued"}
+            n += 1
+        save_state(Run.state)
+    WAKE.set()
+    return n
+
+
+class Handler(BaseHTTPRequestHandler):
+    def send(self, code, body, kind="application/json"):
+        if not isinstance(body, bytes):
+            body = json.dumps(body).encode()
+        self.send_response(code)
+        self.send_header("Content-Type", kind)
         self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(body)
+
+    def unlocked(self):
+        return NextPvr.valid(self.headers.get("X-Token"))
+
+    def do_GET(self):
+        path = self.path.split("?")[0]
+        try:
+            if path == "/api/status":
+                try:
+                    body = STATE.read_bytes()
+                except OSError:
+                    body = b'{"items": {}}'
+                self.send(200, body)
+            elif path == "/api/overview":
+                self.send(200, overview(self.unlocked()))
+            elif path == "/api/unlock":
+                self.send(200, NextPvr.challenge(Run.cfg))
+            elif path in ("/", "/index.html"):
+                self.send(200, PAGE.read_bytes(), "text/html; charset=utf-8")
+            else:
+                self.send_error(404)
+        except OSError as e:
+            self.send(502, {"error": f"NextPVR didn't answer: {e}"} if path == "/api/unlock" else {"error": str(e)})
+
+    def do_POST(self):
+        path = self.path.split("?")[0]
+        try:
+            n = int(self.headers.get("Content-Length") or 0)
+            body = json.loads(self.rfile.read(min(n, 65536)) or b"{}")
+        except ValueError:
+            self.send(400, {"error": "Not JSON"})
+            return
+        if path == "/api/unlock":
+            try:
+                token, problem = NextPvr.login(Run.cfg, str(body.get("challenge", "")), str(body.get("md5", "")))
+            except OSError as e:
+                self.send(502, {"error": f"NextPVR didn't answer: {e}"})
+                return
+            self.send(200 if token else 403, {"token": token} if token else {"error": problem})
+            return
+        # Everything else changes something: the token from unlocking (a header, so another site
+        # can't send it).
+        if not self.unlocked():
+            self.send(403, {"error": "Locked: unlock with the NextPVR PIN."})
+            return
+        if path == "/api/settings":
+            values = {k: body[k] for k in EDITABLE if k in body}
+            problems = [k for k in ("settle", "nice", "max_attempts") if k in values and not str(values[k]).isdigit()]
+            if "backfill" in values:
+                values["backfill"] = "true" if values["backfill"] in (True, "true") else "false"
+            if problems:
+                self.send(400, {"error": "Not a number: " + ", ".join(problems)})
+                return
+            with LOCK:
+                write_settings(Run.config_path, values)
+                Run.cfg = load_config(Run.config_path)
+            log("Settings changed on the page: " + ", ".join(f"{k}={v}" for k, v in values.items()))
+            WAKE.set()
+            self.send(200, {"saved": list(values)})
+        elif path == "/api/rescan":
+            keys = list(Run.state["items"]) if body.get("all") else [str(body.get("file", ""))]
+            self.send(200, {"queued": rescan(keys)})
+        else:
+            self.send_error(404)
 
     def log_message(self, *args):
         pass
@@ -221,12 +541,12 @@ class Status(BaseHTTPRequestHandler):
 
 def serve(port):
     try:
-        server = ThreadingHTTPServer(("", port), Status)
+        server = ThreadingHTTPServer(("", port), Handler)
     except OSError as e:
-        log(f"No status page on port {port}: {e}")
+        log(f"No page on port {port}: {e}")
         return
-    threading.Thread(target=server.serve_forever, name="status", daemon=True).start()
-    log(f"Status on port {port}: /api/status")
+    threading.Thread(target=server.serve_forever, name="page", daemon=True).start()
+    log(f"Page on port {port}: http://{socket.gethostname()}:{port}/")
 
 
 def main():
@@ -235,20 +555,24 @@ def main():
     ap.add_argument("--once", action="store_true", help="scan what's waiting, then stop")
     ap.add_argument("--dry-run", action="store_true", help="list what would be scanned")
     args = ap.parse_args()
-    cfg = load_config(Path(args.config))
-    state = load_state()
+    Run.config_path = Path(args.config)
+    Run.cfg = load_config(Run.config_path)
+    state = Run.state = load_state()
     # A scan cut short (stopped or restarted mid-scan) goes again.
     for item in state["items"].values():
         if item.get("state") == "scanning":
             item["state"] = "retry"
     save_state(state)
-    if not args.dry_run and cfg.getint("port"):
-        serve(cfg.getint("port"))
-    dirs = recording_dirs(cfg)
-    log(f"Watching {', '.join(dirs) or 'nothing'} every {cfg['interval']} s")
+    if not args.dry_run and Run.cfg.getint("port"):
+        serve(Run.cfg.getint("port"))
+    log(f"Watching {', '.join(recording_dirs(Run.cfg)) or 'nothing'} every {Run.cfg['interval']} s")
     while True:
+        # Settings changed in the file (or on the page) apply from the next look.
+        with LOCK:
+            Run.cfg = load_config(Run.config_path)
+        cfg = Run.cfg
         tidy(state)
-        waiting = candidates(cfg, state)
+        waiting = Run.queue = candidates(cfg, state)
         if args.dry_run:
             for ts in waiting:
                 print(ts)
@@ -259,7 +583,9 @@ def main():
             continue
         if args.once:
             return
-        time.sleep(cfg.getint("interval"))
+        Run.next_look = time.time() + cfg.getint("interval")
+        WAKE.wait(cfg.getint("interval"))
+        WAKE.clear()
 
 
 if __name__ == "__main__":

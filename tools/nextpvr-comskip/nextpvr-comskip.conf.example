@@ -12,11 +12,15 @@
 #only_channels =
 # Genres never scanned, e.g. News, Sports.
 #skip_genres =
+# Shows never scanned (titles as NextPVR shows them): one show on a channel that's otherwise scanned.
+#skip_shows =
 # Also scan recordings made before the scanner first ran.
 #backfill = true
 # Attempts before a recording is given up on.
 #max_attempts = 3
 # CPU priority for Comskip (19 = lowest).
 #nice = 15
-# Port for the status page (JDVR reads it for its badges); 0 turns it off.
+# Port for the page (http://<this machine>:8867/) and JDVR's badges; 0 turns it off.
 #port = 8867
+# NextPVR, for checking the PIN when the page unlocks.
+#nextpvr_url = http://127.0.0.1:8866
