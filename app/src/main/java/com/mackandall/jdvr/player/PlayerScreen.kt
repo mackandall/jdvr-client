@@ -924,7 +924,7 @@ private fun InfoBar(
         }
         actions()
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("▲ / CH change channel · ▼ mini guide · 0–9 type a number · ← 10 s back · → 30 s ahead · OK controls · Back leave", color = Jc.Muted, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+            Text("▲ / CH change channel · ▼ mini guide · 0–9 channel · ← 10 s back · → 30 s ahead · OK controls · Back leave", color = Jc.Muted, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
             // The time: here, as the transport row is full on live TV (audio, From start).
             Text(LocalDateTime.now().format(NowFormat), color = Jc.Text, fontSize = 16.sp, maxLines = 1, softWrap = false, modifier = Modifier.padding(start = 16.dp))
         }
