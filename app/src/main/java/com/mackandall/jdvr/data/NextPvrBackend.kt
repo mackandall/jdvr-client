@@ -1249,5 +1249,36 @@ class NextPvrBackend(
                     r.isSuccessful && Json.parseToJsonElement(r.body.string()).jsonObject["salt"] != null
                 }
             }.getOrDefault(false)
+
+        /**
+         * NextPVR servers on the home network: every address in this device's /24 with port 8866
+         * open (a short connect each, many at once), then asked whether it's NextPVR. NextPVR has a
+         * discovery broadcast, but it isn't documented; a sweep of 254 addresses takes a second or two.
+         */
+        suspend fun findOnNetwork(): List<String> =
+            withContext(Dispatchers.IO) {
+                val prefixes =
+                    runCatching {
+                        java.net.NetworkInterface.getNetworkInterfaces().toList()
+                            .filter { it.isUp && !it.isLoopback }
+                            .flatMap { it.inetAddresses.toList() }
+                            .filterIsInstance<java.net.Inet4Address>()
+                            .filter { it.isSiteLocalAddress }
+                            .mapNotNull { it.hostAddress?.substringBeforeLast('.') }
+                            .distinct()
+                    }.getOrDefault(emptyList())
+                val io = Dispatchers.IO.limitedParallelism(64)
+                prefixes.flatMap { prefix -> (1..254).map { "$prefix.$it" } }
+                    .map { host ->
+                        async(io) {
+                            val open =
+                                runCatching {
+                                    java.net.Socket().use { it.connect(java.net.InetSocketAddress(host, 8866), 300) }
+                                    true
+                                }.getOrDefault(false)
+                            "http://$host:8866".takeIf { open && answers(it) }
+                        }
+                    }.awaitAll().filterNotNull()
+            }
     }
 }
