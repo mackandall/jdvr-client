@@ -34,7 +34,7 @@ object Jdvr {
 
     val userId: UUID? get() = session.userId?.let { runCatching { UUID.fromString(it) }.getOrNull() }
 
-    val liveTv: LiveTvRepository by lazy { LiveTvRepository() }
+    val liveTv: TvBackend by lazy { LiveTvRepository() }
 
     fun init(context: Context) {
         appContext = context.applicationContext
