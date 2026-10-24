@@ -422,9 +422,34 @@ class NextPvrBackend(
         runCatching { call("recording.watched.set", mapOf("recording_id" to nextPvrId(p.itemId), "position" to positionMs / 1000)) }
     }
 
+    /**
+     * NextPVR's delete stops a recording under way (keeping the file) and deletes a finished one;
+     * so one still recording is stopped first, then deleted once NextPVR has closed it.
+     */
     override suspend fun deleteRecording(itemId: UUID): DeletedRecording {
-        call("recording.delete", mapOf("recording_id" to nextPvrId(itemId)))
+        val id = nextPvrId(itemId)
+        if (runCatching { recording(itemId).recordingNow }.getOrDefault(false)) {
+            call("recording.delete", mapOf("recording_id" to id))
+            repeat(10) {
+                if (!runCatching { recording(itemId).recordingNow }.getOrDefault(false)) return@repeat
+                kotlinx.coroutines.delay(500)
+            }
+        }
+        call("recording.delete", mapOf("recording_id" to id))
         return DeletedRecording(deleted = 1)
+    }
+
+    /** A recording under way can be stopped ("Stop recording"): NextPVR keeps what it has. */
+    override suspend fun activeRecordings(itemId: UUID): ActiveRecordings? {
+        if (itemId.mostSignificantBits != RECORDING) return null
+        val r = runCatching { recording(itemId) }.getOrNull() ?: return null
+        return ActiveRecordings(canStop = true, recordings = if (r.recordingNow) listOf(ActiveRecording(id = r.uuid.toString(), name = r.name)) else emptyList())
+    }
+
+    override suspend fun stopRecording(recordingId: String): Boolean {
+        val id = runCatching { UUID.fromString(recordingId) }.getOrNull() ?: return false
+        call("recording.delete", mapOf("recording_id" to nextPvrId(id)))
+        return true
     }
 
     override suspend fun deleteItem(itemId: UUID) {
@@ -605,10 +630,6 @@ class NextPvrBackend(
     override suspend fun emptyTrash(): Int? = null
 
     override suspend fun trashDays(): Int? = null
-
-    override suspend fun activeRecordings(itemId: UUID): ActiveRecordings? = null
-
-    override suspend fun stopRecording(recordingId: String): Boolean = false
 
     override suspend fun deleteShowRecordings(
         seriesId: UUID,
