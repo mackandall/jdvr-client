@@ -1,6 +1,8 @@
 package com.mackandall.jdvr.data
 
 import com.mackandall.jdvr.data.LiveTvRepository.*
+import com.mackandall.jdvr.ui.day
+import com.mackandall.jdvr.ui.time
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -865,9 +867,69 @@ class NextPvrBackend(
 
     override suspend fun guideScanning(): Map<String, Int?> = emptyMap()
 
-    override suspend fun homeExtras(): HomeExtras? = null
+    // Home: the default recording folder's drive (system.space), and recordings that failed this past week.
+    override suspend fun homeExtras(): HomeExtras? {
+        val space = runCatching { call("system.space").jsonArray.firstOrNull()?.jsonObject }.getOrNull()
+        val weekAgo = System.currentTimeMillis() / 1000 - 7 * 86400
+        val failed =
+            runCatching {
+                call("recording.list", mapOf("filter" to "failed")).jsonObject["recordings"]?.jsonArray.orEmpty().map { it.jsonObject }
+                    .filter { (it.long("startTime") ?: 0) > weekAgo }
+                    .sortedByDescending { it.long("startTime") }
+                    .map { o ->
+                        val at = LocalDateTime.ofInstant(Instant.ofEpochSecond(o.long("startTime") ?: 0), ZoneId.systemDefault())
+                        Attention(
+                            kind = "failed",
+                            title = listOfNotNull(o.str("name"), o.str("subtitle")?.takeIf { it.isNotBlank() }).joinToString(" · "),
+                            detail = listOfNotNull("Failed", at.day() + " " + at.time(), o.str("channel")).joinToString(" · "),
+                        )
+                    }
+            }.getOrDefault(emptyList())
+        return HomeExtras(
+            attention = failed,
+            drive = space?.let { Drive(freeBytes = it.long("free") ?: 0, totalBytes = it.long("total") ?: 0) },
+        )
+    }
 
-    override suspend fun tuners(channelId: UUID?): TunerStatus? = null
+    // What each tuner is doing (system.status): a stream is "LIVE&<buffer file>" for live TV, else a
+    // recording's file. Live buffers are named live-<channel name>-<n>-<tuner>.ts.
+    override suspend fun tuners(channelId: UUID?): TunerStatus? {
+        val devices = runCatching { call("system.status").jsonObject["status"]?.jsonArray.orEmpty().map { it.jsonObject } }.getOrNull() ?: return null
+        if (devices.isEmpty()) return null
+        val streams = devices.flatMap { d -> d["streams"]?.jsonArray.orEmpty().map { it.jsonPrimitive.content } }
+        val channels = if (streams.isEmpty()) emptyMap() else runCatching { channelInfo() }.getOrDefault(emptyMap())
+        val recordingNow =
+            if (streams.none { !it.startsWith("LIVE&") }) {
+                emptyList()
+            } else {
+                runCatching { call("recording.list", mapOf("filter" to "recording")).jsonObject["recordings"]?.jsonArray.orEmpty().map { it.jsonObject } }.getOrDefault(emptyList())
+            }
+        fun plain(s: String) = s.filter { it.isLetterOrDigit() }.lowercase()
+        val busy =
+            streams.map { st ->
+                val live = st.startsWith("LIVE&")
+                val file = st.substringAfter('&')
+                if (live) {
+                    val name = Regex("""live-(.+)-\d+-\d+\.ts$""").find(file.substringAfterLast('/'))?.groupValues?.get(1).orEmpty()
+                    val ch = channels.entries.firstOrNull { plain(it.value.str("channelName").orEmpty()) == plain(name) }
+                    BusyInput(
+                        channelId = ch?.let { channelUuid(it.key).toString() } ?: "",
+                        channelName = ch?.value?.str("channelName") ?: name.ifEmpty { "Live TV" },
+                        number = ch?.value?.str("channelNumberFormated") ?: "",
+                    )
+                } else {
+                    val r = recordingNow.firstOrNull { it.str("file") == file }
+                    val ch = r?.int("channelId")
+                    BusyInput(
+                        channelId = ch?.let { channelUuid(it).toString() } ?: "",
+                        channelName = r?.str("channel") ?: "",
+                        number = ch?.let { channels[it]?.str("channelNumberFormated") } ?: "",
+                        recording = listOf(r?.str("name") ?: file.substringAfterLast('/').substringBeforeLast('.')),
+                    )
+                }
+            }
+        return TunerStatus(capacity = devices.size, full = busy.size >= devices.size, busy = busy)
+    }
 
     companion object {
         // The URL parameter carrying a still-recording file's size when playback opened.
