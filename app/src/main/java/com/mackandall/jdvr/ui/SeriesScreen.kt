@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
@@ -79,6 +80,23 @@ fun SeriesScreen(entry: FocusRequester) {
         }
     }
 
+    val seriesList = androidx.compose.foundation.lazy.rememberLazyListState()
+    // NextPVR: a place up or down its priority list; the list comes back in the new order (the
+    // rows are keyed, so focus stays on the moved series' button).
+    fun move(
+        s: SeriesTimerInfoDto,
+        higher: Boolean,
+    ) {
+        scope.launch {
+            note = runCatching { Jdvr.nextPvrBackend?.moveSeries(s.id!!, higher); null }.getOrElse { "Didn't work: ${it.message ?: it.javaClass.simpleName}" }
+            series = runCatching { Jdvr.liveTv.seriesTimers() }.getOrNull() ?: series
+            // Keep the moved series on screen (the top row can scroll off above).
+            series?.indexOfFirst { it.id == s.id }?.takeIf { it >= 0 }?.let { i ->
+                if (seriesList.layoutInfo.visibleItemsInfo.none { it.index == i && it.offset >= 0 }) seriesList.animateScrollToItem(i)
+            }
+        }
+    }
+
     // NextPVR: its own series options, over the list.
     var nextPvrEditing by remember { mutableStateOf<String?>(null) }
     nextPvrEditing?.let { id ->
@@ -117,16 +135,23 @@ fun SeriesScreen(entry: FocusRequester) {
             // Jellyfin series recordings.
             Column(Modifier.weight(1f).fillMaxHeight()) {
                 Text("Series recordings", color = Jc.Text, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
-                Text(if (Jdvr.isNextPvr) "NextPVR's recurring recordings" else "Jellyfin's: tied to the guide's id for the show", color = Jc.Muted, fontSize = 13.sp)
+                Text(if (Jdvr.isNextPvr) "NextPVR's recurring recordings · when tuners clash, the higher one records" else "Jellyfin's: tied to the guide's id for the show", color = Jc.Muted, fontSize = 13.sp)
                 Spacer(8)
                 val list = series
                 when {
                     list == null -> Text("Loading…", color = Jc.Muted, fontSize = 15.sp)
                     list.isEmpty() -> Text("No series recordings.", color = Jc.Muted, fontSize = 15.sp)
                     else ->
-                        LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(bottom = 40.dp)) {
-                            items(list, key = { it.id ?: it.name ?: "" }) { s ->
-                                SeriesRow(s, if (s == list.first()) Modifier.focusRequester(entry) else Modifier, onEdit = { if (Jdvr.isNextPvr) nextPvrEditing = s.id else editing = s }) {
+                        LazyColumn(state = seriesList, verticalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(bottom = 40.dp)) {
+                            itemsIndexed(list, key = { _, it -> it.id ?: it.name ?: "" }) { i, s ->
+                                SeriesRow(
+                                    s,
+                                    if (s == list.first()) Modifier.focusRequester(entry) else Modifier,
+                                    onEdit = { if (Jdvr.isNextPvr) nextPvrEditing = s.id else editing = s },
+                                    // NextPVR: its priority order, moved a place at a time.
+                                    rank = if (Jdvr.isNextPvr) i + 1 else null,
+                                    onMove = if (Jdvr.isNextPvr) ({ higher -> move(s, higher) }) else null,
+                                ) {
                                     act {
                                         Jdvr.liveTv.cancelSeries(s.id!!)
                                         "Series recording cancelled: ${s.name}"
@@ -199,6 +224,8 @@ private fun SeriesRow(
     s: SeriesTimerInfoDto,
     modifier: Modifier,
     onEdit: () -> Unit,
+    rank: Int? = null,
+    onMove: ((Boolean) -> Unit)? = null,
     onCancel: () -> Unit,
 ) {
     var armed by remember(s.id) { mutableStateOf(false) }
@@ -212,12 +239,13 @@ private fun SeriesRow(
         Modifier.fillMaxWidth().background(Jc.Panel, RoundedCornerShape(10.dp)).padding(14.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        Text(s.name ?: "", color = Jc.Text, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+        Text((rank?.let { "$it · " } ?: "") + (s.name ?: ""), color = Jc.Text, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
         val details =
             listOfNotNull(
                 if (s.recordAnyChannel == true) "any channel" else s.channelName,
                 if (s.recordAnyTime == true) "any time" else null,
-                if (s.recordNewOnly == true) "new episodes only" else "all episodes",
+                // NextPVR's timeslot rules: their slot in place of which episodes.
+                s.overview ?: if (s.recordNewOnly == true) "new episodes only" else "all episodes",
                 if (s.skipEpisodesInLibrary == true) "skips ones in the library" else null,
                 padding(s.prePaddingSeconds, "early"),
                 padding(s.postPaddingSeconds, "late"),
@@ -226,6 +254,12 @@ private fun SeriesRow(
         Text(details, color = Jc.Muted, fontSize = 14.sp)
         Row(Modifier.padding(top = 4.dp)) {
             Button("Edit", modifier = modifier.padding(end = 8.dp), onClick = onEdit)
+            // Both on every row (at the top or bottom they do nothing), so a move never takes away
+            // the button focus is on.
+            onMove?.let { move ->
+                Button("▲ Higher", modifier = Modifier.padding(end = 8.dp)) { move(true) }
+                Button("▼ Lower", modifier = Modifier.padding(end = 8.dp)) { move(false) }
+            }
             Button(if (armed) "Press again: cancel the series" else "Cancel series recording") {
                 if (armed) onCancel() else armed = true
             }

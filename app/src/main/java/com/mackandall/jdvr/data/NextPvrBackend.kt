@@ -525,9 +525,12 @@ class NextPvrBackend(
 
     // ---- series recordings ------------------------------------------------------------------
 
-    /** NextPVR's recurring rules, in the shape the Series screen shows (padding there is minutes). */
+    /**
+     * NextPVR's recurring rules, in the shape the Series screen shows (padding there is minutes),
+     * highest priority first (NextPVR's lowest number: it wins when tuners clash).
+     */
     override suspend fun seriesTimers(): List<org.jellyfin.sdk.model.api.SeriesTimerInfoDto> =
-        call("recording.recurring.list").jsonObject["recurrings"]?.jsonArray.orEmpty().map { it.jsonObject }.map { r ->
+        call("recording.recurring.list").jsonObject["recurrings"]?.jsonArray.orEmpty().map { it.jsonObject }.sortedBy { it.int("priority") ?: Int.MAX_VALUE }.map { r ->
             val period = r.str("period").orEmpty()
             org.jellyfin.sdk.model.api.SeriesTimerInfoDto(
                 id = r.int("id")?.toString(),
@@ -537,6 +540,8 @@ class NextPvrBackend(
                 recordAnyChannel = (r.int("channelID") ?: 0) == 0 || period.contains("all channels", true),
                 // Types 3–6 record one timeslot (daily, weekly, weekdays, weekends).
                 recordAnyTime = (r.int("type") ?: 2) !in 3..6,
+                // A timeslot rule's slot as NextPVR words it: "2:30 AM - 3:00 AM (Daily)".
+                overview = period.replace('\u202f', ' ').takeIf { (r.int("type") ?: 2) in 3..6 },
                 recordNewOnly = period.contains("new", true),
                 skipEpisodesInLibrary = false,
                 keepUpTo = r.int("keep") ?: 0,
@@ -576,6 +581,14 @@ class NextPvrBackend(
         // The airing it was set up from: the timeslot of types 3–6.
         val start: LocalDateTime?,
     )
+
+    /** Moves a series one place up ([higher]) or down the priority list: it swaps with its neighbour. */
+    suspend fun moveSeries(
+        id: String,
+        higher: Boolean,
+    ) {
+        call("recording.recurring.priority", mapOf("recurring_id" to id, "direction" to if (higher) "higher" else "lower"))
+    }
 
     /** The server's default padding (minutes) and its recording folders ("Default" first). */
     class SeriesDefaults(val prePadding: Int, val postPadding: Int, val directories: List<String>)
