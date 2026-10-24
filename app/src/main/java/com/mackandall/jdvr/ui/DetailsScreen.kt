@@ -97,12 +97,8 @@ fun DetailsPage(
             return@Box
         }
         val item = det.item
-        det.backdropOf?.let {
-            AsyncImage(model = Jdvr.liveTv.backdropUrl(it), contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
-        }
-        // Darker on the left, where the text is; the picture shows through on the right.
-        Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(0f to Jc.Ink.copy(alpha = 0.97f), 0.55f to Jc.Ink.copy(alpha = 0.86f), 1f to Jc.Ink.copy(alpha = 0.35f))))
-        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0.6f to Jc.Ink.copy(alpha = 0f), 1f to Jc.Ink.copy(alpha = 0.9f))))
+        // The backdrop at the top right, behind the text's right side; none: the poster, blurred.
+        Backdrop(det.backdropOf?.let { Jdvr.liveTv.backdropUrl(it) }, Jdvr.liveTv.imageUrl(item.id, 720), strength = 0.85f)
 
         // TV's default scrolling pulls the focused button to ~30% down the screen, which cut off the
         // top of the page. Here it scrolls only as far as needed (to reach the cast), and back to

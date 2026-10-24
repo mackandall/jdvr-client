@@ -415,7 +415,8 @@ fun GuideScreen(
     // "Above the guide" / "Below the guide" (Settings): the details on a band, the grid at full width.
     @Composable
     fun band() =
-        Box(Modifier.fillMaxWidth().height(BandHeight).background(guidePanel())) {
+        // Light: the picture sits behind the details.
+        Box(Modifier.fillMaxWidth().height(BandHeight).background(guidePanel(0.3f))) {
             focused?.let { InfoBand(it, channels?.firstOrNull { c -> c.id == it.channelId }, symbols) }
                 ?: if (channels?.isEmpty() != true) Text("Move through the guide to see a programme here; OK for what you can do with it.", color = Jc.Muted, fontSize = 15.sp, modifier = Modifier.padding(22.dp)) else Unit
         }
@@ -553,34 +554,14 @@ fun GuideScreen(
 private fun guidePanel(alpha: Float = 0.78f): Color = if (Jdvr.prefs.guideArtSeconds > 0) Jc.Panel.seeThrough(alpha) else Jc.Panel
 
 /**
- * Behind the guide: the rested-on programme's picture, faded in, darkened where the grid is.
- * A landscape still fills the screen; a portrait poster stands full height on the right.
+ * Behind the guide: the rested-on programme's picture, faded in at the top right behind the
+ * details; a portrait poster (no wide picture) fills the screen blurred instead.
  */
 @Composable
 private fun GuideArt(program: Program?) {
-    androidx.compose.animation.Crossfade(targetState = program?.id, animationSpec = androidx.compose.animation.core.tween(700), label = "guide art") { id ->
-        if (id == null) return@Crossfade
-        var portrait by remember(id) { mutableStateOf<Boolean?>(null) }
-        Box(Modifier.fillMaxSize()) {
-            AsyncImage(
-                model = Jdvr.liveTv.imageUrl(id, 1080),
-                contentDescription = null,
-                contentScale = if (portrait == true) androidx.compose.ui.layout.ContentScale.FillHeight else androidx.compose.ui.layout.ContentScale.Crop,
-                alignment = Alignment.CenterEnd,
-                onSuccess = { portrait = it.result.image.height > it.result.image.width },
-                modifier = Modifier.fillMaxSize().alpha(if (portrait == null) 0f else 1f),
-            )
-            Box(
-                Modifier.fillMaxSize().background(
-                    androidx.compose.ui.graphics.Brush.horizontalGradient(
-                        0f to Jc.Ink.copy(alpha = 0.9f),
-                        0.6f to Jc.Ink.copy(alpha = 0.78f),
-                        1f to Jc.Ink.copy(alpha = 0.45f),
-                    ),
-                ),
-            )
-        }
-    }
+    // Its picture (NextPVR: fanart; Jellyfin: the guide's own, blurred when it's a poster).
+    val url = program?.let { Jdvr.liveTv.imageUrl(it.id, 1080) }
+    FadingBackdrop(program?.id, url, null)
 }
 
 /** The details band above the guide ("Above the guide" in Settings). */
