@@ -163,6 +163,7 @@ fun RecordingPlayerScreen(
                 }
             }
         player.addListener(listener)
+        val logger = playerLog("recording $itemId", player).also { player.addListener(it) }
         var current: LiveTvRepository.ItemPlayback? = null
         val job =
             MainScope().launch {
@@ -202,6 +203,7 @@ fun RecordingPlayerScreen(
             job.cancel()
             val position = player.currentPosition
             player.removeListener(listener)
+            player.removeListener(logger)
             player.release()
             // Reported in the background, so leaving the player never waits on the server.
             current?.let { p -> MainScope().launch { runCatching { Jdvr.liveTv.reportItem(p, position, paused = true, event = "stop") } } }
