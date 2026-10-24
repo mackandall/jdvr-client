@@ -531,10 +531,12 @@ class NextPvrBackend(
             val period = r.str("period").orEmpty()
             org.jellyfin.sdk.model.api.SeriesTimerInfoDto(
                 id = r.int("id")?.toString(),
-                name = r.str("name"),
+                // Switched off in its options: still listed, records nothing.
+                name = r.str("name") + if (r.bool("enabled") == false) " (switched off)" else "",
                 channelName = r.str("channel")?.takeIf { (r.int("channelID") ?: 0) != 0 },
                 recordAnyChannel = (r.int("channelID") ?: 0) == 0 || period.contains("all channels", true),
-                recordAnyTime = true,
+                // Types 3–6 record one timeslot (daily, weekly, weekdays, weekends).
+                recordAnyTime = (r.int("type") ?: 2) !in 3..6,
                 recordNewOnly = period.contains("new", true),
                 skipEpisodesInLibrary = false,
                 keepUpTo = r.int("keep") ?: 0,
@@ -549,7 +551,115 @@ class NextPvrBackend(
             )
         }
 
-    override suspend fun updateSeriesTimer(t: org.jellyfin.sdk.model.api.SeriesTimerInfoDto): Unit = error("Change this series in NextPVR's web page for now")
+    override suspend fun updateSeriesTimer(t: org.jellyfin.sdk.model.api.SeriesTimerInfoDto): Unit = error("NextPVR's series are changed with its own options")
+
+    /**
+     * A recurring rule's options, as NextPVR's web page's Advanced record sets them. [type] is
+     * NextPVR's: 1 new episodes, 2 all episodes, 3 daily / 4 weekly / 5 weekdays / 6 weekends in
+     * this timeslot, 7 all episodes on all channels. Padding is minutes; keep 0 = all.
+     */
+    data class SeriesRule(
+        // Null for a new rule, made from [eventId].
+        val id: Int?,
+        val eventId: Int?,
+        val name: String,
+        // 0: all channels.
+        val channelId: Int,
+        val channelName: String?,
+        val type: Int,
+        val keep: Int,
+        val prePadding: Int,
+        val postPadding: Int,
+        // Null: the server's default folder.
+        val directory: String?,
+        val enabled: Boolean,
+        // The airing it was set up from: the timeslot of types 3–6.
+        val start: LocalDateTime?,
+    )
+
+    /** The server's default padding (minutes) and its recording folders ("Default" first). */
+    class SeriesDefaults(val prePadding: Int, val postPadding: Int, val directories: List<String>)
+
+    suspend fun seriesDefaults(): SeriesDefaults {
+        val o = call("setting.list").jsonObject
+        return SeriesDefaults(
+            prePadding = o.str("prePadding")?.toIntOrNull() ?: 0,
+            postPadding = o.str("postPadding")?.toIntOrNull() ?: 0,
+            directories = o.str("recordingDirectories").orEmpty().split(',').map { it.trim() }.filter { it.isNotEmpty() }.ifEmpty { listOf("Default") },
+        )
+    }
+
+    /** What Record series starts from: all episodes on this channel, as NextPVR's own default. */
+    fun newSeriesRule(
+        programId: UUID,
+        name: String,
+        channelId: UUID?,
+        channelName: String?,
+        start: LocalDateTime?,
+        defaults: SeriesDefaults,
+    ) = SeriesRule(
+        id = null,
+        eventId = nextPvrId(programId),
+        name = name,
+        channelId = channelId?.let { nextPvrId(it) } ?: 0,
+        channelName = channelName,
+        type = 2,
+        keep = 0,
+        prePadding = defaults.prePadding,
+        postPadding = defaults.postPadding,
+        directory = null,
+        enabled = true,
+        start = start,
+    )
+
+    suspend fun seriesRule(id: String): SeriesRule? =
+        call("recording.recurring.list").jsonObject["recurrings"]?.jsonArray.orEmpty().map { it.jsonObject }
+            .firstOrNull { it.int("id")?.toString() == id }?.let { r ->
+                SeriesRule(
+                    id = r.int("id"),
+                    eventId = null,
+                    name = r.str("name").orEmpty(),
+                    channelId = r.int("channelID") ?: 0,
+                    channelName = r.str("channel")?.takeIf { (r.int("channelID") ?: 0) != 0 },
+                    type = r.int("type") ?: 2,
+                    keep = r.int("keep") ?: 0,
+                    prePadding = r.int("prePadding") ?: 0,
+                    postPadding = r.int("postPadding") ?: 0,
+                    directory = r.str("directoryID")?.trim('[', ']')?.takeIf { it.isNotEmpty() },
+                    enabled = r.bool("enabled") ?: true,
+                    start = r.long("startTimeTicks")?.let { time(it) },
+                )
+            }
+
+    /**
+     * Saves a rule: a new one from its guide entry, an existing one in place. Padding is always
+     * sent (left out, an edit keeps the old value). A rule on all channels has lost its channel,
+     * so going back to one channel takes the channel of its next airing in the guide.
+     */
+    suspend fun saveSeriesRule(r: SeriesRule) {
+        val params = mutableMapOf<String, Any?>(
+            "recurring_type" to r.type,
+            "keep" to r.keep,
+            "pre_padding" to r.prePadding,
+            "post_padding" to r.postPadding,
+            "directory_id" to r.directory,
+        )
+        if (r.id == null) {
+            params["event_id"] = r.eventId
+        } else {
+            params["recurring_id"] = r.id
+            params["enabled"] = r.enabled
+            if (r.type != 7) {
+                val channel = r.channelId.takeIf { it != 0 }
+                    ?: call("channel.listings.search", mapOf("title" to r.name)).jsonObject["listings"]?.jsonArray.orEmpty().map { it.jsonObject }
+                        .filter { it.str("name").equals(r.name, true) && (it.long("end") ?: 0) > Instant.now().epochSecond }
+                        .minByOrNull { it.long("start") ?: 0 }?.int("channelId")
+                    ?: error("${r.name} isn't in the guide: no channel to record it on")
+                params["channel_id"] = channel
+            }
+        }
+        call("recording.recurring.save", params)
+    }
 
     // ---- scheduled recordings ---------------------------------------------------------------
 

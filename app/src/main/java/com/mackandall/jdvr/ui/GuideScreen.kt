@@ -936,6 +936,9 @@ internal fun ProgramPanel(
         }
     }
 
+    // NextPVR's series options, opened by Record series.
+    var seriesOptions by remember { mutableStateOf(false) }
+
     fun act(block: suspend () -> String?) {
         scope.launch {
             val msg =
@@ -958,6 +961,20 @@ internal fun ProgramPanel(
             refresh()
             onChanged()
         }
+    }
+
+    if (seriesOptions) {
+        NextPvrSeriesOptions(
+            onDone = { msg ->
+                seriesOptions = false
+                if (msg != null) act { msg }
+            },
+            programId = program.id,
+            programName = program.name,
+            channelId = program.channelId,
+            channelName = channel?.name,
+            programStart = program.start,
+        )
     }
 
     // The panel is as wide as its two columns of buttons need; the header and note wrap to that.
@@ -1056,6 +1073,11 @@ internal fun ProgramPanel(
                                 }
                             } else {
                                 Button("Record series", modifier = Modifier.fillMaxWidth()) {
+                                    // NextPVR: its series options first (which airings, keep, padding).
+                                    if (Jdvr.isNextPvr) {
+                                        seriesOptions = true
+                                        return@Button
+                                    }
                                     act {
                                         Jdvr.liveTv.record(p.id, series = true)
                                         "Series recording set up."

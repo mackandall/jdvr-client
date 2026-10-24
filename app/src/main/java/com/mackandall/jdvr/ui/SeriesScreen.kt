@@ -79,6 +79,18 @@ fun SeriesScreen(entry: FocusRequester) {
         }
     }
 
+    // NextPVR: its own series options, over the list.
+    var nextPvrEditing by remember { mutableStateOf<String?>(null) }
+    nextPvrEditing?.let { id ->
+        NextPvrSeriesOptions(
+            onDone = { msg ->
+                nextPvrEditing = null
+                if (msg != null) act { msg }
+            },
+            ruleId = id,
+        )
+    }
+
     editing?.let { t ->
         androidx.activity.compose.BackHandler { editing = null }
         SeriesEditor(
@@ -114,7 +126,7 @@ fun SeriesScreen(entry: FocusRequester) {
                     else ->
                         LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(bottom = 40.dp)) {
                             items(list, key = { it.id ?: it.name ?: "" }) { s ->
-                                SeriesRow(s, if (s == list.first()) Modifier.focusRequester(entry) else Modifier, onEdit = { editing = s }) {
+                                SeriesRow(s, if (s == list.first()) Modifier.focusRequester(entry) else Modifier, onEdit = { if (Jdvr.isNextPvr) nextPvrEditing = s.id else editing = s }) {
                                     act {
                                         Jdvr.liveTv.cancelSeries(s.id!!)
                                         "Series recording cancelled: ${s.name}"
@@ -213,9 +225,8 @@ private fun SeriesRow(
             ).joinToString(" · ")
         Text(details, color = Jc.Muted, fontSize = 14.sp)
         Row(Modifier.padding(top = 4.dp)) {
-            // NextPVR's rules are changed in its web page for now.
-            if (!Jdvr.isNextPvr) Button("Edit", modifier = modifier.padding(end = 8.dp), onClick = onEdit)
-            Button(if (armed) "Press again: cancel the series" else "Cancel series recording", modifier = if (Jdvr.isNextPvr) modifier else Modifier) {
+            Button("Edit", modifier = modifier.padding(end = 8.dp), onClick = onEdit)
+            Button(if (armed) "Press again: cancel the series" else "Cancel series recording") {
                 if (armed) onCancel() else armed = true
             }
         }
@@ -342,7 +353,7 @@ private fun SeriesEditor(
 }
 
 @Composable
-private fun EditRow(
+internal fun EditRow(
     label: String,
     help: String,
     value: String,

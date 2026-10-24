@@ -41,6 +41,8 @@ object Jdvr {
     val liveTv: TvBackend get() = nextPvr ?: jellyfinTv
 
     val isNextPvr: Boolean get() = nextPvr != null
+    /** NextPVR's own calls (series options), when signed in to one. */
+    val nextPvrBackend: NextPvrBackend? get() = nextPvr
 
     fun init(context: Context) {
         appContext = context.applicationContext
