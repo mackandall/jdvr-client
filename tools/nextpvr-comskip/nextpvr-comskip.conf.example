@@ -1,0 +1,20 @@
+# Settings for nextpvr-comskip.py; copy to nextpvr-comskip.conf. Every line is optional.
+[scanner]
+# Where NextPVR records, comma separated; empty: read from NextPVR's config.xml.
+#recording_dirs =
+# Look for new recordings every N seconds.
+#interval = 60
+# Only scan a recording once its file hasn't changed for N seconds.
+#settle = 120
+# Commercial-free channels, never scanned: names as NextPVR shows them, or channel OIDs.
+#skip_channels =
+# If set, only these channels are scanned.
+#only_channels =
+# Genres never scanned, e.g. News, Sports.
+#skip_genres =
+# Also scan recordings made before the scanner first ran.
+#backfill = true
+# Attempts before a recording is given up on.
+#max_attempts = 3
+# CPU priority for Comskip (19 = lowest).
+#nice = 15

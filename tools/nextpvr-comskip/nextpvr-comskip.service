@@ -1,0 +1,11 @@
+[Unit]
+Description=Comskip for NextPVR recordings
+After=network.target
+
+[Service]
+ExecStart=/usr/bin/python3 %h/comskip/nextpvr-comskip.py
+Restart=on-failure
+RestartSec=30
+
+[Install]
+WantedBy=default.target
