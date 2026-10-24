@@ -211,7 +211,7 @@ const hm = (s) => { const d = s ? new Date(s.replace(" ", "T")) : null; return d
 function result(r) {
   switch (r.state) {
     case "found": return `<span class="result found">${r.breaks} break${r.breaks === 1 ? "" : "s"} · ${length(r.ads)}</span>`;
-    case "none": return `<span class="result">No ads</span>`;
+    case "none": return `<span class="result">${r.cleared ? "Marks removed" : "No ads"}</span>`;
     case "failed": return `<span class="result failed" title="${esc(r.error)}">Failed${r.error ? ": " + esc(r.error) : ""}</span>`;
     case "retry": return `<span class="result retry" title="${esc(r.error)}">Will retry (tried ${r.attempts})</span>`;
     case "queued": return r.skipped ? `<span class="result">Not scanned: ${esc(r.skipped)}</span>` : `<span class="result queued">Queued</span>`;
@@ -305,7 +305,7 @@ function renderHistory() {
       b.disabled = true;
       try {
         const r = await api("/api/rescan", { file: b.dataset.file });
-        $("histNote").textContent = r.queued ? "" : "Not rescanned: Settings leave it out (its channel, genre or show), so its marks would just go.";
+        $("histNote").textContent = r.queued ? "" : "Not rescanned: " + (r.reason || "it can't be right now.");
       } catch (e) { $("histNote").textContent = e.message; }
       refresh();
     };

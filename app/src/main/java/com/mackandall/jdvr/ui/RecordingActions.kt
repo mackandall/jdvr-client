@@ -1,5 +1,7 @@
 package com.mackandall.jdvr.ui
 
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -114,10 +116,12 @@ fun RecordingActions(
     LaunchedEffect(itemId, commercialsCheck) {
         commercials = runCatching { Jdvr.liveTv.commercialStatus(itemId) }.getOrNull()
         // A scan in progress: check again every few seconds until it's done.
+        val scanned = commercials?.inFlight == true
         while (commercials?.inFlight == true) {
             delay(4000)
             commercials = runCatching { Jdvr.liveTv.commercialStatus(itemId) }.getOrNull()
         }
+        if (scanned) CommercialMarks.changed++
     }
     LaunchedEffect(itemId, reload) { fav = runCatching { Jdvr.liveTv.favouriteForItem(itemId) }.getOrNull() }
     // JellyDVR Space: "Move to archive…" for recordings in the live folder. While a move runs it
@@ -225,13 +229,37 @@ fun RecordingActions(
     }
     // Comskip's tools, as in the web client's item menu (users allowed to edit recordings).
     // Comskip: scan, or remove what a scan found (in case it shouldn't have run); the button
-    // follows the item's status, and while a scan runs it checks back until it's done.
-    if (editTools && cut == null) {
+    // follows the item's status, and while a scan runs it checks back until it's done. NextPVR:
+    // the Comskip scanner beside it, when it's there and the marks are its own.
+    if ((editTools || (Jdvr.isNextPvr && tools && commercials != null)) && cut == null) {
         val c = commercials
+        // The button changes (scan → scanning → remove): focus stays on it rather than jumping away.
+        val comFocus = remember(itemId) { androidx.compose.ui.focus.FocusRequester() }
+        // (The old button reports losing focus as it goes, so "just had it" counts too.)
+        var comHadFocus by remember(itemId) { mutableStateOf(false) }
+        var comLostAt by remember(itemId) { androidx.compose.runtime.mutableLongStateOf(0L) }
+        val comModifier =
+            androidx.compose.ui.Modifier.focusRequester(comFocus).onFocusChanged {
+                if (it.isFocused) {
+                    comHadFocus = true
+                } else if (comHadFocus) {
+                    comHadFocus = false
+                    comLostAt = android.os.SystemClock.uptimeMillis()
+                }
+            }
+        LaunchedEffect(c?.inFlight, c?.found) {
+            if (comHadFocus || android.os.SystemClock.uptimeMillis() - comLostAt < 1000) {
+                // The new button needs a frame to be there.
+                repeat(10) {
+                    if (runCatching { comFocus.requestFocus() }.isSuccess) return@LaunchedEffect
+                    delay(30)
+                }
+            }
+        }
         when {
-            c?.inFlight == true -> Button("Scanning for commercials…") {}
+            c?.inFlight == true -> Button("Scanning for commercials…", modifier = comModifier) {}
             c?.found == true ->
-                Button(if (armedRemove) "Press again: remove commercials" else "Remove commercials") {
+                Button(if (armedRemove) "Press again: remove commercials" else "Remove commercials", modifier = comModifier) {
                     if (!armedRemove) {
                         armedRemove = true
                     } else {
@@ -239,12 +267,13 @@ fun RecordingActions(
                         scope.launch {
                             val r = runCatching { Jdvr.liveTv.removeCommercials(itemId) }.getOrNull()
                             onNote(r?.message?.ifEmpty { null } ?: "Couldn't remove them.")
+                            CommercialMarks.changed++
                             commercialsCheck++
                         }
                     }
                 }
             else ->
-                Button("Scan for commercials") {
+                Button("Scan for commercials", modifier = comModifier) {
                     scope.launch {
                         onNote(runCatching { Jdvr.liveTv.scanCommercials(itemId)?.message }.getOrNull() ?: "Couldn't start a scan.")
                         commercialsCheck++
@@ -588,3 +617,8 @@ fun rememberTrashDays(): Int? {
 }
 
 fun daysText(days: Int): String = if (days == 1) "1 day" else "$days days"
+
+/** Bumped when a recording's commercial marks change, so the details page's Commercials box reads them again. */
+object CommercialMarks {
+    var changed by mutableIntStateOf(0)
+}

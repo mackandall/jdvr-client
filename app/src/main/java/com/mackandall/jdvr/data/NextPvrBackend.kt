@@ -15,6 +15,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
@@ -24,6 +25,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
 import okhttp3.HttpUrl.Companion.toHttpUrl
+import okhttp3.MediaType.Companion.toMediaType
 import okio.buffer
 import org.jellyfin.sdk.model.api.PlayMethod
 import java.security.MessageDigest
@@ -1069,11 +1071,15 @@ class NextPvrBackend(
     override suspend fun commercialBadges(ids: List<UUID>): Map<String, CommercialBadge> =
         coroutineScope {
             val wanted = ids.filter { it.mostSignificantBits == RECORDING }
-            val busy = scanner().orEmpty().filterValues { it.str("state") in setOf("scanning", "failed") }
-            val files = if (busy.isEmpty()) emptyMap() else recordings().associate { it.uuid to it.o.str("file") }
-            val scanning = wanted.mapNotNull { id -> busy[files[id]]?.str("state")?.let { id to CommercialBadge(state = it) } }.toMap()
+            val items = scanner().orEmpty()
+            val busy = items.filterValues { it.str("state") in setOf("scanning", "queued", "failed") }
+            // Marks the user removed: no badge, rather than "no ads".
+            val cleared = items.filterValues { it["cleared"]?.jsonPrimitive?.booleanOrNull == true && it.str("state") == "none" }.keys
+            val files = if (busy.isEmpty() && cleared.isEmpty()) emptyMap() else recordings().associate { it.uuid to it.o.str("file") }
+            // Waiting to be scanned again shows as scanning.
+            val scanning = wanted.mapNotNull { id -> busy[files[id]]?.str("state")?.let { id to CommercialBadge(state = if (it == "queued") "scanning" else it) } }.toMap()
             val marked =
-                (wanted - scanning.keys).chunked(8).flatMap { chunk ->
+                (wanted - scanning.keys).filter { files[it] !in cleared }.chunked(8).flatMap { chunk ->
                     chunk.map { id -> async { edl(id)?.let { id to it } } }.awaitAll().filterNotNull()
                 }.associate { (id, breaks) ->
                     val minutes = ((breaks.sumOf { it.endMs - it.startMs } + 30_000) / 60_000).toInt()
@@ -1100,11 +1106,102 @@ class NextPvrBackend(
         }.toMap()
     }
 
-    override suspend fun scanCommercials(itemId: UUID): Message? = null
+    private fun scannerUrl(
+        path: String,
+        file: String? = null,
+    ) = baseUrl.toHttpUrl().newBuilder().port(8867).encodedPath(path).query(null).apply { file?.let { addQueryParameter("file", it) } }.build()
 
-    override suspend fun commercialStatus(itemId: UUID): CommercialStatus? = null
+    private fun scannerGet(
+        path: String,
+        file: String? = null,
+    ): JsonObject =
+        scannerHttp.newCall(okhttp3.Request.Builder().url(scannerUrl(path, file)).build()).execute().use { r ->
+            if (!r.isSuccessful) error("the scanner answered ${r.code}")
+            json.parseToJsonElement(r.body.string()).jsonObject
+        }
 
-    override suspend fun removeCommercials(itemId: UUID): Cleared? = null
+    // The scanner's token for changes. It unlocks the way NextPVR's own sign-in works, with the
+    // PIN's md5 this device already keeps: nobody types anything.
+    @Volatile private var scannerToken: String? = null
+
+    private fun unlockScanner(): String {
+        val c = scannerGet("/api/unlock")
+        val body = JsonObject(mapOf("challenge" to JsonPrimitive(c.str("challenge")), "md5" to JsonPrimitive(md5(":$pinMd5:${c.str("salt")}"))))
+        val reply = scannerSend("/api/unlock", body, null)
+        return reply.second.str("token") ?: error(reply.second.str("error") ?: "the scanner wouldn't unlock")
+    }
+
+    private fun scannerSend(
+        path: String,
+        body: JsonObject,
+        token: String?,
+    ): Pair<Int, JsonObject> {
+        val req =
+            okhttp3.Request.Builder().url(scannerUrl(path))
+                .post(okhttp3.RequestBody.create("application/json".toMediaType(), body.toString()))
+                .apply { token?.let { header("X-Token", it) } }
+                .build()
+        return scannerHttp.newCall(req).execute().use { r -> r.code to (runCatching { json.parseToJsonElement(r.body.string()).jsonObject }.getOrNull() ?: JsonObject(emptyMap())) }
+    }
+
+    /** A change on the scanner, unlocking first (or again, when its token has run out). */
+    private suspend fun scannerPost(
+        path: String,
+        file: String,
+    ): JsonObject =
+        withContext(Dispatchers.IO) {
+            val body = JsonObject(mapOf("file" to JsonPrimitive(file)))
+            var token = scannerToken ?: unlockScanner().also { scannerToken = it }
+            var reply = scannerSend(path, body, token)
+            if (reply.first == 403) {
+                token = unlockScanner().also { scannerToken = it }
+                reply = scannerSend(path, body, token)
+            }
+            // Its next status is asked for straight away.
+            scannerAt = 0L
+            if (reply.first !in 200..299) error(reply.second.str("error") ?: "the scanner answered ${reply.first}")
+            reply.second
+        }
+
+    // A finished recording's file, when the scanner is there to act on it.
+    private suspend fun scannerFile(itemId: UUID): String? {
+        if (itemId.mostSignificantBits != RECORDING || scanner() == null) return null
+        return runCatching { recording(itemId) }.getOrNull()?.takeIf { it.status == "ready" }?.o?.str("file")
+    }
+
+    /**
+     * Where the scanner is with a recording, for its menu: scanning (or waiting), found breaks
+     * (Remove commercial marks), or none / failed / not scanned (Scan for commercials). Null, so
+     * no buttons, without the scanner, or when the marks came from another tool.
+     */
+    override suspend fun commercialStatus(itemId: UUID): CommercialStatus? {
+        val file = scannerFile(itemId) ?: return null
+        val r = runCatching { withContext(Dispatchers.IO) { scannerGet("/api/recording", file) } }.getOrNull() ?: return null
+        // The badges' copy of the scanner's states is older than this: read it again next time.
+        if (scannerItems?.get(file)?.str("state") != r.str("state")) scannerAt = 0
+        if (r.bool("recording") != true || (r.bool("ours") != true && r.bool("edl") == true)) return null
+        return when (val state = r.str("state")) {
+            "scanning", "queued" -> CommercialStatus(inFlight = true, status = "Scanning")
+            "found" -> CommercialStatus(status = "Detected", breakCount = r.int("breaks"))
+            else -> CommercialStatus(status = state ?: "NotScanned", breakCount = 0)
+        }
+    }
+
+    override suspend fun scanCommercials(itemId: UUID): Message? {
+        val file = scannerFile(itemId) ?: return Message("The Comskip scanner isn't answering.")
+        val r = scannerPost("/api/rescan", file)
+        return Message(if ((r.int("queued") ?: 0) > 0) "Scanning again: new marks in a minute or two." else "Not rescanned: " + (r.str("reason") ?: "the scanner said no."))
+    }
+
+    override suspend fun removeCommercials(itemId: UUID): Cleared? {
+        val file = scannerFile(itemId) ?: return Cleared(message = "The Comskip scanner isn't answering.")
+        return try {
+            scannerPost("/api/clear", file)
+            Cleared(true, "Commercial marks removed. The scanner leaves it alone until you scan it again.")
+        } catch (e: IllegalStateException) {
+            Cleared(false, e.message ?: "Couldn't remove them.")
+        }
+    }
 
     override suspend fun fixAudioFormat(itemId: UUID): Message? = null
 

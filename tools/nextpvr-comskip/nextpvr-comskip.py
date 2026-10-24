@@ -15,6 +15,8 @@ While it runs it answers on http://<this machine>:<port>/:
   /api/status       JDVR's "scanning" and "scan failed" badges:
                     {"items": {"<recording file>": {"state": "scanning|found|none|queued|retry|failed", ...}}}
   /api/overview     everything the page shows
+  /api/recording    one recording (?file=): whose marks, its state, whether it can be rescanned
+  /api/rescan, /api/clear   (POST, unlocked) scan one again, or remove its marks (an empty .edl)
 Looking is open to the network. Changes (settings, rescans) need the NextPVR PIN: the page signs in
 to NextPVR through the scanner the way NextPVR's own clients do (a salted hash, so the PIN never
 leaves the browser), and gets a token for half an hour.
@@ -326,7 +328,9 @@ def overview(unlocked):
             "error": v.get("error", ""),
             "since": v.get("since"),
             "finished": v.get("finished"),
-            "took": round(v["finished"] - v["since"]) if v.get("finished") and v.get("since") and v.get("state") != "scanning" else None,
+            "took": round(v["finished"] - v["since"]) if v.get("finished") and v.get("since") and v.get("state") != "scanning" and not v.get("cleared") else None,
+            # Marks removed by hand (JDVR's Remove commercial marks): left alone until rescanned.
+            "cleared": bool(v.get("cleared")),
             "bytes": v.get("bytes"),
         }
         if v.get("state") == "scanning":
@@ -524,6 +528,55 @@ def rescan(keys):
     return n
 
 
+def recording_file(cfg, key):
+    """The recording at this path, if it is one: a .ts inside NextPVR's recording folders."""
+    ts = Path(key)
+    if ts.suffix != ".ts" or not ts.is_file():
+        return None
+    real = ts.resolve()
+    if not any(real.is_relative_to(Path(d).resolve()) for d in recording_dirs(cfg)):
+        return None
+    return ts
+
+
+def why_not_rescan(key):
+    """Why one recording can't be scanned again, or None: marks from another tool aren't the
+    scanner's to replace, and ones the settings leave out would just lose their marks."""
+    ts = recording_file(Run.cfg, key)
+    if ts is None:
+        return "That isn't a NextPVR recording."
+    with LOCK:
+        item = Run.state["items"].get(key)
+    if item is None:
+        return "Its marks come from another tool, not this scanner." if ts.with_suffix(".edl").exists() else "It hasn't been scanned yet: it's waiting its turn."
+    if item.get("state") in ("scanning", "queued"):
+        return "It's being scanned already." if item.get("state") == "scanning" else "It's already waiting to be scanned."
+    reason = excluded(Run.cfg, info(ts))
+    if reason:
+        return f"The scanner's settings leave it out ({reason}), so its marks would just go."
+    return None
+
+
+def clear(key):
+    """Removes a recording's commercial marks: an empty .edl, so NextPVR and JDVR see no ads and the
+    scanner leaves it alone until it's scanned again. Returns why not, or None."""
+    ts = recording_file(Run.cfg, key)
+    if ts is None:
+        return "That isn't a NextPVR recording."
+    with LOCK:
+        item = Run.state["items"].get(key)
+        if item is None and ts.with_suffix(".edl").exists():
+            return "Its marks come from another tool, not this scanner."
+        if item and item.get("state") == "scanning":
+            return "It's being scanned right now: try again when it's done."
+        ts.with_suffix(".edl").write_text("")
+        now = time.time()
+        Run.state["items"][key] = {"attempts": (item or {}).get("attempts", 0), "state": "none", "breaks": 0, "cleared": True, "since": now, "finished": now}
+        save_state(Run.state)
+    log(f"Marks removed from {ts.name}")
+    return None
+
+
 class Handler(BaseHTTPRequestHandler):
     def send(self, code, body, kind="application/json"):
         if not isinstance(body, bytes):
@@ -551,6 +604,21 @@ class Handler(BaseHTTPRequestHandler):
                 self.send(200, overview(self.unlocked()))
             elif path == "/api/unlock":
                 self.send(200, NextPvr.challenge(Run.cfg))
+            elif path == "/api/recording":
+                # One recording, for JDVR's menu: whose marks it has and what can be done.
+                key = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).get("file", [""])[0]
+                ts = recording_file(Run.cfg, key)
+                with LOCK:
+                    item = dict(Run.state["items"].get(key) or {})
+                self.send(200, {
+                    "recording": ts is not None,
+                    "edl": bool(ts and ts.with_suffix(".edl").exists()),
+                    "ours": bool(item),
+                    "state": item.get("state"),
+                    "breaks": item.get("breaks", 0),
+                    "cleared": bool(item.get("cleared")),
+                    "rescan": why_not_rescan(key),
+                })
             elif path == "/api/ini":
                 body = Path(Run.cfg["comskip_ini"]).read_bytes()
                 self.send(200, body, "text/plain; charset=utf-8")
@@ -599,8 +667,15 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/api/ini":
             self.ini(body)
         elif path == "/api/rescan":
-            keys = list(Run.state["items"]) if body.get("all") else [str(body.get("file", ""))]
-            self.send(200, {"queued": rescan(keys)})
+            if body.get("all"):
+                self.send(200, {"queued": rescan(list(Run.state["items"]))})
+                return
+            key = str(body.get("file", ""))
+            reason = why_not_rescan(key)
+            self.send(200, {"queued": 0 if reason else rescan([key]), "reason": reason})
+        elif path == "/api/clear":
+            reason = clear(str(body.get("file", "")))
+            self.send(409 if reason else 200, {"error": reason} if reason else {"cleared": True})
         else:
             self.send_error(404)
 

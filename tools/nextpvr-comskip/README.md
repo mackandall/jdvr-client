@@ -21,6 +21,10 @@ prompt and the ✂ badges. NextPVR deletes the `.edl` along with the recording.
   its own clients do, with a salted hash, so the PIN never leaves the browser and isn't stored.
 - **Status in JDVR.** JDVR shows "scanning" and "scan failed" on recordings, read from
   `/api/status` on the same port.
+- **Scan and remove from JDVR.** A recording's page in JDVR has "Scan for commercials" or
+  "Remove commercials". Removing leaves an empty `.edl`, so the scanner won't scan it again on its
+  own. JDVR signs in with the PIN it already has. It only offers these for recordings whose marks
+  the scanner made. Marks from your own Comskip run are left alone.
 - **No script in NextPVR's `scripts` folder.** NextPVR switches off its own auto transcoding when
   a PostProcessing script exists. This runs beside NextPVR and leaves that alone.
 
