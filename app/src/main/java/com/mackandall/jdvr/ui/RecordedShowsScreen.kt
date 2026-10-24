@@ -144,7 +144,8 @@ fun RecordedShowsScreen(
     }
     val show = openShow
     if (show != null) {
-        BackHandler { if (cameForShow) onLeave() else openShow = null }
+        // Back to the cards: loaded again, so a show emptied on its page (all deleted) goes.
+        BackHandler { if (cameForShow) onLeave() else { openShow = null; reloadCards++ } }
         ShowEpisodes(show, entry, filter, refresh, onPlay, onPlayItem)
         return
     }

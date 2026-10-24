@@ -127,7 +127,7 @@ fun TrashScreen(entry: FocusRequester) {
                             armed = false
                         }
                     }
-                    Button(if (armed) "Press again: delete all ${t.items.size} for good (${gb(t.bytes)})" else "Empty the trash", leading = { Dot(Jc.Recording) }) {
+                    Button(if (armed) "Press again: delete all ${t.items.size} for good (${gb(t.bytes)})" else "Empty the trash", leading = { TrashMark() }) {
                         if (!armed) {
                             armed = true
                         } else {
@@ -233,7 +233,7 @@ private fun TrashRow(
             Row(Modifier.padding(start = 14.dp, top = 6.dp, bottom = 6.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 if (canRestore) Button("Restore", leading = { Text("↩", color = Jc.Text) }, modifier = Modifier.focusRequester(first), onClick = onRestore)
                 if (canDelete) {
-                    Button(if (armed) "Press again: delete for good" else "Delete now", leading = { Dot(Jc.Recording) }, modifier = if (canRestore) Modifier else Modifier.focusRequester(first)) {
+                    Button(if (armed) "Press again: delete for good" else "Delete now", leading = { TrashMark() }, modifier = if (canRestore) Modifier else Modifier.focusRequester(first)) {
                         if (!armed) armed = true else onDelete()
                     }
                 }

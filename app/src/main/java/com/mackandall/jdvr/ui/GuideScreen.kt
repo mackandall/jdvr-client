@@ -1189,3 +1189,8 @@ internal fun androidx.compose.foundation.layout.BoxScope.ProgramActionsHost(
 
 @Composable
 fun Dot(color: androidx.compose.ui.graphics.Color) = Box(Modifier.size(12.dp).background(color, CircleShape))
+
+/** A delete button's mark: the menu's trash can, so it doesn't look like Record's dot. */
+@Composable
+fun TrashMark(color: androidx.compose.ui.graphics.Color = Jc.Recording) =
+    MenuGlyph(MenuIcon.Trash, IconSets.first(), 18.dp, color, color)

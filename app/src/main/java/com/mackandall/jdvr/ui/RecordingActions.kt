@@ -374,7 +374,7 @@ fun RecordingActions(
         armedDelete -> if (trashDays != null) "Press again: move to the trash" else "Press again: delete$from for good"
         else -> "Delete$from"
     }
-    if (canDelete && (if (manage) rights.delete else rights.deleteArchive) && cut == null) Button(deleteLabel, leading = { Dot(Jc.Recording) }) {
+    if (canDelete && (if (manage) rights.delete else rights.deleteArchive) && cut == null) Button(deleteLabel, leading = { TrashMark() }) {
         if (!armedDelete) {
             armedDelete = true
         } else {
@@ -524,7 +524,7 @@ fun ShowActions(
                 armedDelete -> "Press again: delete $what ($size) $forGood"
                 else -> "Delete all $what"
             },
-            leading = { Dot(Jc.Recording) },
+            leading = { TrashMark() },
         ) {
             if (deleting) return@Button
             if (!armedDelete) {
@@ -557,7 +557,7 @@ fun ShowActions(
                 armedArchived -> "Press again: delete $what ($size) from $from $forGood"
                 else -> "Delete all $what"
             },
-            leading = { Dot(Jc.Recording) },
+            leading = { TrashMark() },
         ) {
             if (deleting) return@Button
             if (!armedArchived) {

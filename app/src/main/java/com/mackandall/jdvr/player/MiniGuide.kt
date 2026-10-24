@@ -1,5 +1,6 @@
 package com.mackandall.jdvr.player
 
+import com.mackandall.jdvr.ui.ProgramActionsHost
 import android.view.KeyEvent as AndroidKeyEvent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -333,36 +334,38 @@ fun MiniGuide(
     // The guide's programme panel, on the right over the picture.
     detail?.let { p ->
         androidx.activity.compose.BackHandler { detail = null }
-        com.mackandall.jdvr.ui.ProgramPanel(
-            program = p,
-            channel = channels.firstOrNull { it.id == p.channelId },
-            symbols = symbols,
-            onWatch = {
-                detail = null
-                onWatch(p.channelId)
-            },
-            onWatchFromStart = { id ->
-                detail = null
-                onPlayRecording(com.mackandall.jdvr.PlayRecording(id, startMs = 0L))
-            },
-            onPlayItem = {
-                detail = null
-                onPlayRecording(it)
-            },
-            onChanged = { reload++ },
-            onClose = { detail = null },
-            onActed = { msg ->
-                note = msg
-                detail = null
-                scope.launch {
-                    delay(1500)
-                    reload++
-                    delay(2000)
-                    note = null
-                }
-            },
-            modifier = Modifier.align(Alignment.CenterEnd).width(380.dp),
-        )
+        ProgramActionsHost(onDismiss = { detail = null }) {
+            com.mackandall.jdvr.ui.ProgramPanel(
+                program = p,
+                channel = channels.firstOrNull { it.id == p.channelId },
+                symbols = symbols,
+                onWatch = {
+                    detail = null
+                    onWatch(p.channelId)
+                },
+                onWatchFromStart = { id ->
+                    detail = null
+                    onPlayRecording(com.mackandall.jdvr.PlayRecording(id, startMs = 0L))
+                },
+                onPlayItem = {
+                    detail = null
+                    onPlayRecording(it)
+                },
+                onChanged = { reload++ },
+                onClose = { detail = null },
+                onActed = { msg ->
+                    note = msg
+                    detail = null
+                    scope.launch {
+                        delay(1500)
+                        reload++
+                        delay(2000)
+                        note = null
+                    }
+                },
+                modifier = Modifier.width(380.dp),
+            )
+        }
     }
     }
 }
