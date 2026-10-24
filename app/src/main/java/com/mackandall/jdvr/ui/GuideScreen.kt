@@ -105,7 +105,7 @@ private val LocalGuideExtras = androidx.compose.runtime.compositionLocalOf { Gui
 
 /** Each programme cell's own focus handle, by programme id: to put focus back on exactly that cell. */
 /** The channel last focused in the guide (this run): where the guide opens next time. */
-private var lastGuideChannel: UUID? = null
+private var lastGuideChannel: Pair<String, UUID>? = null
 
 private val LocalCellFocus = androidx.compose.runtime.staticCompositionLocalOf { mutableMapOf<UUID, FocusRequester>() }
 
@@ -300,7 +300,7 @@ fun GuideScreen(
     var gridHasFocus by remember { mutableStateOf(false) }
     fun onCellFocused(p: Program) {
         focused = p
-        lastGuideChannel = p.channelId
+        lastGuideChannel = Jdvr.serverKey to p.channelId
         if (p.id == verticalTo) verticalTo = null else anchor = maxOf(p.start, windowStart)
     }
 
@@ -355,7 +355,7 @@ fun GuideScreen(
     // Opening: the channel last focused in the guide, else the one last watched; its row scrolled
     // near the top so it's there to take focus.
     val openingOn = remember {
-        startChannel ?: lastGuideChannel ?: runCatching { UUID.fromString(Jdvr.session.lastChannelId) }.getOrNull()
+        startChannel ?: lastGuideChannel?.takeIf { it.first == Jdvr.serverKey }?.second ?: runCatching { UUID.fromString(Jdvr.session.lastChannelId) }.getOrNull()
     }
     // Where the opening programme is looked for: now, or the time asked for.
     val openingAt = remember { maxOf(startAt ?: LocalDateTime.now(), LocalDateTime.now()) }
@@ -527,7 +527,7 @@ private fun guidePanel(alpha: Float = 0.78f): Color = if (Jdvr.prefs.guideArtSec
  */
 @Composable
 private fun GuideArt(program: Program?) {
-    // Its picture (NextPVR: fanart; Jellyfin: the guide's own, blurred when it's a poster).
+    // Its picture: the guide's own, blurred when it's a poster.
     val url = program?.let { Jdvr.liveTv.imageUrl(it.id, 1080) }
     FadingBackdrop(program?.id, url, null)
 }

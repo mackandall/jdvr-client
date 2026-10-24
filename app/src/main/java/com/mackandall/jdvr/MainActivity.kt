@@ -76,8 +76,31 @@ data class PlayRecording(
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContent { JdvrTheme { AppRoot() } }
+        setContent { JdvrTheme { AppShell() } }
     }
+}
+
+/**
+ * The app for the server signed in to, started afresh when another is picked (Switch server: the
+ * sign-in screen, with the remembered servers; Back returns to this one).
+ */
+@Composable
+fun AppShell() {
+    var serverKey by remember { mutableStateOf(Jdvr.serverKey) }
+    var switching by remember { mutableStateOf(false) }
+    if (switching) {
+        Box(Modifier.fillMaxSize().screenBackground()) {
+            LoginScreen(
+                onSignedIn = {
+                    serverKey = Jdvr.serverKey
+                    switching = false
+                },
+                onCancel = { switching = false },
+            )
+        }
+        return
+    }
+    androidx.compose.runtime.key(serverKey) { AppRoot(onSwitchServer = { switching = true }, onServerChanged = { serverKey = Jdvr.serverKey }) }
 }
 
 /**
@@ -85,7 +108,11 @@ class MainActivity : ComponentActivity() {
  * its left edge, opens it again. Players sit on top of everything.
  */
 @Composable
-fun AppRoot() {
+fun AppRoot(
+    onSwitchServer: () -> Unit = {},
+    // Signed in again after signing out, maybe to another server: everything starts afresh.
+    onServerChanged: () -> Unit = {},
+) {
     var signedIn by remember { mutableStateOf(Jdvr.signedIn) }
     // Recordings being moved to the archive, for the cards' and details page's animation.
     if (signedIn) com.mackandall.jdvr.ui.MoveWatcherEffect()
@@ -164,7 +191,10 @@ fun AppRoot() {
     val focusManager = LocalFocusManager.current
 
     if (!signedIn) {
-        Box(Modifier.fillMaxSize().screenBackground()) { LoginScreen(onSignedIn = { signedIn = true }) }
+        Box(Modifier.fillMaxSize().screenBackground()) { LoginScreen(onSignedIn = {
+            signedIn = true
+            onServerChanged()
+        }) }
         return
     }
 
@@ -279,6 +309,7 @@ fun AppRoot() {
                                 Jdvr.signOut()
                                 signedIn = false
                             },
+                            onSwitchServer = onSwitchServer,
                             onExit = { backActivity?.finish() },
                         )
                     } else HomeScreen(
@@ -310,7 +341,7 @@ fun AppRoot() {
                 Screen.Scheduled -> ScheduledScreen(entry = entry, onPlayRecording = { playingRecording = it })
                 Screen.Series -> SeriesScreen(entry = entry)
                 Screen.Trash -> com.mackandall.jdvr.ui.TrashScreen(entry = entry)
-                Screen.Settings -> SettingsScreen(entry = entry, libraries = libraries, openMenuPage = settingsMenuPage)
+                Screen.Settings -> SettingsScreen(entry = entry, libraries = libraries, openMenuPage = settingsMenuPage, onSwitchServer = onSwitchServer)
             }
             }
         }
@@ -352,6 +383,10 @@ fun AppRoot() {
                     Jdvr.signOut()
                     railOpen = false
                     signedIn = false
+                },
+                onSwitchServer = {
+                    railOpen = false
+                    onSwitchServer()
                 },
             )
         }

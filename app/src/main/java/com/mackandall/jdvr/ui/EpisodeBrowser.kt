@@ -463,14 +463,14 @@ private fun TilesView(
     val start = remember(season) { FocusRequester() }
     LaunchedEffect(season) { runCatching { start.requestFocus() } }
 
-    // The picture behind: the show's backdrop; on NextPVR (no show item) the focused recording's
-    // fanart, once focus has rested a moment (no flicker while moving along the row).
+    // The picture behind: the show's backdrop; without one, the focused recording's picture, once
+    // focus has rested a moment (no flicker while moving along the row).
     var artFor by remember { mutableStateOf<UUID?>(null) }
     LaunchedEffect(focusedId) {
         if (artFor != null) kotlinx.coroutines.delay(300)
         artFor = focusedId
     }
-    val artId = backdrop ?: artFor?.takeIf { Jdvr.isNextPvr }
+    val artId = backdrop ?: artFor
 
     Box(Modifier.fillMaxSize()) {
         FadingBackdrop(

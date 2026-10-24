@@ -215,8 +215,8 @@ interface TvBackend {
     suspend fun commercialBadges(ids: List<UUID>): Map<String, CommercialBadge>
 
     /**
-     * The same for show cards whose ids aren't items (NextPVR's shows): a summary of their
-     * recordings. Jellyfin's shows are items, so [commercialBadges] covers them.
+     * The same for show cards whose ids aren't items: a summary of their recordings. Jellyfin's
+     * shows are items, so [commercialBadges] covers them.
      */
     suspend fun showCommercialBadges(showIds: List<String>): Map<String, CommercialBadge> = emptyMap()
 

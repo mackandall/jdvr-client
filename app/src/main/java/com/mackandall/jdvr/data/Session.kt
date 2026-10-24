@@ -62,7 +62,71 @@ class Session(
         prefs.edit().putString("recentChannels", list.joinToString(",")).apply()
     }
 
-    fun clear() = prefs.edit().clear().apply()
+    /** Forgets the signed-in server; the remembered ones stay. */
+    fun clear() =
+        prefs.edit().apply {
+            prefs.all.keys.filter { it != "servers" }.forEach { remove(it) }
+        }.apply()
+
+    /**
+     * Servers signed in to before, most recent first, each with its token (encrypted like the
+     * current one) and its last and recent channels, so switching back needs no sign-in.
+     */
+    var servers: List<SavedServer>
+        get() =
+            runCatching {
+                val arr = org.json.JSONArray(prefs.getString("servers", "[]"))
+                (0 until arr.length()).map { i ->
+                    val o = arr.getJSONObject(i)
+                    SavedServer(
+                        backend = o.optString("backend", "jellyfin"),
+                        url = o.getString("url"),
+                        name = o.optString("name").ifEmpty { o.getString("url") },
+                        userId = o.optString("userId").ifEmpty { null },
+                        userName = o.optString("userName").ifEmpty { null },
+                        token = o.optString("token").ifEmpty { null }?.let { TokenCipher.decrypt(it) },
+                        lastChannelId = o.optString("lastChannelId").ifEmpty { null },
+                        recentChannels = o.optString("recentChannels").split(',').filter { it.isNotBlank() },
+                    )
+                }
+            }.getOrDefault(emptyList())
+        set(v) {
+            val arr = org.json.JSONArray()
+            v.forEach { s ->
+                // A token that can't be encrypted isn't kept: that server asks to sign in again.
+                arr.put(
+                    org.json.JSONObject()
+                        .put("backend", s.backend)
+                        .put("url", s.url)
+                        .put("name", s.name)
+                        .put("userId", s.userId ?: "")
+                        .put("userName", s.userName ?: "")
+                        .put("token", s.token?.let { TokenCipher.encrypt(it) } ?: "")
+                        .put("lastChannelId", s.lastChannelId ?: "")
+                        .put("recentChannels", s.recentChannels.joinToString(",")),
+                )
+            }
+            prefs.edit().putString("servers", arr.toString()).apply()
+        }
+
+    fun restoreChannels(s: SavedServer) {
+        prefs.edit().putString("lastChannelId", s.lastChannelId).putString("recentChannels", s.recentChannels.joinToString(",")).apply()
+    }
+}
+
+/** A server signed in to before (see [Session.servers]); token null: it asks to sign in again. */
+data class SavedServer(
+    val backend: String,
+    val url: String,
+    val name: String,
+    val userId: String?,
+    val userName: String?,
+    val token: String?,
+    val lastChannelId: String? = null,
+    val recentChannels: List<String> = emptyList(),
+) {
+    // The same server and user (signing in again replaces it).
+    fun sameAs(o: SavedServer) = backend == o.backend && url == o.url && userId == o.userId
 }
 
 /** AES-GCM with a key that never leaves the Android keystore. */

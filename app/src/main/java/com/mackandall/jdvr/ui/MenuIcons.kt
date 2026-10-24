@@ -28,7 +28,7 @@ import com.mackandall.jdvr.data.Prefs
  * [IconSets]; a new entry, one more [MenuIcon] with a drawing in each set (a set without one
  * falls back to the Line set's).
  */
-enum class MenuIcon { Search, Home, Guide, LiveTv, Recorded, Libraries, Scheduled, Series, Trash, Settings, Profile, Exit, Movies, Tv, Archive, MoviesArchive, TvArchive, Music, Folder }
+enum class MenuIcon { Search, Home, Guide, LiveTv, Recorded, Libraries, Scheduled, Series, Trash, Settings, Profile, Server, Exit, Movies, Tv, Archive, MoviesArchive, TvArchive, Music, Folder }
 
 class Glyph(
     val strokes: List<String> = emptyList(),
@@ -89,6 +89,7 @@ private val LINE =
         MenuIcon.Trash to Glyph(listOf("M4 7h16", "M9.5 7V4.5h5V7", "M6.5 7l1 13h9l1-13", "M10.5 11v5.5M13.5 11v5.5")),
         MenuIcon.Settings to Glyph(listOf("M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z", "M15 12a3 3 0 1 1-6 0a3 3 0 1 1 6 0z")),
         MenuIcon.Profile to Glyph(listOf("M16 8a4 4 0 1 1-8 0a4 4 0 1 1 8 0z", "M4 21a8 8 0 0 1 16 0")),
+        MenuIcon.Server to Glyph(listOf("M5 4h14a1.5 1.5 0 0 1 1.5 1.5v3A1.5 1.5 0 0 1 19 10H5a1.5 1.5 0 0 1-1.5-1.5v-3A1.5 1.5 0 0 1 5 4z", "M5 14h14a1.5 1.5 0 0 1 1.5 1.5v3A1.5 1.5 0 0 1 19 20H5a1.5 1.5 0 0 1-1.5-1.5v-3A1.5 1.5 0 0 1 5 14z", "M7.5 7h.01M7.5 17h.01M11 7h5.5M11 17h5.5")),
         MenuIcon.Exit to Glyph(listOf("M12 3v9", "M17.4 6.6a8 8 0 1 1-10.8 0")),
         MenuIcon.Movies to Glyph(listOf("M4 10h16v9.5H4z", "M4 10 3.4 6.5 18.8 3.7l.6 3.5z", "m8.2 5.8 2.1 3.2M12.8 5l2.1 3.2")),
         MenuIcon.Tv to Glyph(listOf("M5 4h14a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z", "M8 20h8M12 16v4")),

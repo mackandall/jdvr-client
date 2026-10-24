@@ -22,7 +22,7 @@ object EditPermission {
     private var at = 0L
 
     suspend fun load() {
-        val user = Jdvr.userId?.toString()
+        val user = Jdvr.serverKey
         if (user != forUser) {
             info = null
             at = 0
@@ -38,6 +38,6 @@ object EditPermission {
 /** The signed-in user's edit permission; null (no edit buttons) until known. */
 @Composable
 fun editPermission(): LiveTvRepository.Editing? {
-    LaunchedEffect(Jdvr.userId) { EditPermission.load() }
+    LaunchedEffect(Jdvr.serverKey) { EditPermission.load() }
     return EditPermission.info?.takeIf { it.canEdit }
 }

@@ -159,8 +159,7 @@ fun RecordedShowsScreen(
         }
         Box(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color(0xC708090C)))
     } else {
-        // The other themes: the focused show's picture at the top right (a NextPVR show's from its
-        // newest recording), once focus rests on a card.
+        // The other themes: the focused show's picture at the top right, once focus rests on a card.
         var artCard by remember { mutableStateOf<LiveTvRepository.RecordingCard?>(null) }
         LaunchedEffect(focusedCard, cards) {
             if (artCard != null) kotlinx.coroutines.delay(300)

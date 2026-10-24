@@ -89,6 +89,7 @@ fun Rail(
     selected: Screen,
     onSelect: (Screen) -> Unit,
     onSignOut: () -> Unit,
+    onSwitchServer: () -> Unit = {},
     onExit: () -> Unit,
     libraries: List<LiveTvRepository.Library> = emptyList(),
     selectedLibrary: UUID? = null,
@@ -154,6 +155,7 @@ fun Rail(
             }
             if (!icons) {
                 add(Entry("settings", Screen.Settings.label, selected == Screen.Settings, Kind.Item, divider = true, icon = MenuIcon.Settings) { onSelect(Screen.Settings) })
+                add(Entry("switch", "Switch server", false, Kind.Item, icon = MenuIcon.Server) { onSwitchServer() })
                 add(Entry("signout", if (signOutArmed) "Press again to sign out" else "Sign out", false, Kind.Item, icon = MenuIcon.Profile) { signOut() })
                 add(Entry("exit", "Exit", false, Kind.Item, icon = MenuIcon.Exit, click = onExit))
             }
@@ -163,6 +165,7 @@ fun Rail(
     fun req(k: String) = reqs.getOrPut(k) { FocusRequester() }
     val gear = req("gear")
     val user = req("user")
+    val serverIcon = req("server")
     val power = req("power")
     val last = entries.lastOrNull()?.let { req(it.key) } ?: FocusRequester.Default
     val current =
@@ -280,6 +283,7 @@ fun Rail(
                 Text(
                     when (focusedKey) {
                         "gear" -> "Settings"
+                        "server" -> "Switch server"
                         "user" -> if (signOutArmed) "Press again to sign out" else "Sign out"
                         "power" -> "Exit JDVR"
                         else -> ""
@@ -304,6 +308,19 @@ fun Rail(
                             left = FocusRequester.Cancel
                         }.onFocusChanged { if (it.isFocused) focusedKey = "gear" },
                     ) { onSelect(Screen.Settings) }
+                    RailIcon(
+                        SERVER,
+                        MenuIcon.Server,
+                        iconSet,
+                        iconScale(entries.size).takeIf { focusedKey == "server" } ?: 1f,
+                        "Switch server",
+                        false,
+                        Modifier.focusRequester(serverIcon).focusProperties {
+                            up = last
+                            down = FocusRequester.Cancel
+                        }.onFocusChanged { if (it.isFocused) focusedKey = "server" },
+                        onClick = onSwitchServer,
+                    )
                     RailIcon(
                         USER,
                         MenuIcon.Profile,
@@ -468,6 +485,7 @@ private val GEAR =
         "M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z",
         "M15 12a3 3 0 1 1-6 0a3 3 0 1 1 6 0z",
     )
+private val SERVER = listOf("M5 4h14a1.5 1.5 0 0 1 1.5 1.5v3A1.5 1.5 0 0 1 19 10H5a1.5 1.5 0 0 1-1.5-1.5v-3A1.5 1.5 0 0 1 5 4z", "M5 14h14a1.5 1.5 0 0 1 1.5 1.5v3A1.5 1.5 0 0 1 19 20H5a1.5 1.5 0 0 1-1.5-1.5v-3A1.5 1.5 0 0 1 5 14z", "M7.5 7h.01M7.5 17h.01M11 7h5.5M11 17h5.5")
 private val USER = listOf("M16 8a4 4 0 1 1-8 0a4 4 0 1 1 8 0z", "M4 21a8 8 0 0 1 16 0")
 private val POWER = listOf("M12 2v10", "M18.4 6.6a9 9 0 1 1-12.8 0")
 private val CHEVRON_RIGHT = listOf("M9 18L15 12L9 6")

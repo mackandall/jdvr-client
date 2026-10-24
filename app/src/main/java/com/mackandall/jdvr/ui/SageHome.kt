@@ -117,6 +117,7 @@ fun SageHome(
     onOpenMenuSettings: () -> Unit,
     onPlayChannel: (UUID) -> Unit,
     onSignOut: () -> Unit,
+    onSwitchServer: () -> Unit = {},
     onExit: () -> Unit,
 ) {
     val prefs = Jdvr.prefs
@@ -236,6 +237,7 @@ fun SageHome(
                     listOf(
                         "Settings" to { onOpenScreen(Screen.Settings) },
                         "Menu order" to { onOpenMenuSettings() },
+                        "Switch server" to { onSwitchServer() },
                         (if (signOutArmed) "Press again to sign out" else "Sign out") to { if (signOutArmed) onSignOut() else signOutArmed = true },
                         "Exit" to { onExit() },
                     ),
