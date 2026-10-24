@@ -33,6 +33,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -851,8 +852,12 @@ private fun ProgramCell(
     ) {
         Column((if (sage && cellFocused) Modifier.sageGloss() else Modifier).fillMaxSize().padding(horizontal = 8.dp, vertical = 5.dp), verticalArrangement = Arrangement.Center) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                // Red for a recording; faint for a live TV buffer (only kept if someone presses Record).
-                if (program.isRecording) Box(Modifier.size(8.dp).background(Jc.Recording.copy(alpha = if (extras.isBuffer(program)) 0.35f else 1f), CircleShape))
+                // Red for a recording, two dots when a series records it; faint for a live TV buffer
+                // (only kept if someone presses Record).
+                if (program.isRecording) {
+                    if (program.seriesTimerId != null && !extras.isBuffer(program)) SeriesDots(height = 8.dp)
+                    else Box(Modifier.size(8.dp).background(Jc.Recording.copy(alpha = if (extras.isBuffer(program)) 0.35f else 1f), CircleShape))
+                }
                 Text(program.name, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
                 if (extras.scanning(program)) Text("CS", color = Jc.OnAmber, fontSize = 10.sp, fontWeight = FontWeight.Bold, modifier = Modifier.background(Jc.Amber, RoundedCornerShape(4.dp)).padding(horizontal = 4.dp))
             }
@@ -1054,7 +1059,7 @@ internal fun ProgramPanel(
                                     }
                                 }
                             } else {
-                                Button("Record series", modifier = Modifier.fillMaxWidth()) {
+                                Button("Record series", modifier = Modifier.fillMaxWidth(), leading = { SeriesDots() }) {
                                     act {
                                         Jdvr.liveTv.record(p.id, series = true)
                                         "Series recording set up."
@@ -1189,6 +1194,26 @@ internal fun androidx.compose.foundation.layout.BoxScope.ProgramActionsHost(
 
 @Composable
 fun Dot(color: androidx.compose.ui.graphics.Color) = Box(Modifier.size(12.dp).background(color, CircleShape))
+
+/**
+ * Record series' mark: two of Record's dots, the second over half of the first, a thin gap
+ * cut round it so both show on any button colour.
+ */
+@Composable
+fun SeriesDots(
+    color: androidx.compose.ui.graphics.Color = Jc.Recording,
+    height: androidx.compose.ui.unit.Dp = 12.dp,
+) =
+    androidx.compose.foundation.Canvas(
+        Modifier.size(width = height * 1.5f, height = height)
+            .graphicsLayer(compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen),
+    ) {
+        val r = size.height / 2
+        drawCircle(color, r, androidx.compose.ui.geometry.Offset(r, r))
+        val second = androidx.compose.ui.geometry.Offset(size.width - r, r)
+        drawCircle(androidx.compose.ui.graphics.Color.Black, r + size.height / 8, second, blendMode = androidx.compose.ui.graphics.BlendMode.Clear)
+        drawCircle(color, r, second)
+    }
 
 /** A delete button's mark: the menu's trash can, so it doesn't look like Record's dot. */
 @Composable
