@@ -616,7 +616,7 @@ fun PlayerScreen(
             tick.let {
                 val offset = behindLiveMs()
                 val realRecording = buffers.currentBuffer()?.kept == true || channel?.now?.let { it.timerId != null && it.id.toString().plainId() !in bufferIds } == true
-                InfoBar(channel, symbols, Modifier.align(Alignment.BottomCenter), behindMs = if (offset > 15_000) offset else 0L, recording = realRecording, formats = formats, watchingAt = LocalDateTime.now().minusNanos(offset * 1_000_000), bufferFrom = bufferFrom(offset)) {
+                InfoBar(channel, symbols, Modifier.align(Alignment.BottomCenter), behindMs = if (offset > 15_000) offset else 0L, recording = realRecording, formats = formats, watchingAt = LocalDateTime.now().minusNanos(offset * 1_000_000), bufferFrom = bufferFrom(offset), pausedAt = pausedAt) {
                     if (actionsOpen) {
                         val b = buffers.currentBuffer()
                         val behind = onHls
@@ -641,14 +641,15 @@ fun PlayerScreen(
                             }
                             TrackButtons(player)
                             fromStart?.let { rec ->
-                                Button("Watch from start") { onPlayRecording(com.mackandall.jdvr.PlayRecording(rec, startMs = 0L, liveChannelId = channelId)) }
+                                Button("From start") { onPlayRecording(com.mackandall.jdvr.PlayRecording(rec, startMs = 0L, liveChannelId = channelId)) }
                             }
                         }
                     }
                 }
             }
         }
-        pausedAt?.let { at ->
+        // In the bar when it shows; up here only behind the mini guide.
+        pausedAt?.takeIf { miniOpen }?.let { at ->
             Text(
                 "❚❚  Paused at " + LocalDateTime.ofInstant(at, ZoneId.systemDefault()).time() + "  ·  ▶ or OK to resume",
                 color = Jc.Text,
@@ -862,6 +863,7 @@ private fun InfoBar(
     // The moment on screen (live, or earlier when rewound), and how far back the buffer goes.
     watchingAt: LocalDateTime = LocalDateTime.now(),
     bufferFrom: LocalDateTime? = null,
+    pausedAt: java.time.Instant? = null,
     actions: @Composable () -> Unit = {},
 ) {
     val now = channel?.now
@@ -896,7 +898,21 @@ private fun InfoBar(
         }
         }
         val sub = listOfNotNull(now?.seasonEpisode, marks.title).joinToString(" · ")
-        if (sub.isNotEmpty()) Text(sub, color = Jc.Text, fontSize = 16.sp)
+        if (sub.isNotEmpty() || pausedAt != null) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+                if (sub.isNotEmpty()) Text(sub, color = Jc.Text, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                pausedAt?.let { at ->
+                    Text(
+                        "❚❚  Paused at " + LocalDateTime.ofInstant(at, ZoneId.systemDefault()).time() + "  ·  ▶ or OK to resume",
+                        color = Jc.Text,
+                        fontSize = 16.sp,
+                        maxLines = 1,
+                        softWrap = false,
+                        modifier = Modifier.background(Jc.Panel2, RoundedCornerShape(8.dp)).padding(horizontal = 12.dp, vertical = 4.dp),
+                    )
+                }
+            }
+        }
         if (now != null) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                 Text(now.start.time(), color = Jc.Muted, fontSize = 14.sp)
