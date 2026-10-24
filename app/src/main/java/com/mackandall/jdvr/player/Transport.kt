@@ -76,7 +76,9 @@ fun TransportBar(
         Spacer(Modifier.width(14.dp))
         extras()
         Spacer(Modifier.weight(1f))
-        Text(LocalDateTime.now().format(NowFormat), color = Jc.Text, fontSize = 16.sp)
+        // One line: squeezed by long extras (audio, Watch from start) it would wrap a letter a line
+        // and stretch the bar up the screen.
+        Text(LocalDateTime.now().format(NowFormat), color = Jc.Text, fontSize = 16.sp, maxLines = 1, softWrap = false)
     }
 }
 
