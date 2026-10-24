@@ -161,6 +161,20 @@ fun RecordingPlayerScreen(
                     Timber.w(e, "Recording playback error")
                     error = "Playback stopped: ${e.errorCodeName}"
                 }
+
+                // NextPVR: a recording still being made plays as long as it was when opened; at
+                // that end it opens again, longer, and goes on from there.
+                override fun onPlaybackStateChanged(state: Int) {
+                    if (state != Player.STATE_ENDED || !Jdvr.isNextPvr || !inProgress) return
+                    val at = player.currentPosition
+                    MainScope().launch {
+                        runCatching { Jdvr.liveTv.startItem(itemId) }.onSuccess { p ->
+                            player.setMediaItem(MediaItem.fromUri(p.url), at)
+                            player.prepare()
+                            player.play()
+                        }
+                    }
+                }
             }
         player.addListener(listener)
         var current: LiveTvRepository.ItemPlayback? = null

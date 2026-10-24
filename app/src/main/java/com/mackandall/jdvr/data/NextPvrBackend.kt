@@ -20,6 +20,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
 import okhttp3.HttpUrl.Companion.toHttpUrl
+import okio.buffer
 import org.jellyfin.sdk.model.api.PlayMethod
 import java.security.MessageDigest
 import java.time.Instant
@@ -175,18 +176,27 @@ class NextPvrBackend(
         return when (itemId.mostSignificantBits) {
             CHANNEL -> serviceUrl("channel.icon", mapOf("channel_id" to nextPvrId(itemId)), session)
             PROGRAM -> serviceUrl("channel.show.artwork", mapOf("event_id" to nextPvrId(itemId), "fanart" to true), session)
+            // A recording's poster (Recorded Shows' cards are portrait).
+            RECORDING -> serviceUrl("recording.artwork", mapOf("recording_id" to nextPvrId(itemId), "with_placeholder" to true), session)
             else -> ""
         }
     }
 
-    override fun backdropUrl(itemId: UUID): String = imageUrl(itemId, 1080)
+    override fun backdropUrl(itemId: UUID): String {
+        val session = sid ?: return ""
+        return if (itemId.mostSignificantBits == RECORDING) {
+            serviceUrl("recording.artwork", mapOf("recording_id" to nextPvrId(itemId), "fanart" to true), session)
+        } else {
+            imageUrl(itemId, 1080)
+        }
+    }
 
     override fun personImageUrl(personId: UUID): String = ""
 
     override fun imageUrl(
         itemId: String,
         maxHeight: Int,
-    ): String? = null
+    ): String? = runCatching { UUID.fromString(itemId) }.getOrNull()?.let { imageUrl(it, maxHeight) }?.ifEmpty { null }
 
     // ---- recording --------------------------------------------------------------------------
 
@@ -196,8 +206,8 @@ class NextPvrBackend(
         programId: UUID,
         series: Boolean,
     ) {
-        if (series) error("Record series isn't on NextPVR in JDVR yet")
-        call("recording.save", mapOf("event_id" to nextPvrId(programId)))
+        // A series: NextPVR's default rule for the show, as its web page's "Record series" makes.
+        call(if (series) "recording.recurring.save" else "recording.save", mapOf("event_id" to nextPvrId(programId)))
     }
 
     override suspend fun cancelRecording(timerId: String) {
@@ -238,18 +248,248 @@ class NextPvrBackend(
 
     override suspend fun warmHls(url: String) = Unit
 
-    private fun unsupported(): Nothing = error("Not available on NextPVR")
+    // ---- recordings -------------------------------------------------------------------------
 
-    // ---- what only Jellyfin and our plugins have ------------------------------------------
+    /** A NextPVR recording, from recording.list. */
+    private inner class Rec(val o: JsonObject) {
+        val id = o.int("id") ?: 0
+        val uuid get() = recordingUuid(id)
+        val name = o.str("name") ?: ""
+        // "S07E22 - The Bottle Deposit, Part 2": the episode title alone.
+        val episodeTitle = o.str("subtitle")?.replace(Regex("^S\\d+E\\d+( - )?"), "")?.takeIf { it.isNotBlank() }
+        val season = o.int("season")
+        val episode = o.int("episode")
+        val isSeries = season != null || episodeTitle != null
+        val start = o.long("startTime") ?: 0
+        val seconds = o.long("duration") ?: 0
+        val status = o.str("status") ?: ""
+        val recordingNow get() = status == "recording"
+        val done get() = status == "ready" || status == "recording"
+        val channelId = o.int("channelId")
+        val positionS = o.long("playbackPosition") ?: 0
+        val watched = o.bool("watched") == true
+        val startUtc get() = Instant.ofEpochSecond(start).toString()
+        val seasonEpisode get() = if (season != null && episode != null) "S$season:E$episode" else null
 
-    override suspend fun startItem(itemId: UUID): ItemPlayback = unsupported()
+        fun libItem() =
+            LibItem(
+                id = uuid, name = episodeTitle ?: name, type = if (isSeries) "Episode" else "Movie", year = null,
+                overview = o.str("desc")?.let { d -> episodeTitle?.let { d.removePrefix("$it: ") } ?: d }?.takeIf { it.isNotBlank() },
+                runtimeMin = seconds / 60, played = watched, resumeMs = positionS * 1000, unplayed = null,
+                season = season, episode = episode, seriesId = null, seriesName = name.takeIf { isSeries },
+                officialRating = o.str("rating"),
+            )
+    }
 
+    private suspend fun recordings(): List<Rec> =
+        call("recording.list", mapOf("filter" to "all")).jsonObject["recordings"]?.jsonArray.orEmpty().map { Rec(it.jsonObject) }
+
+    private suspend fun recording(id: UUID): Rec =
+        call("recording.list", mapOf("recording_id" to nextPvrId(id))).jsonObject["recordings"]?.jsonArray?.firstOrNull()?.let { Rec(it.jsonObject) }
+            ?: recordings().firstOrNull { it.uuid == id } ?: error("That recording is gone")
+
+    // Channels by NextPVR id (number, name, logo), for the lists that show a recording's channel.
+    @Volatile private var channelInfo: Map<Int, JsonObject>? = null
+
+    private suspend fun channelInfo(): Map<Int, JsonObject> =
+        channelInfo ?: call("channel.list").jsonObject["channels"]?.jsonArray.orEmpty().map { it.jsonObject }
+            .associateBy { it.int("channelId") ?: 0 }.also { channelInfo = it }
+
+    // A show is the recordings with its name.
+    private fun showId(name: String) = "show:$name"
+
+    override suspend fun recordedShows(filter: String): List<RecordingCard>? {
+        if (filter == "archived") return emptyList()
+        val done = recordings().filter { it.done }.sortedByDescending { it.start }
+        return done.groupBy { if (it.isSeries) showId(it.name) else it.uuid.toString() }.map { (key, recs) ->
+            val newest = recs.first()
+            if (newest.isSeries) {
+                RecordingCard(
+                    type = "Series", id = key, imageId = newest.uuid.toString(), name = newest.name,
+                    count = recs.size, unplayedCount = recs.count { !it.watched }, recordedUtc = newest.startUtc,
+                    recordingCount = recs.count { it.recordingNow },
+                )
+            } else {
+                RecordingCard(
+                    type = "Movie", id = key, name = newest.name, count = 1, unplayedCount = if (newest.watched) 0 else 1,
+                    recordedUtc = newest.startUtc, recordingCount = if (newest.recordingNow) 1 else 0,
+                )
+            }
+        }
+    }
+
+    override suspend fun showRecordings(
+        seriesId: String,
+        filter: String,
+    ): List<EpisodeRecording>? {
+        if (filter == "archived") return emptyList()
+        return recordings().filter { it.done && showId(it.name) == seriesId }.sortedByDescending { it.start }.map { r ->
+            EpisodeRecording(
+                id = r.uuid.toString(), name = r.episodeTitle ?: r.name, season = r.season, episode = r.episode, played = r.watched,
+                recordedUtc = r.startUtc, minutes = (r.seconds / 60).toInt(), recording = r.recordingNow,
+            )
+        }
+    }
+
+    override suspend fun recordingsByDate(filter: String): DateRecordings? {
+        if (filter == "archived") return DateRecordings()
+        val channels = channelInfo()
+        return DateRecordings(
+            recordings =
+                recordings().filter { it.done }.sortedByDescending { it.start }.map { r ->
+                    DateRecording(
+                        id = r.uuid.toString(), type = if (r.isSeries) "Episode" else "Movie", imageId = r.uuid.toString(), title = r.name,
+                        episodeTitle = r.episodeTitle, season = r.season, episode = r.episode, recordedUtc = r.startUtc,
+                        minutes = (r.seconds / 60).toInt(), played = r.watched, playedPercent = if (r.seconds > 0) (r.positionS * 100 / r.seconds).toInt() else 0,
+                        recording = r.recordingNow, overview = r.libItem().overview,
+                        channel =
+                            r.channelId?.let { id ->
+                                val c = channels[id]
+                                DateChannel(channelUuid(id).toString(), c?.str("channelName") ?: r.o.str("channel") ?: "", c?.str("channelNumberFormated"), c?.bool("channelIcon") == true)
+                            },
+                    )
+                },
+        )
+    }
+
+    override suspend fun libItem(id: UUID): LibItem = recording(id).libItem()
+
+    override suspend fun details(id: UUID): ItemDetails {
+        if (id.mostSignificantBits != RECORDING) unsupported()
+        val r = recording(id)
+        // recording.info: a list of key/value pairs ("0:Video Codec", "Size", "0:Audio Desc"…).
+        val info =
+            runCatching {
+                call("recording.info", mapOf("recording_id" to r.id)).jsonArray.associate { e -> e.jsonObject.str("key").orEmpty() to e.jsonObject.str("value").orEmpty() }
+            }.getOrDefault(emptyMap())
+        return ItemDetails(
+            item = r.libItem(),
+            tagline = null,
+            genres = (r.o["genres"] as? JsonArray)?.mapNotNull { it.jsonPrimitive.contentOrNull }.orEmpty(),
+            studios = emptyList(),
+            communityRating = null,
+            criticRating = null,
+            premiere = r.o.str("original")?.let { runCatching { LocalDateTime.parse(it).toLocalDate() }.getOrNull() },
+            backdropOf = r.uuid,
+            people = emptyList(),
+            video = listOfNotNull(info["0:Video Codec"], info["0:Video FPS"]?.let { "$it fps" }).joinToString(" · ").ifEmpty { null },
+            audio = info.filterKeys { it.endsWith(":Audio Desc") }.values.toList(),
+            subtitles = info.filterKeys { it.endsWith(":Subtitle") }.values.toList(),
+            file = listOfNotNull(info["Filename"]?.substringAfterLast('.')?.uppercase(), info["Size"]).joinToString(" · ").ifEmpty { null },
+            location = "NextPVR",
+            recordedAt = time(r.start),
+            canDelete = true,
+        )
+    }
+
+    /** The recording as NextPVR streams it (also while it's still recording; seeking works). */
+    override suspend fun startItem(itemId: UUID): ItemPlayback {
+        val r = recording(itemId)
+        val sid = session()
+        // Still recording: the file grows, and the player, reading its end for the duration, would
+        // chase it for ever. It gets the size it has now instead (see [snapshotLength]); at that
+        // end the player opens it again.
+        val info = if (r.recordingNow) runCatching { call("recording.info", mapOf("recording_id" to r.id)).jsonArray.associate { e -> e.jsonObject.str("key").orEmpty() to e.jsonObject.str("value").orEmpty() } }.getOrNull() else null
+        val url =
+            baseUrl.toHttpUrl().newBuilder().addPathSegment("live")
+                .addQueryParameter("recording", r.id.toString())
+                .addQueryParameter("client", "jdvr-$sid")
+                .addQueryParameter("sid", sid)
+                .apply { info?.get("Bytes")?.toLongOrNull()?.let { addQueryParameter(SNAPSHOT, it.toString()) } }
+                .build().toString()
+        return ItemPlayback(
+            itemId = itemId,
+            name = listOfNotNull(r.name, r.episodeTitle).joinToString(" - "),
+            url = url,
+            mediaSourceId = null,
+            playSessionId = null,
+            playMethod = PlayMethod.DIRECT_PLAY,
+            resumeMs = r.positionS * 1000,
+            durationMs = (info?.get("DurationSeconds")?.toLongOrNull() ?: r.seconds) * 1000,
+        )
+    }
+
+    /** Where it was left: NextPVR keeps one position per recording (its web page saves after 15 s). */
     override suspend fun reportItem(
         p: ItemPlayback,
         positionMs: Long,
         paused: Boolean,
         event: String,
-    ) = Unit
+    ) {
+        if (event == "start" || positionMs < 15_000) return
+        runCatching { call("recording.watched.set", mapOf("recording_id" to nextPvrId(p.itemId), "position" to positionMs / 1000)) }
+    }
+
+    override suspend fun deleteRecording(itemId: UUID): DeletedRecording {
+        call("recording.delete", mapOf("recording_id" to nextPvrId(itemId)))
+        return DeletedRecording(deleted = 1)
+    }
+
+    override suspend fun deleteItem(itemId: UUID) {
+        deleteRecording(itemId)
+    }
+
+    // No commercials from NextPVR yet; whether it's still recording (the player says so, and goes on).
+    override suspend fun liveSegments(itemId: UUID): Pair<Boolean, List<Segment>> =
+        (itemId.mostSignificantBits == RECORDING && runCatching { recording(itemId).recordingNow }.getOrDefault(false)) to emptyList()
+
+    override suspend fun recordingOfProgram(programId: UUID): UUID? =
+        recordings().firstOrNull { it.done && it.o.int("epgEventId") == nextPvrId(programId) }?.uuid
+
+    // ---- series recordings ------------------------------------------------------------------
+
+    /** NextPVR's recurring rules, in the shape the Series screen shows (padding there is minutes). */
+    override suspend fun seriesTimers(): List<org.jellyfin.sdk.model.api.SeriesTimerInfoDto> =
+        call("recording.recurring.list").jsonObject["recurrings"]?.jsonArray.orEmpty().map { it.jsonObject }.map { r ->
+            val period = r.str("period").orEmpty()
+            org.jellyfin.sdk.model.api.SeriesTimerInfoDto(
+                id = r.int("id")?.toString(),
+                name = r.str("name"),
+                channelName = r.str("channel")?.takeIf { (r.int("channelID") ?: 0) != 0 },
+                recordAnyChannel = (r.int("channelID") ?: 0) == 0 || period.contains("all channels", true),
+                recordAnyTime = true,
+                recordNewOnly = period.contains("new", true),
+                skipEpisodesInLibrary = false,
+                keepUpTo = r.int("keep") ?: 0,
+                prePaddingSeconds = (r.int("prePadding") ?: 0) * 60,
+                postPaddingSeconds = (r.int("postPadding") ?: 0) * 60,
+                isPrePaddingRequired = false,
+                isPostPaddingRequired = false,
+                priority = r.int("priority") ?: 0,
+                keepUntil = org.jellyfin.sdk.model.api.KeepUntil.UNTIL_DELETED,
+                dayPattern = null,
+                days = emptyList(),
+            )
+        }
+
+    override suspend fun updateSeriesTimer(t: org.jellyfin.sdk.model.api.SeriesTimerInfoDto): Unit = error("Change this series in NextPVR's web page for now")
+
+    // ---- scheduled recordings ---------------------------------------------------------------
+
+    override suspend fun upcoming(): List<Upcoming>? {
+        val channels = runCatching { channelInfo() }.getOrDefault(emptyMap())
+        return recordings().filter { it.status == "pending" || it.status == "recording" || it.status == "conflict" }.sortedBy { it.start }.map { r ->
+            Upcoming(
+                timerId = r.id.toString(),
+                programId = r.o.int("epgEventId")?.let { programUuid(it).toString() },
+                name = r.name,
+                episodeTitle = r.episodeTitle,
+                seasonEpisode = r.seasonEpisode,
+                start = r.startUtc,
+                end = Instant.ofEpochSecond(r.start + r.seconds).toString(),
+                channelNumber = r.channelId?.let { channels[it]?.str("channelNumberFormated") },
+                channelName = r.o.str("channel"),
+                kind = if ((r.o.int("recurringParent") ?: 0) > 0) "series" else "oneoff",
+                recordingNow = r.recordingNow,
+            )
+        }
+    }
+
+    override suspend fun schedule(): List<Upcoming>? = upcoming()
+
+    private fun unsupported(): Nothing = error("Not available on NextPVR")
+
+    // ---- what only Jellyfin and our plugins have ------------------------------------------
 
     override suspend fun libraries(): List<Library> = emptyList()
 
@@ -270,10 +510,6 @@ class NextPvrBackend(
         seriesId: UUID,
         seasonId: UUID?,
     ): List<LibItem> = emptyList()
-
-    override suspend fun details(id: UUID): ItemDetails = unsupported()
-
-    override suspend fun libItem(id: UUID): LibItem = unsupported()
 
     override suspend fun latestIn(
         libraryId: UUID,
@@ -308,8 +544,6 @@ class NextPvrBackend(
 
     override suspend fun favouriteForItem(itemId: UUID): FavouriteFor? = null
 
-    override suspend fun deleteItem(itemId: UUID) = Unit
-
     override suspend fun trash(): TrashList? = null
 
     override suspend fun restoreFromTrash(id: String): Boolean = false
@@ -319,8 +553,6 @@ class NextPvrBackend(
     override suspend fun emptyTrash(): Int? = null
 
     override suspend fun trashDays(): Int? = null
-
-    override suspend fun deleteRecording(itemId: UUID): DeletedRecording = unsupported()
 
     override suspend fun activeRecordings(itemId: UUID): ActiveRecordings? = null
 
@@ -391,19 +623,6 @@ class NextPvrBackend(
 
     override suspend fun removeFavourite(ruleId: String): Message? = null
 
-    override suspend fun recordedShows(filter: String): List<RecordingCard>? = null
-
-    override suspend fun recordingsByDate(filter: String): DateRecordings? = null
-
-    override suspend fun showRecordings(
-        seriesId: String,
-        filter: String,
-    ): List<EpisodeRecording>? = null
-
-    override suspend fun updateSeriesTimer(t: org.jellyfin.sdk.model.api.SeriesTimerInfoDto) = Unit
-
-    override suspend fun seriesTimers(): List<org.jellyfin.sdk.model.api.SeriesTimerInfoDto> = emptyList()
-
     override suspend fun favourites(): FavouritesList? = null
 
     override suspend fun setFavouriteEnabled(
@@ -416,17 +635,11 @@ class NextPvrBackend(
         keyword: Boolean,
     ): Message? = null
 
-    override suspend fun upcoming(): List<Upcoming>? = null
-
-    override suspend fun schedule(): List<Upcoming>? = null
-
     override suspend fun jellyfinRecordings(): List<RecordingCard>? = null
 
     override suspend fun recentlyAdded(limit: Int): List<RecordingCard>? = null
 
     override suspend fun segments(itemId: UUID): List<Segment> = emptyList()
-
-    override suspend fun liveSegments(itemId: UUID): Pair<Boolean, List<Segment>> = false to emptyList()
 
     override suspend fun buffers(channelId: UUID): List<Buffer> = emptyList()
 
@@ -445,19 +658,73 @@ class NextPvrBackend(
 
     override suspend fun guideScanning(): Map<String, Int?> = emptyMap()
 
-    override suspend fun recordingOfProgram(programId: UUID): UUID? = null
-
     override suspend fun homeExtras(): HomeExtras? = null
 
     override suspend fun tuners(channelId: UUID?): TunerStatus? = null
 
     companion object {
+        // The URL parameter carrying a still-recording file's size when playback opened.
+        private const val SNAPSHOT = "jdvrlen"
+
+        /**
+         * Makes a growing file look as long as it was when playback opened (the [SNAPSHOT] in its
+         * URL): replies say that length, and stop there. Other requests pass untouched.
+         */
+        val snapshotLength =
+            okhttp3.Interceptor { chain ->
+                val response = chain.proceed(chain.request())
+                val len = chain.request().url.queryParameter(SNAPSHOT)?.toLongOrNull() ?: return@Interceptor response
+                val body = response.body
+                val (from, to) =
+                    if (response.code == 206) {
+                        val range = response.header("Content-Range")?.substringAfter("bytes ")?.substringBefore('/') ?: return@Interceptor response
+                        (range.substringBefore('-').toLongOrNull() ?: 0L) to (range.substringAfter('-').toLongOrNull() ?: (len - 1))
+                    } else if (response.code == 200) {
+                        0L to len - 1
+                    } else {
+                        return@Interceptor response
+                    }
+                val end = minOf(to, len - 1)
+                val count = (end - from + 1).coerceAtLeast(0)
+                val capped =
+                    object : okhttp3.ResponseBody() {
+                        override fun contentType() = body.contentType()
+
+                        override fun contentLength() = count
+
+                        private val capped by lazy {
+                            object : okio.ForwardingSource(body.source()) {
+                                var left = count
+
+                                override fun read(sink: okio.Buffer, byteCount: Long): Long {
+                                    if (left <= 0) return -1
+                                    val n = super.read(sink, minOf(byteCount, left))
+                                    if (n > 0) left -= n
+                                    return n
+                                }
+                            }.buffer()
+                        }
+
+                        override fun source(): okio.BufferedSource = capped
+
+                        override fun close() = body.close()
+                    }
+                response.newBuilder()
+                    .header("Content-Length", count.toString())
+                    .apply { if (response.code == 206) header("Content-Range", "bytes $from-$end/$len") }
+                    .body(capped)
+                    .build()
+            }
+
         private const val CHANNEL = 0x4E50565200000001L
         private const val PROGRAM = 0x4E50565200000002L
+        private const val RECORDING = 0x4E50565200000003L
 
         fun channelUuid(id: Int) = UUID(CHANNEL, id.toLong())
 
         fun programUuid(id: Int) = UUID(PROGRAM, id.toLong())
+
+        fun recordingUuid(id: Int) = UUID(RECORDING, id.toLong())
 
         fun nextPvrId(id: UUID): Int = id.leastSignificantBits.toInt()
 

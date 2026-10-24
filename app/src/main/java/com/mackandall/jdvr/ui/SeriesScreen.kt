@@ -105,7 +105,7 @@ fun SeriesScreen(entry: FocusRequester) {
             // Jellyfin series recordings.
             Column(Modifier.weight(1f).fillMaxHeight()) {
                 Text("Series recordings", color = Jc.Text, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
-                Text("Jellyfin's: tied to the guide's id for the show", color = Jc.Muted, fontSize = 13.sp)
+                Text(if (Jdvr.isNextPvr) "NextPVR's recurring recordings" else "Jellyfin's: tied to the guide's id for the show", color = Jc.Muted, fontSize = 13.sp)
                 Spacer(8)
                 val list = series
                 when {
@@ -124,8 +124,8 @@ fun SeriesScreen(entry: FocusRequester) {
                         }
                 }
             }
-            // Recording Favourites.
-            Column(Modifier.weight(1f).fillMaxHeight()) {
+            // Recording Favourites (a Jellyfin plugin's: not on NextPVR).
+            if (!Jdvr.isNextPvr) Column(Modifier.weight(1f).fillMaxHeight()) {
                 Text("Recording Favourites", color = Jc.Text, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
                 Text("JellyDVR Schedule's: by title, on any channel", color = Jc.Muted, fontSize = 13.sp)
                 Spacer(8)
@@ -213,8 +213,9 @@ private fun SeriesRow(
             ).joinToString(" · ")
         Text(details, color = Jc.Muted, fontSize = 14.sp)
         Row(Modifier.padding(top = 4.dp)) {
-            Button("Edit", modifier = modifier, onClick = onEdit)
-            Button(if (armed) "Press again: cancel the series" else "Cancel series recording", modifier = Modifier.padding(start = 8.dp)) {
+            // NextPVR's rules are changed in its web page for now.
+            if (!Jdvr.isNextPvr) Button("Edit", modifier = modifier.padding(end = 8.dp), onClick = onEdit)
+            Button(if (armed) "Press again: cancel the series" else "Cancel series recording", modifier = if (Jdvr.isNextPvr) modifier else Modifier) {
                 if (armed) onCancel() else armed = true
             }
         }

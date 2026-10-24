@@ -46,7 +46,7 @@ object Jdvr {
         appContext = context.applicationContext
         session = Session(appContext)
         prefs = Prefs(appContext)
-        http = OkHttpClient.Builder().build()
+        http = OkHttpClient.Builder().addInterceptor(NextPvrBackend.snapshotLength).build()
         val factory = OkHttpFactory(http)
         jellyfin =
             createJellyfin {
