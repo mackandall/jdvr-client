@@ -51,6 +51,13 @@ All of them are optional:
 - Shows never scanned, for one show on a channel that's otherwise scanned.
 - Number of attempts, CPU priority, and the port (`0` turns the page off).
 
+The page's **Comskip** section shows which Comskip program and ini are in use, and the version.
+There you can view the ini, upload another one, switch between the inis in `~/comskip`, or put
+the previous one back. An upload is added beside the others and never replaces one. The page warns
+if an ini lacks `output_edl=1`, because without it there are no marks. The program itself can only
+be changed on the machine (replace `~/comskip/comskip`, or set `comskip =` in the `.conf`), so the
+PIN can't be used to run something else there.
+
 Changes apply from the scanner's next look, with no restart. The exception is the port, which
 needs `systemctl --user restart nextpvr-comskip`. A rescan only replaces marks the scanner made
 itself, and it leaves alone a recording the settings now exclude.

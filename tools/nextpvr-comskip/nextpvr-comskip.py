@@ -351,8 +351,72 @@ def overview(unlocked):
         "only_channels": cfg["only_channels"],
         "channels": channels,
         "shows": sorted({r["show"] for r in history} | {q["show"] for q in map(describe, Run.queue)}),
+        "comskip": comskip_info(cfg),
         "unlocked": unlocked,
     }
+
+
+_version = {}
+
+
+def comskip_version(path):
+    """Comskip's first line ("Comskip 0.83.001, made using ffmpeg"), cached until the file changes."""
+    try:
+        key = (path, Path(path).stat().st_mtime)
+    except OSError:
+        return "not found"
+    if key not in _version:
+        try:
+            r = subprocess.run([path, "--version"], capture_output=True, text=True, timeout=15)
+            lines = [l.strip() for l in (r.stderr + "\n" + r.stdout).splitlines() if l.strip()]
+            # Its name line goes to one stream and the rest to the other.
+            _version[key] = next((l for l in lines if l.lower().startswith("comskip")), lines[0] if lines else "unknown")
+        except (OSError, subprocess.TimeoutExpired) as e:
+            _version[key] = f"won't run: {e}"
+    return _version[key]
+
+
+def writes_edl(text):
+    """Whether an ini has Comskip write the .edl (output_edl=1): without it there are no marks."""
+    m = re.findall(r"^\s*output_edl\s*=\s*(\d+)", text, re.M | re.I)
+    return bool(m) and m[-1] != "0"
+
+
+def ini_files():
+    """The .ini files in the scanner's folder: the ones the page can pick between."""
+    return sorted(p.name for p in HERE.glob("*.ini"))
+
+
+def comskip_info(cfg):
+    ini = Path(cfg["comskip_ini"])
+    try:
+        text = ini.read_text(errors="replace")
+    except OSError:
+        text = None
+    previous = Run.state.get("ini_previous")
+    return {
+        "path": cfg["comskip"],
+        "version": comskip_version(cfg["comskip"]),
+        "ini": str(ini),
+        "ini_name": ini.name if ini.parent == HERE else None,
+        "ini_found": text is not None,
+        "ini_writes_edl": writes_edl(text or ""),
+        "inis": ini_files(),
+        "previous": Path(previous).name if previous and Path(previous).exists() and previous != str(ini) else None,
+        "folder": str(HERE),
+    }
+
+
+def use_ini(path):
+    """Switches Comskip to another ini (in the scanner's folder), remembering the one before."""
+    with LOCK:
+        current = Run.cfg["comskip_ini"]
+        if str(path) != current:
+            Run.state["ini_previous"] = current
+            save_state(Run.state)
+        write_settings(Run.config_path, {"comskip_ini": str(path)})
+        Run.cfg = load_config(Run.config_path)
+    log(f"Comskip ini is now {path} (was {current})")
 
 
 def write_settings(path, values):
@@ -487,6 +551,9 @@ class Handler(BaseHTTPRequestHandler):
                 self.send(200, overview(self.unlocked()))
             elif path == "/api/unlock":
                 self.send(200, NextPvr.challenge(Run.cfg))
+            elif path == "/api/ini":
+                body = Path(Run.cfg["comskip_ini"]).read_bytes()
+                self.send(200, body, "text/plain; charset=utf-8")
             elif path in ("/", "/index.html"):
                 self.send(200, PAGE.read_bytes(), "text/html; charset=utf-8")
             else:
@@ -498,7 +565,7 @@ class Handler(BaseHTTPRequestHandler):
         path = self.path.split("?")[0]
         try:
             n = int(self.headers.get("Content-Length") or 0)
-            body = json.loads(self.rfile.read(min(n, 65536)) or b"{}")
+            body = json.loads(self.rfile.read(min(n, 1024 * 1024)) or b"{}")
         except ValueError:
             self.send(400, {"error": "Not JSON"})
             return
@@ -529,11 +596,57 @@ class Handler(BaseHTTPRequestHandler):
             log("Settings changed on the page: " + ", ".join(f"{k}={v}" for k, v in values.items()))
             WAKE.set()
             self.send(200, {"saved": list(values)})
+        elif path == "/api/ini":
+            self.ini(body)
         elif path == "/api/rescan":
             keys = list(Run.state["items"]) if body.get("all") else [str(body.get("file", ""))]
             self.send(200, {"queued": rescan(keys)})
         else:
             self.send_error(404)
+
+    def ini(self, body):
+        """Upload a new ini (it never overwrites one: a taken name gets a number), use one already in
+        the folder, or go back to the one before. An ini that wouldn't write the .edl needs force."""
+        action = body.get("action")
+        if action == "previous":
+            previous = Run.state.get("ini_previous")
+            if not previous or not Path(previous).exists():
+                self.send(400, {"error": "There's no previous ini to go back to."})
+                return
+            use_ini(previous)
+            self.send(200, {"ini": Path(previous).name})
+            return
+        if action == "use":
+            name = str(body.get("name", ""))
+            if name not in ini_files():
+                self.send(400, {"error": f"No {name} in {HERE}."})
+                return
+            target = HERE / name
+            text = target.read_text(errors="replace")
+        elif action == "upload":
+            text = str(body.get("content", ""))
+            stem = re.sub(r"[^A-Za-z0-9._ -]", "", Path(str(body.get("name", "comskip.ini"))).stem).strip(" .") or "comskip"
+            if not text.strip() or len(text) > 512 * 1024 or "\0" in text:
+                self.send(400, {"error": "That doesn't look like an ini file (empty, binary or over 512 KB)."})
+                return
+            if "[" not in text and "=" not in text:
+                self.send(400, {"error": "That doesn't look like a Comskip ini: no settings in it."})
+                return
+            target = HERE / f"{stem}.ini"
+            n = 2
+            while target.exists():
+                target = HERE / f"{stem} ({n}).ini"
+                n += 1
+        else:
+            self.send(400, {"error": "Unknown action."})
+            return
+        if not writes_edl(text) and not body.get("force"):
+            self.send(409, {"warning": f"{target.name} doesn't have output_edl=1, so Comskip wouldn't write the .edl: no marks in NextPVR or JDVR."})
+            return
+        if action == "upload":
+            target.write_text(text)
+        use_ini(target)
+        self.send(200, {"ini": target.name})
 
     def log_message(self, *args):
         pass

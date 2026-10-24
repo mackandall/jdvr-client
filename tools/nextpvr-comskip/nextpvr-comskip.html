@@ -75,6 +75,12 @@ td .ep { display: block; color: var(--muted); font-size: 13px; }
 .check input { min-height: auto; width: 18px; height: 18px; }
 .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; align-items: center; }
 .note { color: var(--amber); font-size: 14px; }
+.kv { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; }
+.kv dt { color: var(--muted); font-size: 13px; padding-top: 2px; }
+.kv dd { margin: 0; overflow-wrap: anywhere; }
+code { font: 13px/1.4 ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+pre.ini { margin: 12px 0 0; max-height: 360px; overflow: auto; background: var(--panel2); border: 1px solid var(--line); border-radius: 8px; padding: 12px; font: 12px/1.45 ui-monospace, "SF Mono", Menlo, Consolas, monospace; white-space: pre; }
+@media (max-width: 560px) { .kv { grid-template-columns: 1fr; } .kv dt { padding-top: 8px; } }
 .ok { color: var(--accent); font-size: 14px; }
 fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
 </style>
@@ -110,6 +116,11 @@ fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
       </select>
     </div>
     <div id="history"></div>
+  </section>
+
+  <section class="card">
+    <div class="head"><h2>Comskip</h2></div>
+    <div id="comskip"></div>
   </section>
 
   <section class="card">
@@ -166,6 +177,10 @@ let data = null;
 let draft = null;
 let message = "";
 let armedAll = false;
+// The ini's text when "View" is open (null: closed), and a warning waiting for "Use it anyway".
+let iniText = null;
+let iniPending = null;
+let iniNote = "";
 
 function setToken(t) {
   token = t;
@@ -182,7 +197,7 @@ async function api(path, body) {
   }
   const r = await fetch(path, opts);
   const j = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(j.error || "The scanner answered " + r.status);
+  if (!r.ok) throw new Error(j.error || j.warning || "The scanner answered " + r.status);
   return j;
 }
 
@@ -386,6 +401,62 @@ function renderSettings() {
   };
 }
 
+function renderComskip() {
+  const c = data.comskip;
+  const locked = !data.unlocked;
+  const ok = c.ini_found && c.ini_writes_edl;
+  $("comskip").innerHTML = `
+    <dl class="kv">
+      <dt>Program</dt><dd><code>${esc(c.path)}</code><br><span class="muted">${esc(c.version)}</span></dd>
+      <dt>Settings file (ini)</dt><dd><code>${esc(c.ini)}</code>
+        ${!c.ini_found ? `<br><span class="note">Not found: Comskip can't run without it.</span>` : !c.ini_writes_edl ? `<br><span class="note">It doesn't have output_edl=1, so Comskip writes no .edl: no marks in NextPVR or JDVR.</span>` : ""}</dd>
+    </dl>
+    <div class="actions">
+      <button type="button" id="iniView">${iniText == null ? "View the ini" : "Hide the ini"}</button>
+      ${c.inis.length > 1 ? `<label for="iniPick" class="muted small">Use</label>
+        <select id="iniPick" ${locked ? "disabled" : ""}>${c.inis.map((n) => `<option ${n === c.ini_name ? "selected" : ""}>${esc(n)}</option>`).join("")}</select>
+        <button type="button" id="iniUse" ${locked ? "disabled" : ""}>Switch</button>` : ""}
+      <label class="muted small" for="iniFile">Upload an ini</label>
+      <input type="file" id="iniFile" accept=".ini,.txt,text/plain" ${locked ? "disabled" : ""} style="max-width:240px">
+      ${c.previous ? `<button type="button" id="iniBack" ${locked ? "disabled" : ""}>Put ${esc(c.previous)} back</button>` : ""}
+    </div>
+    ${iniPending ? `<p class="note" style="margin-top:10px">${esc(iniPending.warning)} <button type="button" id="iniForce">Use it anyway</button> <button type="button" id="iniCancel">Cancel</button></p>` : ""}
+    ${iniNote ? `<p class="${iniNote.startsWith("Now using") ? "ok" : "note"}" style="margin-top:10px">${esc(iniNote)}</p>` : ""}
+    ${iniText != null ? `<pre class="ini">${esc(iniText)}</pre>` : ""}
+    <p class="muted small" style="margin-top:12px">${locked ? "Unlock to switch or upload an ini. " : ""}An uploaded ini is added beside the others in <code>${esc(c.folder)}</code>, never over one. A new ini applies to the next scan; use Scan everything again to redo the old ones.
+      To use a different Comskip program, replace <code>${esc(c.path)}</code> on the NextPVR machine (or set <code>comskip =</code> in nextpvr-comskip.conf): the version above changes when it's picked up. The page can't change the program, so the PIN can't be used to run something else on that machine.</p>`;
+  $("iniView").onclick = async () => {
+    if (iniText != null) { iniText = null; renderComskip(); return; }
+    try { const r = await fetch("/api/ini", { cache: "no-store" }); iniText = r.ok ? await r.text() : "Couldn't read it."; } catch (e) { iniText = e.message; }
+    renderComskip();
+  };
+  const send = async (body) => {
+    iniNote = "";
+    try {
+      const r = await api("/api/ini", body);
+      iniPending = null;
+      iniNote = `Now using ${r.ini}.`;
+      if (iniText != null) iniText = await (await fetch("/api/ini", { cache: "no-store" })).text();
+    } catch (e) {
+      // 409: no output_edl=1, ask before using it.
+      if (/output_edl/.test(e.message)) iniPending = { warning: e.message, body };
+      else iniNote = e.message;
+    }
+    refresh();
+  };
+  if (locked) return;
+  if ($("iniUse")) $("iniUse").onclick = () => send({ action: "use", name: $("iniPick").value });
+  if ($("iniBack")) $("iniBack").onclick = () => send({ action: "previous" });
+  $("iniFile").onchange = async (e) => {
+    const f = e.target.files[0];
+    if (!f) return;
+    if (f.size > 512 * 1024) { iniNote = "That file is over 512 KB: not a Comskip ini."; renderComskip(); return; }
+    send({ action: "upload", name: f.name, content: await f.text() });
+  };
+  if ($("iniForce")) $("iniForce").onclick = () => send({ ...iniPending.body, force: true });
+  if ($("iniCancel")) $("iniCancel").onclick = () => { iniPending = null; renderComskip(); };
+}
+
 function render() {
   $("where").textContent = `${data.host} · recordings in ${data.dirs.join(", ") || "(none found)"}`;
   $("alive").className = "dot";
@@ -395,6 +466,7 @@ function render() {
   renderWaiting();
   renderSoFar();
   renderHistory();
+  if (!$("comskip").contains(document.activeElement)) renderComskip();
   // Not while something in the form has focus (it would lose what's being typed or picked).
   if (!$("settings").contains(document.activeElement)) renderSettings();
 }
