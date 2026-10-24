@@ -188,8 +188,10 @@ fun PlayerScreen(
                 }
             }
         player.addListener(listener)
+        val logger = playerLog("live", player).also { player.addListener(it) }
         onDispose {
             player.removeListener(listener)
+            player.removeListener(logger)
             player.release()
         }
     }

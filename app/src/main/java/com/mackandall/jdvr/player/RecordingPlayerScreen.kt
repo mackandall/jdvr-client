@@ -167,6 +167,7 @@ fun RecordingPlayerScreen(
                 override fun onPlaybackStateChanged(state: Int) {
                     if (state != Player.STATE_ENDED || !Jdvr.isNextPvr || !inProgress) return
                     val at = player.currentPosition
+                    Timber.tag("JDVRPlayer").i("recording %s: still recording, opening it again at %ds", itemId, at / 1000)
                     MainScope().launch {
                         runCatching { Jdvr.liveTv.startItem(itemId) }.onSuccess { p ->
                             player.setMediaItem(MediaItem.fromUri(p.url), at)
@@ -177,6 +178,7 @@ fun RecordingPlayerScreen(
                 }
             }
         player.addListener(listener)
+        val logger = playerLog("recording $itemId", player).also { player.addListener(it) }
         var current: LiveTvRepository.ItemPlayback? = null
         val job =
             MainScope().launch {
@@ -216,6 +218,7 @@ fun RecordingPlayerScreen(
             job.cancel()
             val position = player.currentPosition
             player.removeListener(listener)
+            player.removeListener(logger)
             player.release()
             // Reported in the background, so leaving the player never waits on the server.
             current?.let { p -> MainScope().launch { runCatching { Jdvr.liveTv.reportItem(p, position, paused = true, event = "stop") } } }
