@@ -30,6 +30,15 @@ class Prefs(
     var introSkip by mutableStateOf(p.getString("introSkip", ASK) ?: ASK)
         private set
 
+    /** NextPVR: the channel group the guide shows ("" = all channels). */
+    var channelGroup by mutableStateOf(p.getString("channelGroup", "") ?: "")
+        private set
+
+    fun changeChannelGroup(v: String) {
+        channelGroup = v
+        p.edit().putString("channelGroup", v).apply()
+    }
+
     /** Libraries kept out of the menu (by id); new ones show up. */
     var hiddenLibraries by mutableStateOf(p.getStringSet("hiddenLibraries", emptySet())?.toSet() ?: emptySet())
         private set

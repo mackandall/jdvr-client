@@ -9,7 +9,14 @@ import java.util.UUID
  * need our plugins answer null when the plugin isn't there, and the screens already hide what's missing.
  */
 interface TvBackend {
+    /** The channels to show: on NextPVR, those of the channel group picked in the guide. */
     suspend fun channels(): List<Channel>
+
+    /** Every channel, whatever group is picked (for naming a programme's channel). */
+    suspend fun allChannels(): List<Channel> = channels()
+
+    /** The server's channel groups (NextPVR's, "All Channels" first); empty where there are none. */
+    suspend fun channelGroups(): List<String> = emptyList()
 
     suspend fun programs(
         channelIds: List<UUID>,

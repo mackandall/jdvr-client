@@ -121,8 +121,19 @@ class NextPvrBackend(
 
     // ---- channels and guide -----------------------------------------------------------------
 
+    override suspend fun channelGroups(): List<String> =
+        call("channel.groups").jsonObject["groups"]?.jsonArray.orEmpty().map { it.jsonPrimitive.content }
+
+    // The group picked in the guide, when this server has it (else every channel).
     override suspend fun channels(): List<Channel> {
-        val list = call("channel.list").jsonObject["channels"]?.jsonArray.orEmpty().map { it.jsonObject }
+        val group = Jdvr.prefs.channelGroup.takeIf { it.isNotEmpty() && it in runCatching { channelGroups() }.getOrDefault(emptyList()) }
+        return channelList(group?.let { mapOf("group_id" to it) } ?: emptyMap())
+    }
+
+    override suspend fun allChannels(): List<Channel> = channelList(emptyMap())
+
+    private suspend fun channelList(params: Map<String, Any>): List<Channel> {
+        val list = call("channel.list", params).jsonObject["channels"]?.jsonArray.orEmpty().map { it.jsonObject }
         val now =
             runCatching {
                 call("channel.listings.current").jsonArray.associate { e ->

@@ -85,7 +85,7 @@ fun SearchScreen(
     var show by remember { mutableStateOf<LiveTvRepository.LibItem?>(null) }
     var program by remember { mutableStateOf<Program?>(null) }
     var note by remember { mutableStateOf<String?>(null) }
-    val channels by produceState<List<Channel>>(emptyList()) { value = runCatching { Jdvr.liveTv.channels() }.getOrDefault(emptyList()) }
+    val channels by produceState<List<Channel>>(emptyList()) { value = runCatching { Jdvr.liveTv.allChannels() }.getOrDefault(emptyList()) }
     val symbols = rememberMarkSymbols()
     val focusManager = LocalFocusManager.current
     var fieldFocused by remember { mutableStateOf(false) }
