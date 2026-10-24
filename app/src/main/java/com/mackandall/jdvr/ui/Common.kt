@@ -76,6 +76,8 @@ fun Button(
     primary: Boolean = false,
     modifier: Modifier = Modifier,
     leading: (@Composable () -> Unit)? = null,
+    // Smaller, for a title row (the guide's channel group).
+    compact: Boolean = false,
     onClick: () -> Unit,
 ) {
     // SageTV: the focused button is its glossy blue bar.
@@ -97,12 +99,12 @@ fun Button(
         scale = ClickableSurfaceDefaults.scale(focusedScale = if (Jc.Light) 1.06f else 1.03f),
     ) {
         androidx.compose.foundation.layout.Row(
-            modifier = (if (sage && focused) Modifier.sageGloss() else Modifier).padding(horizontal = 16.dp, vertical = 12.dp),
+            modifier = (if (sage && focused) Modifier.sageGloss() else Modifier).padding(horizontal = if (compact) 12.dp else 16.dp, vertical = if (compact) 5.dp else 12.dp),
             horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(10.dp),
             verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
         ) {
             leading?.invoke()
-            Text(label, fontSize = 16.sp)
+            Text(label, fontSize = if (compact) 14.sp else 16.sp)
         }
     }
 }

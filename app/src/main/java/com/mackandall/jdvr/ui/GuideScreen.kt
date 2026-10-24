@@ -172,7 +172,12 @@ fun GuideScreen(
         }
     }
 
-    LaunchedEffect(Unit) {
+    // Channel groups (all, favourites): a button by the title picks the one shown, and it's kept.
+    var groups by remember { mutableStateOf<List<String>>(emptyList()) }
+    val groupFocus = remember { FocusRequester() }
+    LaunchedEffect(Unit) { groups = runCatching { Jdvr.liveTv.channelGroups() }.getOrDefault(emptyList()) }
+    val group = Jdvr.prefs.channelGroup
+    LaunchedEffect(group) {
         try {
             channels = Jdvr.liveTv.channels()
         } catch (e: CancellationException) {
@@ -315,7 +320,8 @@ fun GuideScreen(
         var target: Program? = null
         while (target == null) {
             t += dir
-            if (t !in list.indices) return true // the edge: stay put
+            // The edge: stay put (▲ off the top goes to the channel group button, when there is one).
+            if (t !in list.indices) return true.also { if (t < 0 && groups.size > 1) runCatching { groupFocus.requestFocus() } }
             val row = programs[list[t].id].orEmpty().filter { it.end.isAfter(windowStart) && it.start.isBefore(windowEnd) }.sortedBy { it.start }
             target = row.firstOrNull { !it.start.isAfter(at) && it.end.isAfter(at) } ?: row.firstOrNull { it.start.isAfter(at) } ?: row.lastOrNull()
         }
@@ -422,11 +428,37 @@ fun GuideScreen(
                 Text(windowStart.day(), color = Jc.Muted, fontSize = 16.sp, modifier = Modifier.padding(bottom = 4.dp))
                 error?.let { Text(it, color = Jc.Amber, fontSize = 14.sp, modifier = Modifier.padding(bottom = 4.dp)) }
                 guideNote?.let { Text(it, color = Jc.Focus, fontSize = 15.sp, modifier = Modifier.padding(bottom = 4.dp)) }
+                if (groups.size > 1) {
+                    val shown = group.takeIf { it in groups } ?: groups.first()
+                    // OK steps to the next group.
+                    // The way in from the menu too, when the group has no channels to focus.
+                    val way = if (channels?.isEmpty() == true) Modifier.focusRequester(entry) else Modifier
+                    Button(
+                        "Channels: $shown",
+                        compact = true,
+                        // Up here, the top rows are shown (▲ came from the first channel).
+                        modifier = Modifier.padding(bottom = 2.dp).focusRequester(groupFocus).then(way).onFocusChanged { if (it.isFocused) guideScope.launch { listState.scrollToItem(0) } }
+                            // ▼: the first channel's programme on now (Compose's own search lands rows lower).
+                            .onPreviewKeyEvent { e ->
+                                if (e.type != KeyEventType.KeyDown || e.key != Key.DirectionDown) return@onPreviewKeyEvent false
+                                val first = channels?.firstOrNull() ?: return@onPreviewKeyEvent false
+                                val p = programs[first.id].orEmpty().firstOrNull { it.end.isAfter(windowStart) } ?: return@onPreviewKeyEvent false
+                                cellFocus[p.id]?.let { runCatching { it.requestFocus() }.isSuccess } == true
+                            },
+                    ) {
+                        Jdvr.prefs.changeChannelGroup(groups[(groups.indexOf(shown) + 1) % groups.size])
+                    }
+                }
             }
             val list = channels
             if (list == null) {
                 Spacer(12)
                 if (error == null) Text("Loading the guide…", color = Jc.Muted, fontSize = 16.sp)
+                return@Column
+            }
+            if (list.isEmpty() && groups.size > 1 && group in groups) {
+                Spacer(12)
+                Text("No channels in “$group”. Mark channels as favourites in Jellyfin's web client.", color = Jc.Muted, fontSize = 16.sp, modifier = Modifier.fillMaxWidth(0.8f))
                 return@Column
             }
             if (list.isEmpty()) {

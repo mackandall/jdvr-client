@@ -96,13 +96,24 @@ class LiveTvRepository : TvBackend {
 
     // ---- channels and guide --------------------------------------------------------------
 
-    override suspend fun channels(): List<Channel> =
+    // The guide's channel groups: every channel, or the user's favourite channels.
+    override suspend fun channelGroups(): List<String> {
+        val any = io { api.liveTvApi.getLiveTvChannels(GetLiveTvChannelsRequest(userId = Jdvr.userId, isFavorite = true, limit = 1)).content.items }
+        return if (any.isEmpty()) emptyList() else listOf(ALL_CHANNELS, FAVOURITE_CHANNELS)
+    }
+
+    override suspend fun channels(): List<Channel> = channelList(favourites = Jdvr.prefs.channelGroup == FAVOURITE_CHANNELS)
+
+    override suspend fun allChannels(): List<Channel> = channelList(favourites = false)
+
+    private suspend fun channelList(favourites: Boolean): List<Channel> =
         io {
         val items =
             api.liveTvApi
                 .getLiveTvChannels(
                     GetLiveTvChannelsRequest(
                         userId = Jdvr.userId,
+                        isFavorite = if (favourites) true else null,
                         addCurrentProgram = true,
                         enableImages = true,
                         imageTypeLimit = 1,
@@ -1831,6 +1842,10 @@ class LiveTvRepository : TvBackend {
 
 /** An id compared across APIs: some send dashes, some don't. */
 fun String.plainId(): String = replace("-", "").lowercase()
+
+// The guide's channel groups on Jellyfin.
+const val ALL_CHANNELS = "All channels"
+const val FAVOURITE_CHANNELS = "Favourites"
 
 /** Jellyfin ids come without dashes; UUID.fromString needs them. */
 fun String.toUuid(): UUID? = toUUIDOrNull()

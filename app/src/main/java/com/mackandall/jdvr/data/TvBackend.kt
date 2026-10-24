@@ -9,7 +9,14 @@ import java.util.UUID
  * need our plugins answer null when the plugin isn't there, and the screens already hide what's missing.
  */
 interface TvBackend {
+    /** The channels to show: those of the channel group picked in the guide. */
     suspend fun channels(): List<Channel>
+
+    /** Every channel, whatever group is picked (for naming a programme's channel). */
+    suspend fun allChannels(): List<Channel> = channels()
+
+    /** The channel groups to pick from, all channels first; empty where there's no choice. */
+    suspend fun channelGroups(): List<String> = emptyList()
 
     suspend fun programs(
         channelIds: List<UUID>,
