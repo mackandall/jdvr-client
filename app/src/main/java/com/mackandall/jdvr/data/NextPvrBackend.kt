@@ -166,13 +166,20 @@ class NextPvrBackend(
     override suspend fun searchGuide(term: String): List<Program> =
         call("channel.listings.search", mapOf("title" to term)).jsonObject["listings"]?.jsonArray.orEmpty().map { toProgram(it.jsonObject, null) }
 
-    // NextPVR has no programme artwork in its API; channel logos come with the channel.
+    // A channel's logo, or a guide entry's art as NextPVR's web page shows it (landscape: fanart).
     override fun imageUrl(
         itemId: UUID,
         maxHeight: Int,
-    ): String = ""
+    ): String {
+        val session = sid ?: return ""
+        return when (itemId.mostSignificantBits) {
+            CHANNEL -> serviceUrl("channel.icon", mapOf("channel_id" to nextPvrId(itemId)), session)
+            PROGRAM -> serviceUrl("channel.show.artwork", mapOf("event_id" to nextPvrId(itemId), "fanart" to true), session)
+            else -> ""
+        }
+    }
 
-    override fun backdropUrl(itemId: UUID): String = ""
+    override fun backdropUrl(itemId: UUID): String = imageUrl(itemId, 1080)
 
     override fun personImageUrl(personId: UUID): String = ""
 
