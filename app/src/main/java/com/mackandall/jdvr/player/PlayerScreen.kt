@@ -549,6 +549,14 @@ fun PlayerScreen(
                 true
             }
             .onKeyEvent { e ->
+                // ▼ from the controls row (nothing below it) or Guide: the mini guide, as the hints say.
+                if (e.type == KeyEventType.KeyDown && actionsOpen && !miniOpen && !infoOpen && busy == null && error == null &&
+                    e.key.nativeKeyCode in setOf(AndroidKeyEvent.KEYCODE_DPAD_DOWN, AndroidKeyEvent.KEYCODE_GUIDE)
+                ) {
+                    actionsOpen = false
+                    miniOpen = true
+                    return@onKeyEvent true
+                }
                 // A dialog (tuners busy, error) or the actions row has the remote.
                 if (e.type != KeyEventType.KeyDown || busy != null || error != null || actionsOpen || miniOpen || infoOpen) return@onKeyEvent false
                 when (val code = e.key.nativeKeyCode) {
