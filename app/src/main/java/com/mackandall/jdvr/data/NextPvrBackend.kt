@@ -19,6 +19,7 @@ import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
@@ -828,7 +829,35 @@ class NextPvrBackend(
 
     override suspend fun forgetRecording(itemId: UUID): Forgot? = null
 
-    override suspend fun commercialBadges(ids: List<UUID>): Map<String, CommercialBadge> = emptyMap()
+    /**
+     * Commercial breaks from the .edl beside a recording (NextPVR's own Comskip, or one run by
+     * hand), via recording.edl; null when there's none. Not [call]: "not found" isn't a lapsed
+     * session, and signing in again for every unscanned recording would be slow.
+     */
+    private suspend fun edl(itemId: UUID): List<Segment>? {
+        if (itemId.mostSignificantBits != RECORDING) return null
+        val reply =
+            runCatching { withContext(Dispatchers.IO) { get(serviceUrl("recording.edl", mapOf("recording_id" to nextPvrId(itemId)), session())) } }
+                .getOrNull() as? JsonObject ?: return null
+        val breaks = reply["commercials"]?.jsonArray ?: return null
+        return breaks.mapNotNull { b ->
+            val o = b.jsonObject
+            val start = o["start"]?.jsonPrimitive?.doubleOrNull ?: return@mapNotNull null
+            val end = o["end"]?.jsonPrimitive?.doubleOrNull ?: return@mapNotNull null
+            Segment(type = "Commercial", startMs = (start * 1000).toLong(), endMs = (end * 1000).toLong())
+        }
+    }
+
+    // A badge only for recordings with an .edl (never scanned: none, as on Jellyfin).
+    override suspend fun commercialBadges(ids: List<UUID>): Map<String, CommercialBadge> =
+        coroutineScope {
+            ids.filter { it.mostSignificantBits == RECORDING }.chunked(8).flatMap { chunk ->
+                chunk.map { id -> async { edl(id)?.let { id to it } } }.awaitAll().filterNotNull()
+            }.associate { (id, breaks) ->
+                val minutes = ((breaks.sumOf { it.endMs - it.startMs } + 30_000) / 60_000).toInt()
+                id.toString().plainId() to CommercialBadge(state = if (breaks.isEmpty()) "none" else "found", minutes = minutes)
+            }
+        }
 
     override suspend fun scanCommercials(itemId: UUID): Message? = null
 
@@ -888,7 +917,7 @@ class NextPvrBackend(
 
     override suspend fun recentlyAdded(limit: Int): List<RecordingCard>? = null
 
-    override suspend fun segments(itemId: UUID): List<Segment> = emptyList()
+    override suspend fun segments(itemId: UUID): List<Segment> = edl(itemId).orEmpty()
 
     override suspend fun buffers(channelId: UUID): List<Buffer> = emptyList()
 
