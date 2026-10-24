@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -311,7 +313,14 @@ fun MiniGuide(
                                 .padding(horizontal = 8.dp),
                             verticalArrangement = Arrangement.Center,
                         ) {
-                            Text((if (recording(p)) "● " else "") + p.name, color = Jc.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                // Red dot for a recording, two when a series records it (as in the guide).
+                                if (recording(p)) {
+                                    if (p.seriesTimerId != null) com.mackandall.jdvr.ui.SeriesDots(height = 8.dp)
+                                    else Box(Modifier.size(8.dp).background(Jc.Recording, CircleShape))
+                                }
+                                Text(p.name, color = Jc.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
                             // Episode History's marks, as in the guide: ■ skipped, ↪ other airing,
                             // ● in the library, ✓ watched, then the episode title.
                             val marks = Marks.parse(p.rawEpisodeTitle, symbols)
