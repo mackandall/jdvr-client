@@ -34,7 +34,13 @@ object Jdvr {
 
     val userId: UUID? get() = session.userId?.let { runCatching { UUID.fromString(it) }.getOrNull() }
 
-    val liveTv: TvBackend by lazy { LiveTvRepository() }
+    private val jellyfinTv by lazy { LiveTvRepository() }
+    private var nextPvr: NextPvrBackend? = null
+
+    /** The signed-in server's calls: Jellyfin's, or NextPVR's. */
+    val liveTv: TvBackend get() = nextPvr ?: jellyfinTv
+
+    val isNextPvr: Boolean get() = nextPvr != null
 
     fun init(context: Context) {
         appContext = context.applicationContext
@@ -52,10 +58,12 @@ object Jdvr {
             }
         val url = session.serverUrl
         val token = session.accessToken
-        if (url != null && token != null) api = jellyfin.createApi(baseUrl = url, accessToken = token)
+        if (url != null && token != null) {
+            if (session.backend == "nextpvr") nextPvr = NextPvrBackend(url, token) else api = jellyfin.createApi(baseUrl = url, accessToken = token)
+        }
     }
 
-    val signedIn: Boolean get() = api != null && userId != null
+    val signedIn: Boolean get() = nextPvr != null || api != null && userId != null
 
     fun signIn(
         url: String,
@@ -67,12 +75,29 @@ object Jdvr {
         session.userId = userId.toString()
         session.userName = userName
         session.accessToken = token
+        session.backend = "jellyfin"
+        nextPvr = null
         api = jellyfin.createApi(baseUrl = url, accessToken = token)
+    }
+
+    /** A NextPVR server: kept is the md5 of its PIN (encrypted, like a token), to sign in again. */
+    fun signInNextPvr(
+        url: String,
+        pinMd5: String,
+    ) {
+        session.serverUrl = url
+        session.userId = null
+        session.userName = null
+        session.accessToken = pinMd5
+        session.backend = "nextpvr"
+        api = null
+        nextPvr = NextPvrBackend(url, pinMd5)
     }
 
     fun signOut() {
         session.clear()
         api = null
+        nextPvr = null
     }
 
     /** What this TV can play without transcoding (from Jellyfin Android TV, via Wholphin). */

@@ -12,6 +12,11 @@ class Session(
         get() = prefs.getString("serverUrl", null)
         set(v) = prefs.edit().putString("serverUrl", v).apply()
 
+    /** "nextpvr" for a NextPVR server; Jellyfin otherwise. */
+    var backend: String?
+        get() = prefs.getString("backend", null)
+        set(v) = prefs.edit().putString("backend", v).apply()
+
     var userId: String?
         get() = prefs.getString("userId", null)
         set(v) = prefs.edit().putString("userId", v).apply()

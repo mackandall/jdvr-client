@@ -41,6 +41,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.tv.material3.Text
 import com.mackandall.jdvr.data.Jdvr
+import com.mackandall.jdvr.data.NextPvrBackend
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -73,6 +74,9 @@ fun LoginScreen(onSignedIn: () -> Unit) {
     // Who answers at the address: its name, so a password goes only where the user means it to.
     var serverName by remember { mutableStateOf<String?>(null) }
     var serverChecked by remember { mutableStateOf(false) }
+    // A NextPVR server at the address (it signs in with its PIN instead).
+    var nextPvr by remember { mutableStateOf(false) }
+    var pin by remember { mutableStateOf("") }
     var armedInsecure by remember { mutableStateOf(false) }
     var user by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
@@ -112,6 +116,7 @@ fun LoginScreen(onSignedIn: () -> Unit) {
     LaunchedEffect(server) {
         serverName = null
         serverChecked = false
+        nextPvr = false
         armedInsecure = false
         if (server.isBlank()) return@LaunchedEffect
         delay(400)
@@ -120,11 +125,13 @@ fun LoginScreen(onSignedIn: () -> Unit) {
                 val api = Jdvr.jellyfin.createApi(baseUrl = server.trimEnd('/'))
                 withContext(Dispatchers.IO) { api.systemApi.getPublicSystemInfo().content.serverName }
             }.getOrNull()
+        if (serverName == null) nextPvr = withContext(Dispatchers.IO) { NextPvrBackend.answers(server.trimEnd('/')) }
         serverChecked = true
     }
 
-    LaunchedEffect(server, attempt, usePassword) {
-        if (usePassword || server.isBlank()) return@LaunchedEffect
+    LaunchedEffect(server, attempt, usePassword, serverChecked, nextPvr) {
+        if (nextPvr) message = null
+        if (usePassword || server.isBlank() || !serverChecked || nextPvr) return@LaunchedEffect
         code = null
         try {
             val base = server.trimEnd('/')
@@ -158,13 +165,13 @@ fun LoginScreen(onSignedIn: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             Text("JDVR", color = Jc.Focus, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-            Text("Sign in to Jellyfin", color = Jc.Text, fontSize = 28.sp, fontWeight = FontWeight.SemiBold)
+            Text(if (nextPvr) "Sign in to NextPVR" else "Sign in to Jellyfin", color = Jc.Text, fontSize = 28.sp, fontWeight = FontWeight.SemiBold)
             Field("Server", server, onChange = { server = it }, keyboard = KeyboardType.Uri)
             // Which server this is, and a warning for an unencrypted address outside the home network.
             if (server.isNotBlank() && serverChecked) {
                 Text(
-                    serverName?.let { "Server: $it" } ?: "No Jellyfin server answers at this address.",
-                    color = if (serverName != null) Jc.Muted else Jc.Amber,
+                    serverName?.let { "Server: $it" } ?: if (nextPvr) "Server: NextPVR" else "No Jellyfin server answers at this address.",
+                    color = if (serverName != null || nextPvr) Jc.Muted else Jc.Amber,
                     fontSize = 15.sp,
                 )
             }
@@ -189,6 +196,28 @@ fun LoginScreen(onSignedIn: () -> Unit) {
                     fontSize = 16.sp,
                 )
                 if (!searching) Button("Look again") { search++ }
+            } else if (nextPvr) {
+                Text("Your PIN goes to NextPVR at ${server.trimEnd('/')}.", color = Jc.Muted, fontSize = 15.sp)
+                Field("PIN", pin, onChange = { pin = it }, keyboard = KeyboardType.NumberPassword, secret = true)
+                Button(if (insecureRemote(server) && !armedInsecure) "Sign in anyway (unencrypted)" else "Sign in", primary = true) {
+                    if (insecureRemote(server) && !armedInsecure) {
+                        armedInsecure = true
+                        return@Button
+                    }
+                    scope.launch {
+                        try {
+                            val base = server.trimEnd('/')
+                            val pinMd5 = NextPvrBackend.md5(pin)
+                            withContext(Dispatchers.IO) { NextPvrBackend.login(base, pinMd5) }
+                            Jdvr.signInNextPvr(base, pinMd5)
+                            onSignedIn()
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            message = "Sign-in failed: ${e.message}"
+                        }
+                    }
+                }
             } else if (!usePassword) {
                 if (code != null) {
                     Text("Approve this code from the Jellyfin web client: your profile picture > Quick Connect.", color = Jc.Muted, fontSize = 16.sp)
