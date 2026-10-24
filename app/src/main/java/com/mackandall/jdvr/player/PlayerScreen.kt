@@ -119,11 +119,21 @@ fun PlayerScreen(
     var onHls by remember(channelId) { mutableStateOf(false) }
     var directStartedAt by remember(channelId) { mutableStateOf(0L) }
     var hlsStartedAt by remember(channelId) { mutableStateOf<Long?>(null) }
+    // Where pause and rewind go: Jellyfin's HLS copy, or NextPVR's buffer file (found once the stream plays).
+    var copyUrl by remember(channelId) { mutableStateOf<String?>(null) }
     var swapJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
     val context = LocalContext.current
     val symbols = rememberMarkSymbols()
     var channels by remember { mutableStateOf<List<Channel>>(emptyList()) }
     var playback by remember { mutableStateOf<LivePlayback?>(null) }
+
+    // NextPVR: its buffer file for this stream, once the tuner is writing it (both begin at tune-in).
+    suspend fun findCopy(p: LivePlayback, notThis: String? = null) {
+        val url = Jdvr.liveTv.liveCopyUrl(p, notThis) ?: return
+        if (playback?.channelId != p.channelId) return
+        copyUrl = url
+        hlsStartedAt = directStartedAt
+    }
     var busy by remember { mutableStateOf<LiveTvRepository.TunerStatus?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     // Try again: a fresh start of the same channel (a new stream from the server).
@@ -236,12 +246,15 @@ fun PlayerScreen(
                     player.prepare()
                     directStartedAt = android.os.SystemClock.elapsedRealtime()
                     onHls = p.hlsUrl == p.url
+                    copyUrl = p.hlsUrl
+                    hlsStartedAt = null
                     p.hlsUrl?.takeIf { !onHls }?.let { hls ->
                         launch {
                             hlsStartedAt = android.os.SystemClock.elapsedRealtime()
                             Jdvr.liveTv.warmHls(hls)
                         }
                     }
+                    if (p.hlsUrl == null && Jdvr.liveTv.liveCopyIsFile) launch { findCopy(p) }
                     Jdvr.liveTv.reportStart(p)
                     while (true) {
                         delay(10_000)
@@ -348,12 +361,15 @@ fun PlayerScreen(
     // (or its start, for a fresh tune), the HLS copy this much later.
     fun hlsPositionOf(directMs: Long): Long = (directMs - ((hlsStartedAt ?: directStartedAt) - directStartedAt)).coerceAtLeast(0)
 
-    val canHls = playback?.hlsUrl != null && hlsStartedAt != null
+    val canHls = copyUrl != null && hlsStartedAt != null
 
     // How far behind live the picture is. Jellyfin's live HLS has no programme date-times, so the
     // player's own live offset is unknown: the copy's end (its duration so far) is live instead.
     fun behindLiveMs(): Long =
-        if (onHls) {
+        if (onHls && Jdvr.liveTv.liveCopyIsFile) {
+            // A buffer file from tune-in: its position is the time since then.
+            (android.os.SystemClock.elapsedRealtime() - directStartedAt - player.currentPosition).coerceAtLeast(0)
+        } else if (onHls) {
             player.currentLiveOffset.takeIf { it != androidx.media3.common.C.TIME_UNSET }
                 ?: player.duration.takeIf { it != androidx.media3.common.C.TIME_UNSET }?.let { (it - player.currentPosition).coerceAtLeast(0) }
                 ?: 0L
@@ -374,8 +390,10 @@ fun PlayerScreen(
         positionMs: Long,
         play: Boolean,
     ) {
-        val url = playback?.hlsUrl ?: return
-        player.setMediaItem(MediaItem.fromUri(url), positionMs)
+        val url = copyUrl ?: return
+        // Leaving the live stream: it stays open (NextPVR would drop the buffer with it).
+        if (!onHls) Jdvr.liveTv.holdLive(true)
+        player.setMediaItem(MediaItem.fromUri(Jdvr.liveTv.liveCopyOpenUrl(url)), positionMs)
         player.playWhenReady = play
         player.prepare()
         onHls = true
@@ -399,18 +417,54 @@ fun PlayerScreen(
     // Back to live: the direct stream again (truly live, not the HLS copy's few seconds behind).
     fun toLive() {
         val p = playback ?: return
-        if (onHls && p.hlsUrl != p.url) {
+        if (onHls && copyUrl != p.url) {
+            // NextPVR: a fresh live stream starts a fresh buffer (the old one goes with the held stream).
+            Jdvr.liveTv.holdLive(false)
             player.setMediaItem(MediaItem.fromUri(p.url))
             player.playWhenReady = true
             player.prepare()
             directStartedAt = android.os.SystemClock.elapsedRealtime()
             onHls = false
+            if (Jdvr.liveTv.liveCopyIsFile) {
+                // The old buffer is still listed for a few seconds before NextPVR deletes it.
+                val old = copyUrl
+                copyUrl = null
+                hlsStartedAt = null
+                scope.launch { findCopy(p, notThis = old) }
+            }
         } else {
             player.seekToDefaultPosition()
             player.play()
         }
         pausedAt = null
         showOsd()
+    }
+
+    // The buffer file was opened at its size then: at that end, open it again (or, within 10 s of
+    // live, go live; further back, going live would skip programme).
+    // If it ends again at the same spot, it has stopped growing (the server let the tuner go): live again.
+    DisposableEffect(player) {
+        var lastEnd = -1L
+        val ended =
+            object : Player.Listener {
+                override fun onPlaybackStateChanged(state: Int) {
+                    if (state != Player.STATE_ENDED || !onHls || !Jdvr.liveTv.liveCopyIsFile) return
+                    val at = player.currentPosition
+                    val stuck = lastEnd >= 0 && at - lastEnd < 1000
+                    lastEnd = at
+                    if (stuck || behindLiveMs() <= 10_000) {
+                        lastEnd = -1L
+                        toLive()
+                    } else {
+                        switchToHls(at, play = pausedAt == null)
+                    }
+                }
+            }
+        player.addListener(ended)
+        onDispose {
+            player.removeListener(ended)
+            Jdvr.liveTv.holdLive(false)
+        }
     }
 
     fun forward() {

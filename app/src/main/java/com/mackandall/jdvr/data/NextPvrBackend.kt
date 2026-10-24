@@ -7,6 +7,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -256,10 +257,49 @@ class NextPvrBackend(
 
     /** Frees the tuner (closing the stream alone leaves it open a while). */
     override suspend fun reportStopped(p: LivePlayback) {
+        LiveHold.release()
         runCatching { call("channel.stop") }
     }
 
     override suspend fun warmHls(url: String) = Unit
+
+    // NextPVR writes what the tuner sends to a buffer file from tune-in (system.status names it:
+    // "LIVE&…/live-<channel name>-<n>-<tuner>.ts"); /stream?f= serves it with byte ranges, so it
+    // seeks like a recording. The tuner starts writing once the player opens the stream.
+    override suspend fun liveCopyUrl(
+        p: LivePlayback,
+        notThis: String?,
+    ): String? {
+        val old = notThis?.toHttpUrl()?.queryParameter("f")
+        val name = runCatching { channelInfo()[nextPvrId(p.channelId)]?.str("channelName") }.getOrNull() ?: return null
+        fun plain(s: String) = s.filter { it.isLetterOrDigit() }.lowercase()
+        repeat(20) {
+            val file =
+                runCatching {
+                    call("system.status").jsonObject["status"]?.jsonArray.orEmpty()
+                        .flatMap { d -> d.jsonObject["streams"]?.jsonArray.orEmpty().map { it.jsonPrimitive.content } }
+                        .filter { it.startsWith("LIVE&") }
+                        .map { it.substringAfter('&') }
+                        .filter { it != old }
+                        .lastOrNull { f -> Regex("""live-(.+)-\d+-\d+\.ts$""").find(f.substringAfterLast('/'))?.groupValues?.get(1)?.let { plain(it) == plain(name) } == true }
+                }.getOrNull()
+            if (file != null) {
+                return baseUrl.toHttpUrl().newBuilder().addPathSegment("stream")
+                    .addQueryParameter("f", file)
+                    .addQueryParameter("mode", "http")
+                    .addQueryParameter("sid", session())
+                    .build().toString()
+            }
+            delay(500)
+        }
+        return null
+    }
+
+    override val liveCopyIsFile: Boolean get() = true
+
+    override fun liveCopyOpenUrl(url: String): String = pinnedNow(url)
+
+    override fun holdLive(on: Boolean) = if (on) LiveHold.park() else LiveHold.release()
 
     // ---- recordings -------------------------------------------------------------------------
 
@@ -931,6 +971,85 @@ class NextPvrBackend(
         return TunerStatus(capacity = devices.size, full = busy.size >= devices.size, busy = busy)
     }
 
+    /**
+     * The live stream (/live?channeloid=) kept open while the player is on the buffer file: once
+     * [park]ed, the player closing it leaves it open instead, read a little every second (an idle
+     * connection is dropped), until [release]. Another /live would start a fresh buffer.
+     */
+    object LiveHold {
+        @Volatile private var armed = false
+
+        @Volatile private var held: Thread? = null
+
+        fun park() {
+            armed = true
+        }
+
+        fun release() {
+            armed = false
+            held?.interrupt()
+            held = null
+        }
+
+        // Its own client: the player cancels its call when it lets the stream go, and a cancel
+        // here would close the connection being kept.
+        private val keeper by lazy { okhttp3.OkHttpClient.Builder().readTimeout(0, java.util.concurrent.TimeUnit.SECONDS).build() }
+
+        val interceptor =
+            okhttp3.Interceptor { chain ->
+                val url = chain.request().url
+                if (url.encodedPath != "/live" || url.queryParameter("channeloid") == null) return@Interceptor chain.proceed(chain.request())
+                val response = keeper.newCall(chain.request()).execute()
+                val body = response.body
+                val raw = body.source()
+                val source =
+                    object : okio.ForwardingSource(raw) {
+                        // Closed more than once (the stream, then the body): once kept, it stays kept.
+                        var kept = false
+
+                        override fun close() {
+                            if (kept) return
+                            if (!armed) return super.close()
+                            armed = false
+                            kept = true
+                            held?.interrupt()
+                            held =
+                                Thread {
+                                    val sink = okio.Buffer()
+                                    try {
+                                        while (!Thread.currentThread().isInterrupted) {
+                                            // At the stream's own pace: NextPVR renews the tuner's
+                                            // lease only while it can write, so a slow reader lets it lapse.
+                                            if (raw.read(sink, 65_536) < 0) break
+                                            sink.clear()
+                                        }
+                                    } catch (_: InterruptedException) {
+                                    } catch (e: java.io.IOException) {
+                                        timber.log.Timber.w(e, "NextPVR live stream kept open: dropped")
+                                    } finally {
+                                        timber.log.Timber.i("NextPVR live stream kept open: let go")
+                                        runCatching { raw.close() }
+                                    }
+                                }.apply {
+                                    timber.log.Timber.i("NextPVR live stream kept open while on the buffer file")
+                                    name = "nextpvr-live-hold"
+                                    isDaemon = true
+                                    start()
+                                }
+                        }
+                    }.buffer()
+                response.newBuilder().body(
+                    object : okhttp3.ResponseBody() {
+                        override fun contentType() = body.contentType()
+
+                        override fun contentLength() = body.contentLength()
+
+                        override fun source() = source
+                    },
+                ).build()
+            }
+    }
+
     companion object {
         // The URL parameter carrying a still-recording file's size when playback opened.
         private const val SNAPSHOT = "jdvrlen"
@@ -939,10 +1058,27 @@ class NextPvrBackend(
          * Makes a growing file look as long as it was when playback opened (the [SNAPSHOT] in its
          * URL): replies say that length, and stop there. Other requests pass untouched.
          */
+        private val autoLengths = java.util.concurrent.ConcurrentHashMap<String, Long>()
+
+        /** [url] (a live buffer file) pinned to the size it has when first asked for: seeks like a recording. */
+        fun pinnedNow(url: String): String =
+            url.toHttpUrl().newBuilder().setQueryParameter(SNAPSHOT, "auto" + System.nanoTime()).build().toString()
+
         val snapshotLength =
             okhttp3.Interceptor { chain ->
                 val response = chain.proceed(chain.request())
-                val len = chain.request().url.queryParameter(SNAPSHOT)?.toLongOrNull() ?: return@Interceptor response
+                val mark = chain.request().url.queryParameter(SNAPSHOT) ?: return@Interceptor response
+                // "auto…" (a live buffer file): the size its first reply gives, for every request with that mark.
+                val len =
+                    if (mark.startsWith("auto")) {
+                        autoLengths.getOrPut(mark) {
+                            response.header("Content-Range")?.substringAfterLast('/')?.toLongOrNull()
+                                ?: response.body.contentLength().takeIf { response.code == 200 && it > 0 }
+                                ?: return@Interceptor response
+                        }
+                    } else {
+                        mark.toLongOrNull() ?: return@Interceptor response
+                    }
                 val body = response.body
                 val (from, to) =
                     if (response.code == 206) {

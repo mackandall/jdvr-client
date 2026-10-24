@@ -51,6 +51,31 @@ interface TvBackend {
     /** Request the HLS playlist once, so the server starts the remux now (from tune-in). */
     suspend fun warmHls(url: String)
 
+    /**
+     * Where pause and rewind go for [p], asked once its stream plays: Jellyfin's HLS copy, or
+     * NextPVR's live buffer file (only known once the tuner is writing it), never [notThis] (the
+     * one before a fresh start).
+     */
+    suspend fun liveCopyUrl(
+        p: LivePlayback,
+        notThis: String? = null,
+    ): String? = p.hlsUrl
+
+    /**
+     * The copy is a file that only grows (NextPVR): opened at its size then, so playing reaches
+     * that end and it's opened again; how far behind live is the time since tune-in less the position.
+     */
+    val liveCopyIsFile: Boolean get() = false
+
+    /** The copy's URL to open now (a growing file: pinned to its size at this moment). */
+    fun liveCopyOpenUrl(url: String): String = url
+
+    /**
+     * On: the player is about to leave the live stream for the copy, and the stream must stay
+     * open meanwhile (NextPVR drops the tuner and its buffer once it closes). Off: let it go.
+     */
+    fun holdLive(on: Boolean) = Unit
+
     suspend fun startItem(itemId: UUID): ItemPlayback
 
     suspend fun reportItem(
