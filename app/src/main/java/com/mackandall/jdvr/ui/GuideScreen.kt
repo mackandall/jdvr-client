@@ -1259,7 +1259,7 @@ fun Dot(color: androidx.compose.ui.graphics.Color) = Box(Modifier.size(12.dp).ba
 fun SeriesDots(
     color: androidx.compose.ui.graphics.Color = Jc.Recording,
     height: androidx.compose.ui.unit.Dp = 12.dp,
-    // Cancel series recording: a white slash through them.
+    // Cancel series recording: the front dot slashed as Cancel recording's, the one behind paler.
     crossed: Boolean = false,
 ) =
     androidx.compose.foundation.Canvas(
@@ -1267,11 +1267,11 @@ fun SeriesDots(
             .graphicsLayer(compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen),
     ) {
         val r = size.height / 2
-        drawCircle(color, r, androidx.compose.ui.geometry.Offset(r, r))
+        drawCircle(if (crossed) color.copy(alpha = 0.45f) else color, r, androidx.compose.ui.geometry.Offset(r, r))
         val second = androidx.compose.ui.geometry.Offset(size.width - r, r)
         drawCircle(androidx.compose.ui.graphics.Color.Black, r + size.height / 8, second, blendMode = androidx.compose.ui.graphics.BlendMode.Clear)
         drawCircle(color, r, second)
-        if (crossed) slash()
+        if (crossed) slash(left = size.width - size.height)
     }
 
 /** Cancel recording's mark: Record's dot with a white slash through it. */
@@ -1281,14 +1281,15 @@ fun CancelDot(color: androidx.compose.ui.graphics.Color = Jc.Recording) =
         Modifier.size(14.dp).graphicsLayer(compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen),
     ) {
         drawCircle(color)
-        slash()
+        slash(left = 0f)
     }
 
-// Bottom left to top right, white, cut clear of the red around it so it reads on any button.
-private fun androidx.compose.ui.graphics.drawscope.DrawScope.slash() {
-    val a = androidx.compose.ui.geometry.Offset(size.width * 0.08f, size.height * 0.98f)
-    val b = androidx.compose.ui.geometry.Offset(size.width * 0.92f, size.height * 0.02f)
+// Across the dot whose square starts at [left]: bottom left to top right (the same angle on both
+// marks), white, cut clear of the red around it so it reads on any button.
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.slash(left: Float) {
     val h = size.height
+    val a = androidx.compose.ui.geometry.Offset(left + h * 0.08f, h * 0.98f)
+    val b = androidx.compose.ui.geometry.Offset(left + h * 0.92f, h * 0.02f)
     drawLine(androidx.compose.ui.graphics.Color.Black, a, b, strokeWidth = h * 0.34f, cap = androidx.compose.ui.graphics.StrokeCap.Round, blendMode = androidx.compose.ui.graphics.BlendMode.Clear)
     drawLine(androidx.compose.ui.graphics.Color.White, a, b, strokeWidth = h * 0.15f, cap = androidx.compose.ui.graphics.StrokeCap.Round)
 }
