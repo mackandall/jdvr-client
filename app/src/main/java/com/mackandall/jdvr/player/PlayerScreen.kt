@@ -629,6 +629,7 @@ fun PlayerScreen(
                             // Next = back to live.
                             next = TransportAction(TransportIcon.Next, behind) { toLive() },
                             playFocus = playFocus,
+                            clock = false,
                             record =
                                 channel?.now?.takeIf { com.mackandall.jdvr.ui.DeviceRights.info.record }?.let { now ->
                                     val recording = b?.kept == true || (now.timerId != null && now.id.toString().plainId() !in bufferIds)
@@ -922,7 +923,11 @@ private fun InfoBar(
             }
         }
         actions()
-        Text("▲ / CH change channel · ▼ mini guide · 0–9 type a number · ← 10 s back · → 30 s ahead · OK controls · Back leave", color = Jc.Muted, fontSize = 13.sp)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("▲ / CH change channel · ▼ mini guide · 0–9 type a number · ← 10 s back · → 30 s ahead · OK controls · Back leave", color = Jc.Muted, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+            // The time: here, as the transport row is full on live TV (audio, From start).
+            Text(LocalDateTime.now().format(NowFormat), color = Jc.Text, fontSize = 16.sp, maxLines = 1, softWrap = false, modifier = Modifier.padding(start = 16.dp))
+        }
     }
 }
 

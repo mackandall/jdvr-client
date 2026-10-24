@@ -43,7 +43,7 @@ class TransportAction(
     val onClick: () -> Unit,
 )
 
-private val NowFormat = DateTimeFormatter.ofPattern("EEE, MMM d  h:mm a")
+internal val NowFormat = DateTimeFormatter.ofPattern("EEE, MMM d  h:mm a")
 
 /**
  * The row of transport buttons under the progress bar (SageTV's layout): previous, rewind, stop,
@@ -60,6 +60,8 @@ fun TransportBar(
     next: TransportAction,
     playFocus: FocusRequester,
     record: TransportAction? = null,
+    // Off where the screen shows the time elsewhere (live TV: on the key hints line).
+    clock: Boolean = true,
     extras: @Composable RowScope.() -> Unit = {},
 ) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -76,9 +78,11 @@ fun TransportBar(
         Spacer(Modifier.width(14.dp))
         extras()
         Spacer(Modifier.weight(1f))
-        // One line: squeezed by long extras (audio, Watch from start) it would wrap a letter a line
-        // and stretch the bar up the screen.
-        Text(LocalDateTime.now().format(NowFormat), color = Jc.Text, fontSize = 16.sp, maxLines = 1, softWrap = false)
+        if (clock) {
+            // One line: squeezed by long extras (audio, Watch from start) it would wrap a letter a line
+            // and stretch the bar up the screen.
+            Text(LocalDateTime.now().format(NowFormat), color = Jc.Text, fontSize = 16.sp, maxLines = 1, softWrap = false)
+        }
     }
 }
 
