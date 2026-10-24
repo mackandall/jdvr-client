@@ -1086,7 +1086,7 @@ internal fun ProgramPanel(
                             }
                         } else if (p.isRecording && !isBuffer) {
                             // Under way it stops (what's recorded so far is kept); later, it won't record.
-                            Button(if (p.isOn()) "Stop recording" else "Cancel recording", modifier = recordModifier, leading = { Dot(Jc.Recording) }) {
+                            Button(if (p.isOn()) "Stop recording" else "Cancel recording", modifier = recordModifier, leading = { if (p.isOn()) Dot(Jc.Recording) else CancelDot() }) {
                                 act {
                                     Jdvr.liveTv.cancelRecording(p.timerId!!)
                                     if (p.isOn()) "Recording stopped: what was recorded so far is kept." else "Recording cancelled."
@@ -1102,7 +1102,7 @@ internal fun ProgramPanel(
                         }
                         if (p.isSeries && rights.record) {
                             if (p.seriesTimerId != null) {
-                                Button("Cancel series recording", modifier = Modifier.fillMaxWidth()) {
+                                Button("Cancel series recording", modifier = Modifier.fillMaxWidth(), leading = { SeriesDots(height = 14.dp, crossed = true) }) {
                                     act {
                                         Jdvr.liveTv.cancelSeries(p.seriesTimerId!!)
                                         "Series recording cancelled."
@@ -1259,6 +1259,8 @@ fun Dot(color: androidx.compose.ui.graphics.Color) = Box(Modifier.size(12.dp).ba
 fun SeriesDots(
     color: androidx.compose.ui.graphics.Color = Jc.Recording,
     height: androidx.compose.ui.unit.Dp = 12.dp,
+    // Cancel series recording: a white slash through them.
+    crossed: Boolean = false,
 ) =
     androidx.compose.foundation.Canvas(
         Modifier.size(width = height * 1.5f, height = height)
@@ -1269,7 +1271,27 @@ fun SeriesDots(
         val second = androidx.compose.ui.geometry.Offset(size.width - r, r)
         drawCircle(androidx.compose.ui.graphics.Color.Black, r + size.height / 8, second, blendMode = androidx.compose.ui.graphics.BlendMode.Clear)
         drawCircle(color, r, second)
+        if (crossed) slash()
     }
+
+/** Cancel recording's mark: Record's dot with a white slash through it. */
+@Composable
+fun CancelDot(color: androidx.compose.ui.graphics.Color = Jc.Recording) =
+    androidx.compose.foundation.Canvas(
+        Modifier.size(14.dp).graphicsLayer(compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen),
+    ) {
+        drawCircle(color)
+        slash()
+    }
+
+// Bottom left to top right, white, cut clear of the red around it so it reads on any button.
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.slash() {
+    val a = androidx.compose.ui.geometry.Offset(size.width * 0.08f, size.height * 0.98f)
+    val b = androidx.compose.ui.geometry.Offset(size.width * 0.92f, size.height * 0.02f)
+    val h = size.height
+    drawLine(androidx.compose.ui.graphics.Color.Black, a, b, strokeWidth = h * 0.34f, cap = androidx.compose.ui.graphics.StrokeCap.Round, blendMode = androidx.compose.ui.graphics.BlendMode.Clear)
+    drawLine(androidx.compose.ui.graphics.Color.White, a, b, strokeWidth = h * 0.15f, cap = androidx.compose.ui.graphics.StrokeCap.Round)
+}
 
 /** A delete button's mark: the menu's trash can, so it doesn't look like Record's dot. */
 @Composable

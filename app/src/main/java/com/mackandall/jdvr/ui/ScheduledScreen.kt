@@ -208,7 +208,7 @@ private fun ScheduleRow(
                             armed -> "Press again to stop recording"
                             else -> "Stop this recording"
                         },
-                        leading = { Dot(Jc.Recording) },
+                        leading = { if (r.recordingNow) Dot(Jc.Recording) else CancelDot() },
                     ) {
                         if (r.recordingNow && !armed) {
                             armed = true

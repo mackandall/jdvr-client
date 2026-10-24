@@ -260,7 +260,7 @@ private fun SeriesRow(
                 Button("▲ Higher", modifier = Modifier.padding(end = 8.dp)) { move(true) }
                 Button("▼ Lower", modifier = Modifier.padding(end = 8.dp)) { move(false) }
             }
-            Button(if (armed) "Press again: cancel the series" else "Cancel series recording") {
+            Button(if (armed) "Press again: cancel the series" else "Cancel series recording", leading = { SeriesDots(height = 14.dp, crossed = true) }) {
                 if (armed) onCancel() else armed = true
             }
         }
