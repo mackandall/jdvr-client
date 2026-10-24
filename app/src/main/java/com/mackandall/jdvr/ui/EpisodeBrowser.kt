@@ -151,10 +151,7 @@ fun EpisodeBrowser(
     Box(Modifier.fillMaxSize()) {
         val list = entries
         if (!tiles || list.isNullOrEmpty()) {
-            backdrop?.let {
-                AsyncImage(model = Jdvr.liveTv.backdropUrl(it), contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
-                Box(Modifier.fillMaxSize().background(Jc.Ink.copy(alpha = 0.88f)))
-            }
+            backdrop?.let { Backdrop(Jdvr.liveTv.backdropUrl(it), null, strength = 0.6f) }
         }
         androidx.compose.runtime.CompositionLocalProvider(LocalShowActions provides openShowMenu) {
         if (list == null || list.isEmpty()) {
@@ -466,11 +463,22 @@ private fun TilesView(
     val start = remember(season) { FocusRequester() }
     LaunchedEffect(season) { runCatching { start.requestFocus() } }
 
+    // The picture behind: the show's backdrop; on NextPVR (no show item) the focused recording's
+    // fanart, once focus has rested a moment (no flicker while moving along the row).
+    var artFor by remember { mutableStateOf<UUID?>(null) }
+    LaunchedEffect(focusedId) {
+        if (artFor != null) kotlinx.coroutines.delay(300)
+        artFor = focusedId
+    }
+    val artId = backdrop ?: artFor?.takeIf { Jdvr.isNextPvr }
+
     Box(Modifier.fillMaxSize()) {
-        backdrop?.let {
-            AsyncImage(model = Jdvr.liveTv.backdropUrl(it), contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
-        }
-        Box(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Brush.horizontalGradient(0f to Jc.Ink.copy(alpha = 0.97f), 0.6f to Jc.Ink.copy(alpha = 0.8f), 1f to Jc.Ink.copy(alpha = 0.35f))))
+        FadingBackdrop(
+            artId,
+            artId?.let { Jdvr.liveTv.backdropUrl(it) },
+            artId?.takeIf { backdrop == null }?.let { Jdvr.liveTv.imageUrl(it, 720) },
+            strength = 0.85f,
+        )
         Column(
             Modifier.fillMaxSize().verticalScroll(androidx.compose.foundation.rememberScrollState()).padding(top = 14.dp, bottom = 30.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
