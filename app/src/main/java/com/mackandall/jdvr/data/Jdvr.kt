@@ -34,7 +34,9 @@ object Jdvr {
 
     val userId: UUID? get() = session.userId?.let { runCatching { UUID.fromString(it) }.getOrNull() }
 
-    private val jellyfinTv by lazy { LiveTvRepository() }
+    // Made afresh for each server (it keeps a few answers).
+    private var jellyfinTvMade: LiveTvRepository? = null
+    private val jellyfinTv: LiveTvRepository get() = jellyfinTvMade ?: LiveTvRepository().also { jellyfinTvMade = it }
     private var nextPvr: NextPvrBackend? = null
 
     /** The signed-in server's calls: Jellyfin's, or NextPVR's. */
@@ -62,6 +64,11 @@ object Jdvr {
         val token = session.accessToken
         if (url != null && token != null) {
             if (session.backend == "nextpvr") nextPvr = NextPvrBackend(url, token) else api = jellyfin.createApi(baseUrl = url, accessToken = token)
+            // Signed in before servers were remembered: this one is the first on the list.
+            if (session.servers.none { isCurrent(it) }) {
+                val name = if (session.backend == "nextpvr") url.substringAfter("://").substringBefore(':') else url
+                session.servers = listOf(SavedServer(session.backend ?: "jellyfin", url, name, session.userId, session.userName, token)) + session.servers
+            }
         }
     }
 
@@ -72,14 +79,9 @@ object Jdvr {
         userId: UUID,
         userName: String?,
         token: String,
+        serverName: String? = null,
     ) {
-        session.serverUrl = url
-        session.userId = userId.toString()
-        session.userName = userName
-        session.accessToken = token
-        session.backend = "jellyfin"
-        nextPvr = null
-        api = jellyfin.createApi(baseUrl = url, accessToken = token)
+        apply(SavedServer("jellyfin", url, serverName ?: url, userId.toString(), userName, token))
     }
 
     /** A NextPVR server: kept is the md5 of its PIN (encrypted, like a token), to sign in again. */
@@ -87,16 +89,53 @@ object Jdvr {
         url: String,
         pinMd5: String,
     ) {
-        session.serverUrl = url
-        session.userId = null
-        session.userName = null
-        session.accessToken = pinMd5
-        session.backend = "nextpvr"
-        api = null
-        nextPvr = NextPvrBackend(url, pinMd5)
+        apply(SavedServer("nextpvr", url, url.substringAfter("://").substringBefore(':'), null, null, pinMd5))
     }
 
+    /** The servers signed in to before, the current one first. */
+    val servers: List<SavedServer> get() = session.servers
+
+    /** The server and user signed in to now: screens and caches start afresh when it changes. */
+    val serverKey: String get() = "${session.backend}|${session.serverUrl}|${session.userId}"
+
+    fun isCurrent(s: SavedServer) = s.backend == (session.backend ?: "jellyfin") && s.url == session.serverUrl && s.userId == session.userId
+
+    /** Back to a remembered server, signed in with what was kept. */
+    fun switchTo(s: SavedServer) {
+        if (s.token != null) apply(s)
+    }
+
+    /** Takes a server off the list (signing in there again asks for the PIN or a code). */
+    fun forget(s: SavedServer) {
+        session.servers = session.servers.filterNot { it.sameAs(s) }
+    }
+
+    private fun apply(s: SavedServer) {
+        // The one being left keeps its last and recent channels for when it's picked again.
+        val list = session.servers.map { if (isCurrent(it)) it.copy(lastChannelId = session.lastChannelId, recentChannels = session.recentChannels) else it }
+        val kept = list.firstOrNull { it.sameAs(s) }
+        val entry = if (kept != null) s.copy(lastChannelId = kept.lastChannelId, recentChannels = kept.recentChannels) else s
+        val moving = !isCurrent(s)
+        session.servers = listOf(entry) + list.filterNot { it.sameAs(s) }
+        if (moving) session.restoreChannels(entry)
+        session.serverUrl = s.url
+        session.userId = s.userId
+        session.userName = s.userName
+        session.accessToken = s.token
+        session.backend = s.backend
+        if (s.isNextPvr) {
+            api = null
+            nextPvr = NextPvrBackend(s.url, s.token!!)
+        } else {
+            nextPvr = null
+            api = jellyfin.createApi(baseUrl = s.url, accessToken = s.token)
+        }
+        jellyfinTvMade = null
+    }
+
+    /** Signs out of this server: it's forgotten too, so getting back in needs a sign-in. */
     fun signOut() {
+        session.servers = session.servers.filterNot { isCurrent(it) }
         session.clear()
         api = null
         nextPvr = null

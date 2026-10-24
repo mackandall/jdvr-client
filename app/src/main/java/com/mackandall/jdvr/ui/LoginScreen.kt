@@ -42,6 +42,7 @@ import androidx.compose.ui.unit.sp
 import androidx.tv.material3.Text
 import com.mackandall.jdvr.data.Jdvr
 import com.mackandall.jdvr.data.NextPvrBackend
+import com.mackandall.jdvr.data.SavedServer
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -64,8 +65,24 @@ import timber.log.Timber
  * nobody types a password with a remote; username and password as a fallback. NextPVR takes its PIN.
  */
 @Composable
-fun LoginScreen(onSignedIn: () -> Unit) {
-    var server by remember { mutableStateOf(Jdvr.session.serverUrl ?: "") }
+fun LoginScreen(
+    onSignedIn: () -> Unit,
+    // Switching from a server still signed in to: Back returns to it.
+    onCancel: (() -> Unit)? = null,
+) {
+    var server by remember { mutableStateOf(if (onCancel != null) "" else Jdvr.session.serverUrl ?: "") }
+    // Servers signed in to before: one press goes back to one (not the one in use).
+    var saved by remember { mutableStateOf(Jdvr.servers.filterNot { onCancel != null && Jdvr.isCurrent(it) }) }
+    var forgetArmed by remember { mutableStateOf<SavedServer?>(null) }
+    LaunchedEffect(forgetArmed) {
+        if (forgetArmed != null) {
+            delay(4000)
+            forgetArmed = null
+        }
+    }
+    if (onCancel != null) androidx.activity.compose.BackHandler { onCancel() }
+    // Found on the network and not already on the list (nor the server in use, when switching).
+    fun FoundServer.isNew() = saved.none { it.url == address } && !(onCancel != null && address == Jdvr.session.serverUrl)
     // Servers that answered on the network.
     var found by remember { mutableStateOf<List<FoundServer>>(emptyList()) }
     var searching by remember { mutableStateOf(false) }
@@ -91,7 +108,7 @@ fun LoginScreen(onSignedIn: () -> Unit) {
 
     fun finish(result: AuthenticationResult) {
         val u = result.user ?: error("No user in the reply")
-        Jdvr.signIn(target, u.id, u.name, result.accessToken ?: error("No access token"))
+        Jdvr.signIn(target, u.id, u.name, result.accessToken ?: error("No access token"), serverName)
         onSignedIn()
     }
 
@@ -123,7 +140,8 @@ fun LoginScreen(onSignedIn: () -> Unit) {
                 }
             }
         }
-        if (server.isBlank() && found.size == 1) server = found.single().address
+        // Not when switching: there the list is the choice.
+        if (onCancel == null) found.filter { it.isNew() }.singleOrNull()?.let { if (server.isBlank()) server = it.address }
         searching = false
     }
 
@@ -203,12 +221,40 @@ fun LoginScreen(onSignedIn: () -> Unit) {
                 when {
                     nextPvr -> "Sign in to NextPVR"
                     serverName != null -> "Sign in to Jellyfin"
+                    onCancel != null -> "Switch server"
                     else -> "Sign in"
                 },
                 color = Jc.Text,
                 fontSize = 28.sp,
                 fontWeight = FontWeight.SemiBold,
             )
+            if (saved.isNotEmpty()) {
+                Text("Your servers", color = Jc.Muted, fontSize = 14.sp)
+                saved.forEach { s ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        val label = "${if (s.isNextPvr) "NextPVR" else "Jellyfin"} – ${s.name}" + (s.userName?.let { " · $it" } ?: "")
+                        Button(label, primary = saved.first() == s) {
+                            if (s.token != null) {
+                                Jdvr.switchTo(s)
+                                onSignedIn()
+                            } else {
+                                // Its sign-in couldn't be kept: sign in there again.
+                                server = s.url
+                            }
+                        }
+                        Button(if (forgetArmed == s) "Press again to forget" else "Forget") {
+                            if (forgetArmed == s) {
+                                Jdvr.forget(s)
+                                saved = saved - s
+                                forgetArmed = null
+                            } else {
+                                forgetArmed = s
+                            }
+                        }
+                    }
+                }
+                Text("Or another server:", color = Jc.Muted, fontSize = 14.sp, modifier = Modifier.padding(top = 8.dp))
+            }
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Bottom) {
                 Box(Modifier.weight(1f)) { Field("Server", server, onChange = { server = it }, keyboard = KeyboardType.Uri) }
                 if (server.isNotEmpty()) Button("Clear") { server = "" }
@@ -237,7 +283,7 @@ fun LoginScreen(onSignedIn: () -> Unit) {
                 )
             }
             // Found on the network: pick one (the one in use isn't listed).
-            val others = found.filter { it.address != base }
+            val others = found.filter { f -> f.address != base && f.isNew() }
             if (others.isNotEmpty()) {
                 Text("On your network", color = Jc.Muted, fontSize = 14.sp)
                 others.take(6).chunked(2).forEach { row ->
@@ -327,6 +373,7 @@ fun LoginScreen(onSignedIn: () -> Unit) {
                 }
             }
             message?.let { Text(it, color = Jc.Amber, fontSize = 15.sp) }
+            if (onCancel != null) Button("Back") { onCancel() }
         }
     }
 }

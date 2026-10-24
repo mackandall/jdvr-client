@@ -345,7 +345,8 @@ fun HomeScreen(
     }
 }
 
-private var libraryRowsCache: List<Pair<LiveTvRepository.Library, List<LiveTvRepository.LibItem>>> = emptyList()
+// With the server they came from (another server's rows aren't shown after switching).
+private var libraryRowsCache: Pair<String, List<Pair<LiveTvRepository.Library, List<LiveTvRepository.LibItem>>>> = "" to emptyList()
 
 /**
  * "Recently added in …", one row per library (menu order, hidden ones left out), as on the web
@@ -361,7 +362,7 @@ private fun LibraryRows(
 ) {
     val prefs = Jdvr.prefs
     // Kept between visits, so the poster to return to is there at once.
-    var rows by remember { mutableStateOf(libraryRowsCache) }
+    var rows by remember { mutableStateOf(libraryRowsCache.takeIf { it.first == Jdvr.serverKey }?.second.orEmpty()) }
     LaunchedEffect(prefs.hiddenLibraries, prefs.homeHiddenLibraries, prefs.libraryOrder) {
         while (true) {
             runCatching { Jdvr.liveTv.libraries() }.getOrNull()?.let { libs ->
@@ -369,7 +370,7 @@ private fun LibraryRows(
                     libs.filter { it.id.toString() !in prefs.hiddenLibraries && it.id.toString() !in prefs.homeHiddenLibraries }.inMenuOrder().mapNotNull { l ->
                         Jdvr.liveTv.latestIn(l.id)?.takeIf { it.isNotEmpty() }?.let { l to it }
                     }
-                libraryRowsCache = rows
+                libraryRowsCache = Jdvr.serverKey to rows
                 // The poster is gone (deleted, or no longer among the latest): focus goes to Watch live.
                 if (returnPoster != null && rows.none { (_, items) -> items.any { it.id == returnPoster } }) onReturned()
             }

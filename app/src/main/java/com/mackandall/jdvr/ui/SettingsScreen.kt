@@ -53,6 +53,7 @@ fun SettingsScreen(
     libraries: List<com.mackandall.jdvr.data.LiveTvRepository.Library> = emptyList(),
     // Straight to the menu's page (SageTV's Setup › Menu order).
     openMenuPage: Boolean = false,
+    onSwitchServer: () -> Unit = {},
 ) {
     val prefs = Jdvr.prefs
     var menuPage by remember { mutableStateOf(openMenuPage) }
@@ -224,6 +225,12 @@ fun SettingsScreen(
             options = listOf(Opt(Prefs.HOLD_OFF, "Off"), Opt(Prefs.HOLD_MENU, "Quick actions menu"), Opt(Prefs.HOLD_DETAILS, "Details page")),
             selected = if (prefs.holdOk == Prefs.HOLD_MENU || prefs.holdOk == Prefs.HOLD_DETAILS) prefs.holdOk else Prefs.HOLD_OFF,
         ) { prefs.changeHoldOk(it) }
+        Section("Server")
+        Choice(
+            label = "Server",
+            help = "The servers signed in to before are remembered: pick one to go back to it without signing in, or add another.",
+            value = (if (Jdvr.isNextPvr) "NextPVR – " else "Jellyfin – ") + (Jdvr.servers.firstOrNull { Jdvr.isCurrent(it) }?.name ?: Jdvr.session.serverUrl ?: "?") + " · Switch…",
+        ) { onSwitchServer() }
         Section("Server features")
         ServerFeaturesList()
         Section("About")

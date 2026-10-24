@@ -25,7 +25,7 @@ object DeviceRights {
     private var at = 0L
 
     suspend fun load() {
-        val user = Jdvr.userId?.toString()
+        val user = Jdvr.serverKey
         if (user != forUser) at = 0
         if (System.currentTimeMillis() - at < 2 * 60_000) return
         val got = runCatching { Jdvr.liveTv.deviceRights() }.getOrNull()
@@ -39,6 +39,6 @@ object DeviceRights {
 /** This TV's rights, refreshed when a page that uses them opens. */
 @Composable
 fun deviceRights(): LiveTvRepository.DeviceRights {
-    LaunchedEffect(Jdvr.userId) { DeviceRights.load() }
+    LaunchedEffect(Jdvr.serverKey) { DeviceRights.load() }
     return DeviceRights.info
 }
