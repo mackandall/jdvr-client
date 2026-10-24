@@ -214,6 +214,12 @@ interface TvBackend {
     /** Comskip's badge per item (keys: ids without dashes); items never scanned are left out. */
     suspend fun commercialBadges(ids: List<UUID>): Map<String, CommercialBadge>
 
+    /**
+     * The same for show cards whose ids aren't items (NextPVR's shows): a summary of their
+     * recordings. Jellyfin's shows are items, so [commercialBadges] covers them.
+     */
+    suspend fun showCommercialBadges(showIds: List<String>): Map<String, CommercialBadge> = emptyMap()
+
     /** Scan (again) for commercials; admins. */
     suspend fun scanCommercials(itemId: UUID): Message?
 
