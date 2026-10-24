@@ -1,5 +1,6 @@
 package com.mackandall.jdvr.player
 
+import com.mackandall.jdvr.ui.ProgramActionsHost
 import android.view.KeyEvent as AndroidKeyEvent
 import androidx.annotation.OptIn
 import androidx.compose.animation.core.animateFloat
@@ -686,35 +687,37 @@ fun PlayerScreen(
         // Info: the guide's programme panel on the right, with all its options.
         if (infoOpen) {
             channel?.now?.let { now ->
-                com.mackandall.jdvr.ui.ProgramPanel(
-                    program = now,
-                    channel = channel,
-                    symbols = symbols,
-                    onWatch = { infoOpen = false },
-                    onWatchFromStart = { id ->
-                        infoOpen = false
-                        onPlayRecording(com.mackandall.jdvr.PlayRecording(id, startMs = 0L, liveChannelId = channelId))
-                    },
-                    onPlayItem = {
-                        infoOpen = false
-                        onPlayRecording(it)
-                    },
-                    onChanged = {},
-                    onClose = { infoOpen = false },
-                    onActed = { msg ->
-                        infoOpen = false
-                        scope.launch {
-                            note = msg
-                            delay(1500)
-                            runCatching { channels = Jdvr.liveTv.channels() }
-                            buffers = Jdvr.liveTv.buffers(channelId)
-                            bufferIds = Jdvr.liveTv.bufferPrograms()
-                            delay(2500)
-                            note = null
-                        }
-                    },
-                    modifier = Modifier.align(Alignment.CenterEnd).width(400.dp),
-                )
+                ProgramActionsHost(onDismiss = { infoOpen = false }) {
+                    com.mackandall.jdvr.ui.ProgramPanel(
+                        program = now,
+                        channel = channel,
+                        symbols = symbols,
+                        onWatch = { infoOpen = false },
+                        onWatchFromStart = { id ->
+                            infoOpen = false
+                            onPlayRecording(com.mackandall.jdvr.PlayRecording(id, startMs = 0L, liveChannelId = channelId))
+                        },
+                        onPlayItem = {
+                            infoOpen = false
+                            onPlayRecording(it)
+                        },
+                        onChanged = {},
+                        onClose = { infoOpen = false },
+                        onActed = { msg ->
+                            infoOpen = false
+                            scope.launch {
+                                note = msg
+                                delay(1500)
+                                runCatching { channels = Jdvr.liveTv.channels() }
+                                buffers = Jdvr.liveTv.buffers(channelId)
+                                bufferIds = Jdvr.liveTv.bufferPrograms()
+                                delay(2500)
+                                note = null
+                            }
+                        },
+                        modifier = Modifier.width(400.dp),
+                    )
+                }
             } ?: run { infoOpen = false }
         }
         if (miniOpen && channels.isNotEmpty()) {
