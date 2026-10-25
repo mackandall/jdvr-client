@@ -30,7 +30,7 @@ class Prefs(
     var introSkip by mutableStateOf(p.getString("introSkip", ASK) ?: ASK)
         private set
 
-    /** NextPVR: the channel group the guide shows ("" = all channels). */
+    /** The channel group the guide shows ("" = the first, all channels). */
     var channelGroup by mutableStateOf(p.getString("channelGroup", "") ?: "")
         private set
 
@@ -93,6 +93,15 @@ class Prefs(
     fun changeGuideArtSeconds(v: Int) {
         guideArtSeconds = v
         p.edit().putInt("guideArtSeconds", v).apply()
+    }
+
+    /** Record series opens the series options first (which episodes, channel, keep…); off: set up with the server's defaults. */
+    var seriesOptionsFirst by mutableStateOf(p.getBoolean("seriesOptionsFirst", true))
+        private set
+
+    fun changeSeriesOptionsFirst(v: Boolean) {
+        seriesOptionsFirst = v
+        p.edit().putBoolean("seriesOptionsFirst", v).apply()
     }
 
     /** The colour theme (Settings › Appearance): a key of [com.mackandall.jdvr.ui.Palettes]. */

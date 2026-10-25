@@ -172,7 +172,7 @@ fun GuideScreen(
         }
     }
 
-    // NextPVR's channel groups: a button by the title picks the one shown (Settings keeps it).
+    // Channel groups (NextPVR's; on Jellyfin all channels / favourites): a button by the title picks the one shown, and it's kept.
     var groups by remember { mutableStateOf<List<String>>(emptyList()) }
     val groupFocus = remember { FocusRequester() }
     LaunchedEffect(Unit) { groups = runCatching { Jdvr.liveTv.channelGroups() }.getOrDefault(emptyList()) }
@@ -458,7 +458,13 @@ fun GuideScreen(
             }
             if (list.isEmpty() && groups.size > 1 && group in groups) {
                 Spacer(12)
-                Text("No channels in “$group”. Its channels are set in NextPVR's Channels settings.", color = Jc.Muted, fontSize = 16.sp, modifier = Modifier.fillMaxWidth(0.8f))
+                Text(
+                    if (Jdvr.isNextPvr) "No channels in “$group”. Its channels are set in NextPVR's Channels settings."
+                    else "No channels in “$group”. Mark channels as favourites in Jellyfin's web client.",
+                    color = Jc.Muted,
+                    fontSize = 16.sp,
+                    modifier = Modifier.fillMaxWidth(0.8f),
+                )
                 return@Column
             }
             if (list.isEmpty()) {
@@ -907,6 +913,8 @@ internal fun ProgramPanel(
 ) {
     var p by remember(program.id) { mutableStateOf(program) }
     var airingsHere by remember(program.id) { mutableStateOf(false) }
+    // Record series' options (Settings › Record series), shown over the panel.
+    var seriesOptions by remember(program.id) { mutableStateOf(false) }
     // Episode History (watched mark, a copy to play, forget) and JellyDVR Live (is this only a buffer).
     var eh by remember(program.id) { mutableStateOf<LiveTvRepository.EhProgram?>(null) }
     // What "Forget this show" would forget (administrators, a show with history).
@@ -954,8 +962,6 @@ internal fun ProgramPanel(
         }
     }
 
-    // NextPVR's series options, opened by Record series.
-    var seriesOptions by remember { mutableStateOf(false) }
     // NextPVR: a keyword rule or a manual recording, started from this programme.
     var nextPvrRule by remember { mutableStateOf<String?>(null) }
 
@@ -984,17 +990,24 @@ internal fun ProgramPanel(
     }
 
     if (seriesOptions) {
-        NextPvrSeriesOptions(
-            onDone = { msg ->
+        if (Jdvr.isNextPvr) {
+            NextPvrSeriesOptions(
+                onDone = { msg ->
+                    seriesOptions = false
+                    if (msg != null) act { msg }
+                },
+                programId = program.id,
+                programName = program.name,
+                channelId = program.channelId,
+                channelName = channel?.name,
+                programStart = program.start,
+            )
+        } else {
+            SeriesOptions(programId = program.id, programName = program.name) { msg ->
                 seriesOptions = false
                 if (msg != null) act { msg }
-            },
-            programId = program.id,
-            programName = program.name,
-            channelId = program.channelId,
-            channelName = channel?.name,
-            programStart = program.start,
-        )
+            }
+        }
     }
 
     when (nextPvrRule) {
@@ -1098,8 +1111,8 @@ internal fun ProgramPanel(
                                 }
                             } else {
                                 Button("Record series", modifier = Modifier.fillMaxWidth(), leading = { SeriesDots() }) {
-                                    // NextPVR: its series options first (which airings, keep, padding).
-                                    if (Jdvr.isNextPvr) {
+                                    // Its series options first (Settings › Record series).
+                                    if (Jdvr.prefs.seriesOptionsFirst) {
                                         seriesOptions = true
                                         return@Button
                                     }

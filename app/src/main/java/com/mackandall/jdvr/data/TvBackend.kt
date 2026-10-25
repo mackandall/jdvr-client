@@ -9,13 +9,13 @@ import java.util.UUID
  * need our plugins answer null when the plugin isn't there, and the screens already hide what's missing.
  */
 interface TvBackend {
-    /** The channels to show: on NextPVR, those of the channel group picked in the guide. */
+    /** The channels to show: those of the channel group picked in the guide. */
     suspend fun channels(): List<Channel>
 
     /** Every channel, whatever group is picked (for naming a programme's channel). */
     suspend fun allChannels(): List<Channel> = channels()
 
-    /** The server's channel groups (NextPVR's, "All Channels" first); empty where there are none. */
+    /** The channel groups to pick from, all channels first; empty where there's no choice. */
     suspend fun channelGroups(): List<String> = emptyList()
 
     suspend fun programs(
@@ -337,6 +337,15 @@ interface TvBackend {
 
     /** Saves a series recording's options (new only, any channel / time, padding, keep…). */
     suspend fun updateSeriesTimer(t: org.jellyfin.sdk.model.api.SeriesTimerInfoDto)
+
+    /** What each series recording has scheduled, by its id ([plainId]): how many, and the first of them. */
+    suspend fun seriesScheduled(): Map<String, LiveTvRepository.SeriesScheduled> = emptyMap()
+
+    /** A new series recording for [programId] as the server would set it up, to change before [createSeriesTimer]. */
+    suspend fun newSeriesTimer(programId: UUID): org.jellyfin.sdk.model.api.SeriesTimerInfoDto? = null
+
+    /** Sets up a series recording with the options chosen. */
+    suspend fun createSeriesTimer(t: org.jellyfin.sdk.model.api.SeriesTimerInfoDto) {}
 
     suspend fun seriesTimers(): List<org.jellyfin.sdk.model.api.SeriesTimerInfoDto>
 

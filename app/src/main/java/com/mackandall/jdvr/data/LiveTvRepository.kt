@@ -96,13 +96,24 @@ class LiveTvRepository : TvBackend {
 
     // ---- channels and guide --------------------------------------------------------------
 
-    override suspend fun channels(): List<Channel> =
+    // The guide's channel groups: every channel, or the user's favourite channels.
+    override suspend fun channelGroups(): List<String> {
+        val any = io { api.liveTvApi.getLiveTvChannels(GetLiveTvChannelsRequest(userId = Jdvr.userId, isFavorite = true, limit = 1)).content.items }
+        return if (any.isEmpty()) emptyList() else listOf(ALL_CHANNELS, FAVOURITE_CHANNELS)
+    }
+
+    override suspend fun channels(): List<Channel> = channelList(favourites = Jdvr.prefs.channelGroup == FAVOURITE_CHANNELS)
+
+    override suspend fun allChannels(): List<Channel> = channelList(favourites = false)
+
+    private suspend fun channelList(favourites: Boolean): List<Channel> =
         io {
         val items =
             api.liveTvApi
                 .getLiveTvChannels(
                     GetLiveTvChannelsRequest(
                         userId = Jdvr.userId,
+                        isFavorite = if (favourites) true else null,
                         addCurrentProgram = true,
                         enableImages = true,
                         imageTypeLimit = 1,
@@ -1477,6 +1488,26 @@ class LiveTvRepository : TvBackend {
     /** Saves a series recording's options (new only, any channel / time, padding, keep…). */
     override suspend fun updateSeriesTimer(t: org.jellyfin.sdk.model.api.SeriesTimerInfoDto): Unit = io { api.liveTvApi.updateSeriesTimer(t.id!!, t) }
 
+    override suspend fun seriesScheduled(): Map<String, SeriesScheduled> =
+        io { api.liveTvApi.getTimers().content.items }
+            .filter { it.seriesTimerId != null && it.startDate != null }
+            .groupBy { it.seriesTimerId!!.plainId() }
+            .mapValues { (_, timers) ->
+                val next = timers.minBy { it.startDate!! }
+                SeriesScheduled(timers.size, next.startDate!!, next.channelName)
+            }
+
+    /** A series recording's scheduled airings: how many, and when and where the next one is. */
+    data class SeriesScheduled(
+        val count: Int,
+        val next: java.time.LocalDateTime,
+        val nextChannel: String?,
+    )
+
+    override suspend fun newSeriesTimer(programId: UUID): org.jellyfin.sdk.model.api.SeriesTimerInfoDto = io { api.liveTvApi.getDefaultTimer(programId.toString()).content }
+
+    override suspend fun createSeriesTimer(t: org.jellyfin.sdk.model.api.SeriesTimerInfoDto): Unit = io { api.liveTvApi.createSeriesTimer(t) }
+
     override suspend fun seriesTimers(): List<org.jellyfin.sdk.model.api.SeriesTimerInfoDto> =
         io { api.liveTvApi.getSeriesTimers().content.items }
 
@@ -1811,6 +1842,10 @@ class LiveTvRepository : TvBackend {
 
 /** An id compared across APIs: some send dashes, some don't. */
 fun String.plainId(): String = replace("-", "").lowercase()
+
+// The guide's channel groups on Jellyfin.
+const val ALL_CHANNELS = "All channels"
+const val FAVOURITE_CHANNELS = "Favourites"
 
 /** Jellyfin ids come without dashes; UUID.fromString needs them. */
 fun String.toUuid(): UUID? = toUUIDOrNull()
