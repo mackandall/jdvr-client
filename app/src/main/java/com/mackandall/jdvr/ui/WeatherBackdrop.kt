@@ -18,11 +18,12 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import com.mackandall.jdvr.data.Sky
 import kotlin.random.Random
 
-/**
+/*
  * The Home screen's sky for the current weather, drawn (no pictures to download): a sky colour for
  * the conditions and time of day, the sun or moon and stars, clouds, and gently falling rain or
  * snow, or flashes for a storm.
  */
+
 /**
  * SageTV style: a picture for the conditions and time of day, shipped with the app (Wikimedia
  * Commons, public domain / CC0; assets/weather/CREDITS.txt), with rain, snow or lightning drawn
@@ -36,13 +37,46 @@ fun WeatherPicture(
 ) {
     val name =
         when (sky) {
-            Sky.Clear -> if (isDay) (if (java.time.LocalTime.now().hour % 2 == 0) "clear-day-1" else "clear-day-2") else "clear-night"
-            Sky.PartlyCloudy -> if (isDay) "partly-day" else "cloudy-night"
-            Sky.Cloudy -> if (isDay) "cloudy-day" else "cloudy-night"
-            Sky.Fog -> if (isDay) "fog-day" else "fog-night"
-            Sky.Rain -> if (isDay) "rain-day" else "rain-night"
-            Sky.Snow -> if (isDay) "snow-day" else "snow-night"
-            Sky.Storm -> "storm"
+            Sky.Clear -> {
+                if (isDay) {
+                    (
+                        if (java.time.LocalTime
+                                .now()
+                                .hour % 2 == 0
+                        ) {
+                            "clear-day-1"
+                        } else {
+                            "clear-day-2"
+                        }
+                    )
+                } else {
+                    "clear-night"
+                }
+            }
+
+            Sky.PartlyCloudy -> {
+                if (isDay) "partly-day" else "cloudy-night"
+            }
+
+            Sky.Cloudy -> {
+                if (isDay) "cloudy-day" else "cloudy-night"
+            }
+
+            Sky.Fog -> {
+                if (isDay) "fog-day" else "fog-night"
+            }
+
+            Sky.Rain -> {
+                if (isDay) "rain-day" else "rain-night"
+            }
+
+            Sky.Snow -> {
+                if (isDay) "snow-day" else "snow-night"
+            }
+
+            Sky.Storm -> {
+                "storm"
+            }
         }
     androidx.compose.foundation.layout.Box(modifier.fillMaxSize()) {
         coil3.compose.AsyncImage(
@@ -73,66 +107,105 @@ fun WeatherBackdrop(
             0f
         }
     // Fixed positions for stars, drops and flakes (the same every frame).
-    val dots = remember(sky) { val r = Random(7); List(140) { Offset(r.nextFloat(), r.nextFloat()) to r.nextFloat() } }
+    val dots =
+        remember(sky) {
+            val r = Random(7)
+            List(140) { Offset(r.nextFloat(), r.nextFloat()) to r.nextFloat() }
+        }
 
     Canvas(modifier.fillMaxSize()) {
         val top: Color
         val bottom: Color
         when {
-            sky == Sky.Storm -> { top = Color(0xFF1B2030); bottom = Color(0xFF3A3F52) }
-            sky == Sky.Rain -> { top = if (isDay) Color(0xFF4A5868) else Color(0xFF151C26); bottom = if (isDay) Color(0xFF7D8A98) else Color(0xFF2A3442) }
-            sky == Sky.Snow -> { top = if (isDay) Color(0xFF8C9BAD) else Color(0xFF1E2633); bottom = if (isDay) Color(0xFFD5DEE8) else Color(0xFF3B4757) }
-            sky == Sky.Fog -> { top = if (isDay) Color(0xFF8E979F) else Color(0xFF242A30); bottom = if (isDay) Color(0xFFC3C9CE) else Color(0xFF3E454C) }
-            sky == Sky.Cloudy -> { top = if (isDay) Color(0xFF6E7F92) else Color(0xFF161D28); bottom = if (isDay) Color(0xFFA9B6C3) else Color(0xFF2E3846) }
-            isDay -> { top = Color(0xFF2F78C4); bottom = Color(0xFF9CCBF0) }
-            else -> { top = Color(0xFF070B1A); bottom = Color(0xFF1C2A4A) }
+            sky == Sky.Storm -> {
+                top = Color(0xFF1B2030)
+                bottom = Color(0xFF3A3F52)
+            }
+
+            sky == Sky.Rain -> {
+                top = if (isDay) Color(0xFF4A5868) else Color(0xFF151C26)
+                bottom = if (isDay) Color(0xFF7D8A98) else Color(0xFF2A3442)
+            }
+
+            sky == Sky.Snow -> {
+                top = if (isDay) Color(0xFF8C9BAD) else Color(0xFF1E2633)
+                bottom = if (isDay) Color(0xFFD5DEE8) else Color(0xFF3B4757)
+            }
+
+            sky == Sky.Fog -> {
+                top = if (isDay) Color(0xFF8E979F) else Color(0xFF242A30)
+                bottom = if (isDay) Color(0xFFC3C9CE) else Color(0xFF3E454C)
+            }
+
+            sky == Sky.Cloudy -> {
+                top = if (isDay) Color(0xFF6E7F92) else Color(0xFF161D28)
+                bottom = if (isDay) Color(0xFFA9B6C3) else Color(0xFF2E3846)
+            }
+
+            isDay -> {
+                top = Color(0xFF2F78C4)
+                bottom = Color(0xFF9CCBF0)
+            }
+
+            else -> {
+                top = Color(0xFF070B1A)
+                bottom = Color(0xFF1C2A4A)
+            }
         }
         val w = size.width
         val h = size.height
         if (!overlayOnly) {
-        drawRect(Brush.verticalGradient(listOf(top, bottom)))
+            drawRect(Brush.verticalGradient(listOf(top, bottom)))
 
-        // Stars on a clear-ish night.
-        if (!isDay && (sky == Sky.Clear || sky == Sky.PartlyCloudy)) {
-            dots.take(90).forEach { (p, s) -> drawCircle(Color.White.copy(alpha = 0.35f + 0.5f * s), radius = 1f + 2f * s, center = Offset(p.x * w, p.y * h * 0.6f)) }
-        }
-        // Sun or moon.
-        if (sky == Sky.Clear || sky == Sky.PartlyCloudy) {
-            val c = Offset(w * 0.8f, h * 0.2f)
-            if (isDay) {
-                drawCircle(Brush.radialGradient(listOf(Color(0x66FFF3B0), Color.Transparent), center = c, radius = h * 0.4f), radius = h * 0.4f, center = c)
-                drawCircle(Color(0xFFFFE680), radius = h * 0.08f, center = c)
-            } else {
-                drawCircle(Brush.radialGradient(listOf(Color(0x33E8EEFF), Color.Transparent), center = c, radius = h * 0.25f), radius = h * 0.25f, center = c)
-                drawCircle(Color(0xFFE8ECF5), radius = h * 0.06f, center = c)
-                drawCircle(top.copy(alpha = 0.95f), radius = h * 0.055f, center = c + Offset(h * 0.03f, -h * 0.015f))
+            // Stars on a clear-ish night.
+            if (!isDay && (sky == Sky.Clear || sky == Sky.PartlyCloudy)) {
+                dots.take(90).forEach { (p, s) -> drawCircle(Color.White.copy(alpha = 0.35f + 0.5f * s), radius = 1f + 2f * s, center = Offset(p.x * w, p.y * h * 0.6f)) }
             }
-        }
-        // Clouds.
-        val clouds =
-            when (sky) {
-                Sky.PartlyCloudy -> 3
-                Sky.Cloudy, Sky.Rain, Sky.Snow -> 6
-                Sky.Storm -> 7
-                Sky.Fog -> 0
-                else -> 0
+            // Sun or moon.
+            if (sky == Sky.Clear || sky == Sky.PartlyCloudy) {
+                val c = Offset(w * 0.8f, h * 0.2f)
+                if (isDay) {
+                    drawCircle(Brush.radialGradient(listOf(Color(0x66FFF3B0), Color.Transparent), center = c, radius = h * 0.4f), radius = h * 0.4f, center = c)
+                    drawCircle(Color(0xFFFFE680), radius = h * 0.08f, center = c)
+                } else {
+                    drawCircle(Brush.radialGradient(listOf(Color(0x33E8EEFF), Color.Transparent), center = c, radius = h * 0.25f), radius = h * 0.25f, center = c)
+                    drawCircle(Color(0xFFE8ECF5), radius = h * 0.06f, center = c)
+                    drawCircle(top.copy(alpha = 0.95f), radius = h * 0.055f, center = c + Offset(h * 0.03f, -h * 0.015f))
+                }
             }
-        val cloudColor =
-            when {
-                sky == Sky.Storm -> Color(0xFF2B3040)
-                !isDay -> Color(0xFF3A4556)
-                sky == Sky.PartlyCloudy -> Color(0xFFF4F7FA)
-                else -> Color(0xFFDCE2E9)
+            // Clouds.
+            val clouds =
+                when (sky) {
+                    Sky.PartlyCloudy -> 3
+                    Sky.Cloudy, Sky.Rain, Sky.Snow -> 6
+                    Sky.Storm -> 7
+                    Sky.Fog -> 0
+                    else -> 0
+                }
+            val cloudColor =
+                when {
+                    sky == Sky.Storm -> Color(0xFF2B3040)
+                    !isDay -> Color(0xFF3A4556)
+                    sky == Sky.PartlyCloudy -> Color(0xFFF4F7FA)
+                    else -> Color(0xFFDCE2E9)
+                }
+            repeat(clouds) { i ->
+                val cx = w * (0.08f + 0.17f * i + (if (i % 2 == 0) 0.02f else -0.03f))
+                val cy = h * (0.14f + 0.07f * (i % 3))
+                cloud(Offset(cx, cy), h * (0.07f + 0.015f * (i % 2)), cloudColor.copy(alpha = if (sky == Sky.PartlyCloudy) 0.85f else 0.75f))
             }
-        repeat(clouds) { i ->
-            val cx = w * (0.08f + 0.17f * i + (if (i % 2 == 0) 0.02f else -0.03f))
-            val cy = h * (0.14f + 0.07f * (i % 3))
-            cloud(Offset(cx, cy), h * (0.07f + 0.015f * (i % 2)), cloudColor.copy(alpha = if (sky == Sky.PartlyCloudy) 0.85f else 0.75f))
-        }
-        // Fog bands.
-        if (sky == Sky.Fog) {
-            repeat(5) { i -> drawRect(Color.White.copy(alpha = 0.12f), topLeft = Offset(0f, h * (0.3f + 0.12f * i)), size = androidx.compose.ui.geometry.Size(w, h * 0.06f)) }
-        }
+            // Fog bands.
+            if (sky == Sky.Fog) {
+                repeat(5) { i ->
+                    drawRect(
+                        Color.White.copy(alpha = 0.12f),
+                        topLeft = Offset(0f, h * (0.3f + 0.12f * i)),
+                        size =
+                            androidx.compose.ui.geometry
+                                .Size(w, h * 0.06f),
+                    )
+                }
+            }
         }
         // Rain and storm: falling streaks; snow: drifting flakes.
         if (sky == Sky.Rain || sky == Sky.Storm) {
@@ -163,5 +236,11 @@ private fun DrawScope.cloud(
     drawCircle(color, radius = r * 0.8f, center = c + Offset(-r * 1.0f, r * 0.25f))
     drawCircle(color, radius = r * 0.9f, center = c + Offset(r * 1.0f, r * 0.2f))
     drawCircle(color, radius = r * 0.7f, center = c + Offset(r * 1.8f, r * 0.4f))
-    drawRect(color, topLeft = c + Offset(-r * 1.0f, r * 0.25f), size = androidx.compose.ui.geometry.Size(r * 2.8f, r * 0.85f))
+    drawRect(
+        color,
+        topLeft = c + Offset(-r * 1.0f, r * 0.25f),
+        size =
+            androidx.compose.ui.geometry
+                .Size(r * 2.8f, r * 0.85f),
+    )
 }

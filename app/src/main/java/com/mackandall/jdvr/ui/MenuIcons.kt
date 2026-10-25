@@ -18,8 +18,8 @@ import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.ui.unit.Dp
 import com.mackandall.jdvr.Screen
-import com.mackandall.jdvr.data.Prefs
 import com.mackandall.jdvr.data.Library
+import com.mackandall.jdvr.data.Prefs
 
 /**
  * The side menu's icons (Settings › Menu): what each entry shows, in sets of one look. A set is a
@@ -64,16 +64,29 @@ fun Screen.menuIcon(): MenuIcon =
 /** A library's icon: by what it holds; an archive (by its name) as stored film, an old TV set, or a box. */
 fun Library.menuIcon(): MenuIcon =
     when {
-        name.contains("archive", ignoreCase = true) ->
+        name.contains("archive", ignoreCase = true) -> {
             when (kind) {
                 "movies" -> MenuIcon.MoviesArchive
                 "tvshows" -> MenuIcon.TvArchive
                 else -> MenuIcon.Archive
             }
-        kind == "movies" -> MenuIcon.Movies
-        kind == "tvshows" || kind == "livetv" -> MenuIcon.Tv
-        kind == "music" -> MenuIcon.Music
-        else -> MenuIcon.Folder
+        }
+
+        kind == "movies" -> {
+            MenuIcon.Movies
+        }
+
+        kind == "tvshows" || kind == "livetv" -> {
+            MenuIcon.Tv
+        }
+
+        kind == "music" -> {
+            MenuIcon.Music
+        }
+
+        else -> {
+            MenuIcon.Folder
+        }
     }
 
 private val LINE =
@@ -135,7 +148,10 @@ fun iconSetFor(key: String): IconSet? = if (key == Prefs.OFF) null else IconSets
 
 private val parsedCache = HashMap<String, Path>()
 
-private fun parsed(d: String, evenOdd: Boolean): Path =
+private fun parsed(
+    d: String,
+    evenOdd: Boolean,
+): Path =
     parsedCache.getOrPut((if (evenOdd) "e" else "n") + d) {
         PathParser().parsePathString(d).toPath().apply { if (evenOdd) fillType = PathFillType.EvenOdd }
     }
@@ -190,13 +206,20 @@ fun menuIconScale(
     distance: Int,
 ): Float =
     when (motion) {
-        Prefs.MAGNIFY -> if (distance == 0) growth else 1f
-        Prefs.WAVE ->
+        Prefs.MAGNIFY -> {
+            if (distance == 0) growth else 1f
+        }
+
+        Prefs.WAVE -> {
             when (distance) {
                 0 -> growth
                 1 -> 1f + (growth - 1f) * 0.4f
                 2 -> 1f + (growth - 1f) * 0.12f
                 else -> 1f
             }
-        else -> 1f
+        }
+
+        else -> {
+            1f
+        }
     }

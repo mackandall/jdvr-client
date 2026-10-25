@@ -16,12 +16,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.draw.scale
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import coil3.compose.AsyncImage
@@ -75,7 +75,14 @@ fun Backdrop(
         val blurred = poster?.takeIf { it.isNotEmpty() } ?: wide?.takeIf { wideOk == false && it.isNotEmpty() }
         if (wideOk == false && blurred != null) {
             val context = LocalContext.current
-            val request = remember(blurred) { ImageRequest.Builder(context).data(blurred).size(24, 36).build() }
+            val request =
+                remember(blurred) {
+                    ImageRequest
+                        .Builder(context)
+                        .data(blurred)
+                        .size(24, 36)
+                        .build()
+                }
             AsyncImage(
                 model = request,
                 contentDescription = null,

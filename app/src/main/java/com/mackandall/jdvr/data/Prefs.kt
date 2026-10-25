@@ -56,7 +56,10 @@ class Prefs(
     var newestLibraries by mutableStateOf(p.getStringSet("newestLibraries", emptySet())?.toSet() ?: emptySet())
         private set
 
-    fun changeLibraryNewest(libraryId: String, newest: Boolean) {
+    fun changeLibraryNewest(
+        libraryId: String,
+        newest: Boolean,
+    ) {
         newestLibraries = if (newest) newestLibraries + libraryId else newestLibraries - libraryId
         p.edit().putStringSet("newestLibraries", newestLibraries).apply()
     }
@@ -118,24 +121,34 @@ class Prefs(
 
     fun changeGem(v: String) {
         gem = v
-        com.mackandall.jdvr.ui.Jc.palette = com.mackandall.jdvr.ui.paletteFor(theme, v)
+        com.mackandall.jdvr.ui.Jc.palette =
+            com.mackandall.jdvr.ui
+                .paletteFor(theme, v)
         p.edit().putString("gem", v).apply()
     }
 
     init {
-        com.mackandall.jdvr.ui.Jc.palette = com.mackandall.jdvr.ui.paletteFor(theme, gem)
-        com.mackandall.jdvr.ui.Jc.wash = com.mackandall.jdvr.ui.washFor(wash)
+        com.mackandall.jdvr.ui.Jc.palette =
+            com.mackandall.jdvr.ui
+                .paletteFor(theme, gem)
+        com.mackandall.jdvr.ui.Jc.wash =
+            com.mackandall.jdvr.ui
+                .washFor(wash)
     }
 
     fun changeWash(v: String) {
         wash = v
-        com.mackandall.jdvr.ui.Jc.wash = com.mackandall.jdvr.ui.washFor(v)
+        com.mackandall.jdvr.ui.Jc.wash =
+            com.mackandall.jdvr.ui
+                .washFor(v)
         p.edit().putString("wash", v).apply()
     }
 
     fun changeTheme(v: String) {
         theme = v
-        com.mackandall.jdvr.ui.Jc.palette = com.mackandall.jdvr.ui.paletteFor(v, gem)
+        com.mackandall.jdvr.ui.Jc.palette =
+            com.mackandall.jdvr.ui
+                .paletteFor(v, gem)
         p.edit().putString("theme", v).apply()
     }
 
@@ -165,7 +178,12 @@ class Prefs(
 
     fun changeWeatherPlace(v: Place) {
         weatherPlace = v
-        p.edit().putString("weatherName", v.name).putFloat("weatherLat", v.latitude.toFloat()).putFloat("weatherLon", v.longitude.toFloat()).apply()
+        p
+            .edit()
+            .putString("weatherName", v.name)
+            .putFloat("weatherLat", v.latitude.toFloat())
+            .putFloat("weatherLon", v.longitude.toFloat())
+            .apply()
     }
 
     fun changeFahrenheit(v: Boolean) {
@@ -268,7 +286,11 @@ class Prefs(
     fun homePreset(): String? = HOME_PRESETS.entries.firstOrNull { (_, tiles) -> tiles.all { (k, v) -> homeTile(k) == v } }?.key
 
     private fun parseTiles(v: String?): Map<String, String> =
-        v.orEmpty().split(',').mapNotNull { it.split('=').takeIf { kv -> kv.size == 2 }?.let { kv -> kv[0] to kv[1] } }.toMap()
+        v
+            .orEmpty()
+            .split(',')
+            .mapNotNull { it.split('=').takeIf { kv -> kv.size == 2 }?.let { kv -> kv[0] to kv[1] } }
+            .toMap()
 
     fun changeMenuIconSet(v: String) {
         menuIconSet = v
@@ -296,7 +318,11 @@ class Prefs(
         changeLibraryOrder(emptyList())
         hiddenMenu = emptySet()
         hiddenLibraries = emptySet()
-        p.edit().putStringSet("hiddenMenu", hiddenMenu).putStringSet("hiddenLibraries", hiddenLibraries).apply()
+        p
+            .edit()
+            .putStringSet("hiddenMenu", hiddenMenu)
+            .putStringSet("hiddenLibraries", hiddenLibraries)
+            .apply()
     }
 
     fun toggleLibrary(id: String) {
@@ -386,7 +412,12 @@ class Prefs(
 
         /** A saved order, minus keys no longer known, plus new ones at the end. */
         fun normalizeMenu(saved: String?): List<String> {
-            val known = saved.orEmpty().split(',').filter { it in MENU_DEFAULT }.distinct()
+            val known =
+                saved
+                    .orEmpty()
+                    .split(',')
+                    .filter { it in MENU_DEFAULT }
+                    .distinct()
             return known + MENU_DEFAULT.filter { it !in known }
         }
     }

@@ -32,19 +32,19 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.scale
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -55,10 +55,10 @@ import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
 import com.mackandall.jdvr.Screen
 import com.mackandall.jdvr.data.Jdvr
+import com.mackandall.jdvr.data.Library
 import com.mackandall.jdvr.data.Prefs
 import kotlinx.coroutines.launch
 import java.util.UUID
-import com.mackandall.jdvr.data.Library
 
 /** The libraries in their menu order (Settings › Menu); ones not placed yet follow, as the server lists them. */
 fun List<Library>.inMenuOrder(): List<Library> {
@@ -113,6 +113,7 @@ fun Rail(
             },
         )
     }
+
     fun setOpen(v: Boolean) {
         open = v
         prefs.changeLibrariesOpen(v)
@@ -124,6 +125,7 @@ fun Rail(
             signOutArmed = false
         }
     }
+
     fun signOut() {
         if (signOutArmed) onSignOut() else signOutArmed = true
     }
@@ -163,6 +165,7 @@ fun Rail(
         }
     // One focus handle per entry, kept by key, so opening Libraries doesn't lose focus.
     val reqs = remember { mutableMapOf<String, FocusRequester>() }
+
     fun req(k: String) = reqs.getOrPut(k) { FocusRequester() }
     val gear = req("gear")
     val user = req("user")
@@ -174,10 +177,18 @@ fun Rail(
             icons && selected == Screen.Settings -> gear
             else -> entries.firstOrNull { it.on }?.let { req(it.key) } ?: entries.firstOrNull()?.let { req(it.key) } ?: gear
         }
+
     fun slot(i: Int): Modifier =
         Modifier.focusRequester(req(entries[i].key)).focusProperties {
             up = if (i > 0) req(entries[i - 1].key) else FocusRequester.Cancel
-            down = if (i < entries.size - 1) req(entries[i + 1].key) else if (icons) gear else FocusRequester.Cancel
+            down =
+                if (i < entries.size - 1) {
+                    req(entries[i + 1].key)
+                } else if (icons) {
+                    gear
+                } else {
+                    FocusRequester.Cancel
+                }
             left = FocusRequester.Cancel
         }
 
@@ -192,6 +203,7 @@ fun Rail(
             "gear", "user", "power" -> entries.size
             else -> entries.indexOfFirst { it.key == focusedKey }
         }
+
     fun iconScale(i: Int): Float = if (focusedAt < 0) 1f else menuIconScale(prefs.menuIconMotion, growth, kotlin.math.abs(i - focusedAt))
     val itemWidth = if (iconSet != null) 216.dp else 192.dp
     LaunchedEffect(focusedKey, open) { onKeepsRight(focusedKey == "gear" || focusedKey == "user" || (focusedKey == "libraries" && !open)) }
@@ -237,16 +249,35 @@ fun Rail(
             Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 entries.forEachIndexed { i, e ->
                     key(e.key) {
-                        if (e.divider) Box(Modifier.padding(horizontal = 12.dp, vertical = 2.dp).width(168.dp).height(1.dp).background(Jc.Line))
+                        if (e.divider) {
+                            Box(
+                                Modifier
+                                    .padding(horizontal = 12.dp, vertical = 2.dp)
+                                    .width(168.dp)
+                                    .height(1.dp)
+                                    .background(Jc.Line),
+                            )
+                        }
                         val m = slot(i).onFocusChanged { if (it.isFocused) focusedKey = e.key }
                         when (e.kind) {
-                            Kind.Item -> RailItem(e.label, e.on, m, width = itemWidth, icon = e.icon, iconSet = iconSet, iconScale = iconScale(i), onClick = e.click)
-                            Kind.Child ->
+                            Kind.Item -> {
+                                RailItem(e.label, e.on, m, width = itemWidth, icon = e.icon, iconSet = iconSet, iconScale = iconScale(i), onClick = e.click)
+                            }
+
+                            Kind.Child -> {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Box(Modifier.padding(start = 16.dp, end = 10.dp).width(2.dp).height(36.dp).background(Jc.Line))
+                                    Box(
+                                        Modifier
+                                            .padding(start = 16.dp, end = 10.dp)
+                                            .width(2.dp)
+                                            .height(36.dp)
+                                            .background(Jc.Line),
+                                    )
                                     RailItem(e.label, e.on, m, width = itemWidth - 28.dp, small = true, icon = e.icon, iconSet = iconSet, iconScale = iconScale(i), onClick = e.click)
                                 }
-                            Kind.Group ->
+                            }
+
+                            Kind.Group -> {
                                 RailItem(
                                     e.label,
                                     e.on,
@@ -274,12 +305,19 @@ fun Rail(
                                     },
                                     onClick = e.click,
                                 )
+                            }
                         }
                     }
                 }
             }
             if (icons) {
-                Box(Modifier.padding(horizontal = 12.dp, vertical = 2.dp).width(168.dp).height(1.dp).background(Jc.Line))
+                Box(
+                    Modifier
+                        .padding(horizontal = 12.dp, vertical = 2.dp)
+                        .width(168.dp)
+                        .height(1.dp)
+                        .background(Jc.Line),
+                )
                 // The focused icon's name (the line keeps its height so the row doesn't move).
                 Text(
                     when (focusedKey) {
@@ -303,11 +341,13 @@ fun Rail(
                         iconScale(entries.size).takeIf { focusedKey == "gear" } ?: 1f,
                         "Settings",
                         selected == Screen.Settings,
-                        Modifier.focusRequester(gear).focusProperties {
-                            up = last
-                            down = FocusRequester.Cancel
-                            left = FocusRequester.Cancel
-                        }.onFocusChanged { if (it.isFocused) focusedKey = "gear" },
+                        Modifier
+                            .focusRequester(gear)
+                            .focusProperties {
+                                up = last
+                                down = FocusRequester.Cancel
+                                left = FocusRequester.Cancel
+                            }.onFocusChanged { if (it.isFocused) focusedKey = "gear" },
                     ) { onSelect(Screen.Settings) }
                     RailIcon(
                         SERVER,
@@ -316,10 +356,12 @@ fun Rail(
                         iconScale(entries.size).takeIf { focusedKey == "server" } ?: 1f,
                         "Switch server",
                         false,
-                        Modifier.focusRequester(serverIcon).focusProperties {
-                            up = last
-                            down = FocusRequester.Cancel
-                        }.onFocusChanged { if (it.isFocused) focusedKey = "server" },
+                        Modifier
+                            .focusRequester(serverIcon)
+                            .focusProperties {
+                                up = last
+                                down = FocusRequester.Cancel
+                            }.onFocusChanged { if (it.isFocused) focusedKey = "server" },
                         onClick = onSwitchServer,
                     )
                     RailIcon(
@@ -329,12 +371,14 @@ fun Rail(
                         iconScale(entries.size).takeIf { focusedKey == "user" } ?: 1f,
                         "Sign out",
                         false,
-                        Modifier.focusRequester(user).focusProperties {
-                            up = last
-                            down = FocusRequester.Cancel
-                        }.onFocusChanged {
-                            if (it.isFocused) focusedKey = "user" else signOutArmed = false
-                        },
+                        Modifier
+                            .focusRequester(user)
+                            .focusProperties {
+                                up = last
+                                down = FocusRequester.Cancel
+                            }.onFocusChanged {
+                                if (it.isFocused) focusedKey = "user" else signOutArmed = false
+                            },
                         onClick = ::signOut,
                     )
                     RailIcon(
@@ -344,10 +388,12 @@ fun Rail(
                         iconScale(entries.size).takeIf { focusedKey == "power" } ?: 1f,
                         "Exit",
                         false,
-                        Modifier.focusRequester(power).focusProperties {
-                            up = last
-                            down = FocusRequester.Cancel
-                        }.onFocusChanged { if (it.isFocused) focusedKey = "power" },
+                        Modifier
+                            .focusRequester(power)
+                            .focusProperties {
+                                up = last
+                                down = FocusRequester.Cancel
+                            }.onFocusChanged { if (it.isFocused) focusedKey = "power" },
                         onClick = onExit,
                     )
                 }
@@ -378,7 +424,8 @@ private fun RailItem(
     val fit = with(density) { if (rowHeight == 0) 1f else ((rowHeight - 6.dp.toPx()) / base.toPx()).coerceAtLeast(1f) }
     val grown by androidx.compose.animation.core.animateFloatAsState(
         iconScale.coerceAtMost(fit),
-        androidx.compose.animation.core.spring(dampingRatio = 0.55f, stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow),
+        androidx.compose.animation.core
+            .spring(dampingRatio = 0.55f, stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow),
         label = "menuIcon",
     )
     // NextPVR: the focused row is a dark grey bar with a green edge, white type.
@@ -399,7 +446,15 @@ private fun RailItem(
     ) {
         val pad = if (small) 7.dp else 8.dp
         val withIcon = icon != null && iconSet != null
-        if (npvr && focused) Box(Modifier.matchParentSize().wrapContentWidth(Alignment.Start).width(5.dp).background(Jc.Green))
+        if (npvr && focused) {
+            Box(
+                Modifier
+                    .matchParentSize()
+                    .wrapContentWidth(Alignment.Start)
+                    .width(5.dp)
+                    .background(Jc.Green),
+            )
+        }
         Row(Modifier.padding(start = if (withIcon) 10.dp else 16.dp, end = 12.dp, top = pad, bottom = pad), verticalAlignment = Alignment.CenterVertically) {
             if (withIcon) {
                 Box(Modifier.width(base + 10.dp), contentAlignment = Alignment.Center) {
@@ -408,7 +463,13 @@ private fun RailItem(
                         icon!!,
                         iconSet!!,
                         base,
-                        if (focused) (if (npvr) Color.White else Jc.Focus) else if (selected) Jc.Text else Jc.Muted,
+                        if (focused) {
+                            (if (npvr) Color.White else Jc.Focus)
+                        } else if (selected) {
+                            Jc.Text
+                        } else {
+                            Jc.Muted
+                        },
                         Jc.Focus,
                         Modifier.graphicsLayer {
                             scaleX = s
@@ -454,7 +515,8 @@ private fun RailIcon(
     ) {
         val grown by androidx.compose.animation.core.animateFloatAsState(
             iconScale.coerceAtMost(1.25f),
-            androidx.compose.animation.core.spring(dampingRatio = 0.6f, stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow),
+            androidx.compose.animation.core
+                .spring(dampingRatio = 0.6f, stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow),
             label = "railIcon",
         )
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -462,7 +524,17 @@ private fun RailIcon(
                 StrokeIcon(paths, 18.dp, if (focused) Jc.Text else Jc.Muted)
             } else {
                 val s = grown.coerceAtMost(1.25f)
-                MenuGlyph(icon, iconSet, 18.dp, if (focused) Jc.Text else Jc.Muted, Jc.Focus, Modifier.graphicsLayer { scaleX = s; scaleY = s })
+                MenuGlyph(
+                    icon,
+                    iconSet,
+                    18.dp,
+                    if (focused) Jc.Text else Jc.Muted,
+                    Jc.Focus,
+                    Modifier.graphicsLayer {
+                        scaleX = s
+                        scaleY = s
+                    },
+                )
             }
         }
     }

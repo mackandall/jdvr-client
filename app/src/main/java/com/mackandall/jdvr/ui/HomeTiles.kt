@@ -28,6 +28,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.focusProperties
@@ -46,21 +49,18 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.tv.material3.Border
 import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
+import com.mackandall.jdvr.data.Drive
 import com.mackandall.jdvr.data.Sky
+import com.mackandall.jdvr.data.TunerStatus
 import com.mackandall.jdvr.data.WeatherNow
 import kotlin.math.cos
 import kotlin.math.sin
-import com.mackandall.jdvr.data.Drive
-import com.mackandall.jdvr.data.TunerStatus
 
-/**
+/*
  * Home's tiles (Settings › Home): the weather, lists that scroll inside their tile (what's
  * recording, what records next, what needs attention), and the tuners with the recordings drive.
  * A tile's size comes from Home's layout; its lists show as many rows as fit and scroll with ▲▼
@@ -69,8 +69,7 @@ import com.mackandall.jdvr.data.TunerStatus
 
 /** A tile's share of its row (or a row's of the screen), eased to its new size when tiles come and go. */
 @Composable
-fun animatedWeight(target: Float): Float =
-    animateFloatAsState(target, tween(450, easing = FastOutSlowInEasing), label = "homeWeight").value
+fun animatedWeight(target: Float): Float = animateFloatAsState(target, tween(450, easing = FastOutSlowInEasing), label = "homeWeight").value
 
 @Composable
 fun HomeTileFrame(
@@ -117,7 +116,12 @@ fun WeatherIcon(
     val rain = if (Jc.Light) Color(0xFF2F6FA0) else Color(0xFF5CC8EF)
     Canvas(Modifier.size(size)) {
         val u = this.size.width / 120f
-        fun sunAt(cx: Float, cy: Float, r: Float) {
+
+        fun sunAt(
+            cx: Float,
+            cy: Float,
+            r: Float,
+        ) {
             if (isDay) {
                 rotate(spin, Offset(cx * u, cy * u)) {
                     for (i in 0 until 8) {
@@ -128,22 +132,49 @@ fun WeatherIcon(
                 drawCircle(sun, r * u, Offset(cx * u, cy * u))
             } else {
                 // A crescent moon by night: a cut-out shape, so it suits any theme and the see-through tile.
-                fun disc(x: Float, y: Float) = Path().apply { addOval(androidx.compose.ui.geometry.Rect(Offset(x * u, y * u), r * u)) }
+                fun disc(
+                    x: Float,
+                    y: Float,
+                ) = Path().apply {
+                    addOval(
+                        androidx.compose.ui.geometry
+                            .Rect(Offset(x * u, y * u), r * u),
+                    )
+                }
                 drawPath(Path.combine(PathOperation.Difference, disc(cx, cy), disc(cx + r * 0.55f, cy - r * 0.35f)), Color(0xFFE6E0C8))
             }
         }
+
         fun cloudAt(dx: Float) {
             // Bubbles joined into one shape, so the outline goes round the cloud, not each bubble.
-            fun part(r: androidx.compose.ui.geometry.Rect, oval: Boolean = true) = Path().apply { if (oval) addOval(r) else addRect(r) }
-            var path = part(androidx.compose.ui.geometry.Rect((30 + dx) * u, 52 * u, (62 + dx) * u, 84 * u))
+            fun part(
+                r: androidx.compose.ui.geometry.Rect,
+                oval: Boolean = true,
+            ) = Path().apply { if (oval) addOval(r) else addRect(r) }
+            var path =
+                part(
+                    androidx.compose.ui.geometry
+                        .Rect((30 + dx) * u, 52 * u, (62 + dx) * u, 84 * u),
+                )
             listOf(
-                part(androidx.compose.ui.geometry.Rect((44 + dx) * u, 34 * u, (86 + dx) * u, 76 * u)),
-                part(androidx.compose.ui.geometry.Rect((70 + dx) * u, 50 * u, (100 + dx) * u, 82 * u)),
-                part(androidx.compose.ui.geometry.Rect((46 + dx) * u, 64 * u, (86 + dx) * u, 84 * u), oval = false),
+                part(
+                    androidx.compose.ui.geometry
+                        .Rect((44 + dx) * u, 34 * u, (86 + dx) * u, 76 * u),
+                ),
+                part(
+                    androidx.compose.ui.geometry
+                        .Rect((70 + dx) * u, 50 * u, (100 + dx) * u, 82 * u),
+                ),
+                part(
+                    androidx.compose.ui.geometry
+                        .Rect((46 + dx) * u, 64 * u, (86 + dx) * u, 84 * u),
+                    oval = false,
+                ),
             ).forEach { path = Path.combine(androidx.compose.ui.graphics.PathOperation.Union, path, it) }
             drawPath(path, cloud)
             drawPath(path, cloudLine.copy(alpha = 0.55f), style = Stroke(2.5f * u))
         }
+
         fun drops(color: Color) {
             for (i in 0 until 4) {
                 val p = (fall + i * 0.27f) % 1f
@@ -154,20 +185,29 @@ fun WeatherIcon(
         }
         val dx = drift * 5f
         when (sky) {
-            Sky.Clear -> sunAt(60f, 56f, 20f)
+            Sky.Clear -> {
+                sunAt(60f, 56f, 20f)
+            }
+
             Sky.PartlyCloudy -> {
                 sunAt(44f, 40f, 14f)
                 cloudAt(dx)
             }
-            Sky.Cloudy -> cloudAt(dx)
+
+            Sky.Cloudy -> {
+                cloudAt(dx)
+            }
+
             Sky.Fog -> {
                 cloudAt(dx * 0.5f)
                 for (i in 0 until 3) drawLine(cloudLine.copy(alpha = 0.7f), Offset((26 + dx * (i + 1)) * u, (92 + i * 9) * u), Offset((96 + dx * (i + 1)) * u, (92 + i * 9) * u), 4f * u, StrokeCap.Round)
             }
+
             Sky.Rain -> {
                 cloudAt(dx)
                 drops(rain)
             }
+
             Sky.Storm -> {
                 cloudAt(dx)
                 drops(rain)
@@ -175,6 +215,7 @@ fun WeatherIcon(
                 val a = if (flash in 0.86f..0.9f || flash in 0.92f..0.95f) 1f else 0f
                 if (a > 0f) bolt(sun, u)
             }
+
             Sky.Snow -> {
                 cloudAt(dx)
                 for (i in 0 until 3) {
@@ -364,18 +405,27 @@ fun TunersTile(
             Text(if (loaded) "Not known on this server." else "Loading…", color = Jc.Muted, fontSize = 13.sp)
         } else {
             // Two to a row, busy ones first; more than four tuners: the count above says it.
-            val cells = (busy.map { b -> (b.recording.firstOrNull() ?: b.watching.firstOrNull() ?: b.channelName) to
-                    when {
-                        b.recording.isEmpty() -> Jc.Focus
-                        b.number in bufferChannels -> Jc.Recording.copy(alpha = 0.4f)
-                        else -> Jc.Recording
-                    } } +
-                List((t.capacity - busy.size).coerceAtLeast(0)) { "Free" to Color.Unspecified }).take(4)
+            val cells =
+                (
+                    busy.map { b ->
+                        (b.recording.firstOrNull() ?: b.watching.firstOrNull() ?: b.channelName) to
+                            when {
+                                b.recording.isEmpty() -> Jc.Focus
+                                b.number in bufferChannels -> Jc.Recording.copy(alpha = 0.4f)
+                                else -> Jc.Recording
+                            }
+                    } +
+                        List((t.capacity - busy.size).coerceAtLeast(0)) { "Free" to Color.Unspecified }
+                ).take(4)
             cells.chunked(2).forEach { pair ->
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     pair.forEach { (what, dot) ->
                         Row(
-                            Modifier.weight(1f).height(26.dp).background(cell, RoundedCornerShape(7.dp)).padding(horizontal = 8.dp),
+                            Modifier
+                                .weight(1f)
+                                .height(26.dp)
+                                .background(cell, RoundedCornerShape(7.dp))
+                                .padding(horizontal = 8.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
                         ) {

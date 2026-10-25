@@ -37,14 +37,14 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.tv.material3.Text
+import com.mackandall.jdvr.data.ItemDetails
 import com.mackandall.jdvr.data.Jdvr
+import com.mackandall.jdvr.data.LibItem
 import com.mackandall.jdvr.data.Prefs
+import com.mackandall.jdvr.data.attemptResult
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.UUID
-import com.mackandall.jdvr.data.ItemDetails
-import com.mackandall.jdvr.data.LibItem
-import com.mackandall.jdvr.data.attemptResult
 
 /** Holding OK does something of its own (Settings › Remote); off, a hold is just a press. */
 val holdEnabled: Boolean get() = Jdvr.prefs.holdOk != Prefs.HOLD_OFF
@@ -108,6 +108,7 @@ fun QuickActions(
             note = null
         }
     }
+
     // Leaves the menu after something that ends what it was for (played, deleted, moved).
     fun done() {
         onChanged()
@@ -128,17 +129,22 @@ fun QuickActions(
                 .onPreviewKeyEvent { k ->
                     val ok = k.key == Key.DirectionCenter || k.key == Key.Enter || k.key == Key.NumPadEnter
                     when {
-                        !ok || okFresh -> false
+                        !ok || okFresh -> {
+                            false
+                        }
+
                         // A new press (not a repeat of the held one): from now on OK works.
                         k.type == KeyEventType.KeyDown && k.nativeKeyEvent.repeatCount == 0 -> {
                             okFresh = true
                             false
                         }
+
                         // The held press's repeats, and its release: swallowed.
-                        else -> true
+                        else -> {
+                            true
+                        }
                     }
-                }
-                .verticalScroll(scroll)
+                }.verticalScroll(scroll)
                 .padding(28.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
@@ -198,7 +204,13 @@ fun QuickActions(
                     val live = LocalWatchLive.current
                     androidx.compose.runtime.CompositionLocalProvider(
                         LocalWideButtons provides true,
-                        LocalWatchLive provides live?.let { w -> { id: java.util.UUID -> onDismiss(); w(id) } },
+                        LocalWatchLive provides
+                            live?.let { w ->
+                                { id: java.util.UUID ->
+                                    onDismiss()
+                                    w(id)
+                                }
+                            },
                     ) {
                         extra?.invoke(det, { note = it }, ::done)
                     }
@@ -222,8 +234,7 @@ fun QuickActions(
     }
 }
 
-private fun titleOf(i: LibItem): String =
-    if (i.seriesName != null && i.type == "Episode") "${i.seriesName}: ${i.name}" else i.name
+private fun titleOf(i: LibItem): String = if (i.seriesName != null && i.type == "Episode") "${i.seriesName}: ${i.name}" else i.name
 
 private fun subtitleOf(
     i: LibItem,

@@ -34,6 +34,9 @@ import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
 import com.mackandall.jdvr.data.Jdvr
+import com.mackandall.jdvr.data.Upcoming
+import com.mackandall.jdvr.data.attempt
+import com.mackandall.jdvr.data.attemptResult
 import com.mackandall.jdvr.data.plainId
 import com.mackandall.jdvr.data.toUuid
 import kotlinx.coroutines.delay
@@ -41,9 +44,6 @@ import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneId
-import com.mackandall.jdvr.data.Upcoming
-import com.mackandall.jdvr.data.attemptResult
-import com.mackandall.jdvr.data.attempt
 
 private fun localTime(iso: String): LocalDateTime? = runCatching { LocalDateTime.ofInstant(Instant.parse(iso), ZoneId.systemDefault()) }.getOrNull()
 
@@ -81,9 +81,18 @@ fun ScheduledScreen(
         Spacer(12)
         val list = items
         when {
-            !loaded -> Text("Loading…", color = Jc.Muted, fontSize = 16.sp)
-            list == null -> Text("Couldn't load the schedule from the server.", color = Jc.Amber, fontSize = 16.sp)
-            list.isEmpty() -> Text("Nothing scheduled.", color = Jc.Muted, fontSize = 16.sp)
+            !loaded -> {
+                Text("Loading…", color = Jc.Muted, fontSize = 16.sp)
+            }
+
+            list == null -> {
+                Text("Couldn't load the schedule from the server.", color = Jc.Amber, fontSize = 16.sp)
+            }
+
+            list.isEmpty() -> {
+                Text("Nothing scheduled.", color = Jc.Muted, fontSize = 16.sp)
+            }
+
             else -> {
                 val byDay = list.groupBy { localTime(it.start)?.toLocalDate() }
                 LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp), contentPadding = PaddingValues(bottom = 40.dp)) {
@@ -177,11 +186,14 @@ private fun ScheduleRow(
                     modifier = Modifier.weight(1f),
                 )
                 if (r.recordingNow && !buffer) Chip("● Recording", Jc.Recording)
-                if (buffer) Chip("Live TV buffer", Jc.Muted)
-                else when (r.kind) {
-                    "favourite" -> Chip("★ ${r.favourite ?: "Favourite"}", Jc.Gold)
-                    "series" -> Chip("Series", Jc.Muted)
-                    else -> Chip("One-off", Jc.Muted)
+                if (buffer) {
+                    Chip("Live TV buffer", Jc.Muted)
+                } else {
+                    when (r.kind) {
+                        "favourite" -> Chip("★ ${r.favourite ?: "Favourite"}", Jc.Gold)
+                        "series" -> Chip("Series", Jc.Muted)
+                        else -> Chip("One-off", Jc.Muted)
+                    }
                 }
                 if (r.isRepeat) Chip("Repeat", Jc.Muted)
             }

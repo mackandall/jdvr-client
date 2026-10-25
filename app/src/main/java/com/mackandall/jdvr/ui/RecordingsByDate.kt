@@ -50,9 +50,9 @@ import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
 import coil3.compose.AsyncImage
-import com.mackandall.jdvr.data.Jdvr
 import com.mackandall.jdvr.data.DateChannel
 import com.mackandall.jdvr.data.DateRecording
+import com.mackandall.jdvr.data.Jdvr
 import com.mackandall.jdvr.data.toUuid
 import kotlinx.coroutines.delay
 import java.time.Instant
@@ -63,8 +63,7 @@ import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
 import java.util.UUID
 
-private fun localTime(iso: String?): LocalDateTime? =
-    iso?.let { runCatching { LocalDateTime.ofInstant(Instant.parse(it), ZoneId.systemDefault()) }.getOrNull() }
+private fun localTime(iso: String?): LocalDateTime? = iso?.let { runCatching { LocalDateTime.ofInstant(Instant.parse(it), ZoneId.systemDefault()) }.getOrNull() }
 
 private val WeekdayFormat = DateTimeFormatter.ofPattern("EEEE")
 private val MonthDayFormat = DateTimeFormatter.ofPattern("MMMM d")
@@ -87,9 +86,15 @@ private fun dayHeading(at: LocalDateTime?): Pair<String, String?> {
 }
 
 private sealed interface DateLine {
-    data class Day(val label: String, val date: String?) : DateLine
+    data class Day(
+        val label: String,
+        val date: String?,
+    ) : DateLine
 
-    data class Item(val r: DateRecording, val at: LocalDateTime?) : DateLine
+    data class Item(
+        val r: DateRecording,
+        val at: LocalDateTime?,
+    ) : DateLine
 }
 
 /**
@@ -160,20 +165,37 @@ fun RecordingsByDate(
         ) {
             itemsIndexed(lines, key = { _, l -> if (l is DateLine.Item) l.r.id else "day:" + (l as DateLine.Day).label }) { i, line ->
                 when (line) {
-                    is DateLine.Day -> Row(Modifier.padding(top = if (i == 0) 0.dp else 14.dp, bottom = 4.dp, start = 4.dp), verticalAlignment = Alignment.Bottom) {
-                        Text(line.label, color = Jc.Text, fontSize = 19.sp, fontWeight = FontWeight.SemiBold)
-                        line.date?.let { Text("  $it", color = Jc.Muted, fontSize = 15.sp) }
+                    is DateLine.Day -> {
+                        Row(Modifier.padding(top = if (i == 0) 0.dp else 14.dp, bottom = 4.dp, start = 4.dp), verticalAlignment = Alignment.Bottom) {
+                            Text(line.label, color = Jc.Text, fontSize = 19.sp, fontWeight = FontWeight.SemiBold)
+                            line.date?.let { Text("  $it", color = Jc.Muted, fontSize = 15.sp) }
+                        }
                     }
-                    is DateLine.Item -> DateRow(
-                        line.r,
-                        line.at,
-                        logoRight,
-                        if (i == firstItem) Modifier.focusRequester(entry) else Modifier,
-                        onFocus = { focused = line.r },
-                        onClick = { line.r.id.toUuid()?.let(onPlay) },
-                        onHold = { line.r.id.toUuid()?.let(onHold) },
-                        onDetails = { line.r.id.toUuid()?.let(onDetails) },
-                    )
+
+                    is DateLine.Item -> {
+                        DateRow(
+                            line.r,
+                            line.at,
+                            logoRight,
+                            if (i == firstItem) Modifier.focusRequester(entry) else Modifier,
+                            onFocus = { focused = line.r },
+                            onClick = {
+                                line.r.id
+                                    .toUuid()
+                                    ?.let(onPlay)
+                            },
+                            onHold = {
+                                line.r.id
+                                    .toUuid()
+                                    ?.let(onHold)
+                            },
+                            onDetails = {
+                                line.r.id
+                                    .toUuid()
+                                    ?.let(onDetails)
+                            },
+                        )
+                    }
                 }
             }
         }
@@ -203,14 +225,14 @@ private fun DateRow(
     Surface(
         onClick = onClick,
         onLongClick = hold,
-        modifier = modifier
-            .fillMaxWidth()
-            .height(84.dp)
-            .onFocusChanged {
-                isFocused = it.isFocused
-                if (it.isFocused) onFocus()
-            }
-            .then(if (holdEnabled) Modifier.onMenuKey(held) else Modifier),
+        modifier =
+            modifier
+                .fillMaxWidth()
+                .height(84.dp)
+                .onFocusChanged {
+                    isFocused = it.isFocused
+                    if (it.isFocused) onFocus()
+                }.then(if (holdEnabled) Modifier.onMenuKey(held) else Modifier),
         shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(12.dp)),
         colors = ClickableSurfaceDefaults.colors(containerColor = Jc.Panel, focusedContainerColor = Jc.FocusFill),
         border = ClickableSurfaceDefaults.border(focusedBorder = Border(BorderStroke(2.dp, Jc.Focus))),
@@ -226,12 +248,13 @@ private fun DateRow(
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 Text(r.title, color = text, fontSize = 19.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 // The state chips go on the second line, so a long one ("Stalled · 98 min lost") can't squeeze the title.
-                val sub = listOfNotNull(
-                    if (r.type == "Episode") r.episodeTitle else r.year?.toString(),
-                    numbers(r),
-                    r.minutes?.let { "$it min" },
-                    if (logoRight) at?.time() else null,
-                ).joinToString(" · ")
+                val sub =
+                    listOfNotNull(
+                        if (r.type == "Episode") r.episodeTitle else r.year?.toString(),
+                        numbers(r),
+                        r.minutes?.let { "$it min" },
+                        if (logoRight) at?.time() else null,
+                    ).joinToString(" · ")
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     StatusChips(r)
                     if (sub.isNotEmpty()) Text(sub, color = muted, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -273,7 +296,11 @@ internal fun ChannelTile(
 ) {
     Column(Modifier.width(width.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp)) {
         Column(
-            Modifier.width(width.dp).height(height.dp).background(Jc.Panel2, RoundedCornerShape(8.dp)).padding(horizontal = 8.dp, vertical = 5.dp),
+            Modifier
+                .width(width.dp)
+                .height(height.dp)
+                .background(Jc.Panel2, RoundedCornerShape(8.dp))
+                .padding(horizontal = 8.dp, vertical = 5.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
@@ -338,26 +365,42 @@ private fun DateDetails(r: DateRecording) {
         r.episodeTitle?.let { Text(it, color = Jc.Text, fontSize = 19.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             r.channel?.let { ChannelTile(it, numberInside = false, width = 84, height = 46) }
-            val line = listOfNotNull(
-                if (r.season != null && r.episode != null) "S${r.season} E${r.episode}" else r.year?.toString(),
-                r.channel?.let { listOfNotNull(it.number, it.name).joinToString(" ") },
-                at?.let { dayHeading(it).first + " " + it.time() },
-                r.minutes?.let { "$it min" },
-            ).joinToString(" · ")
+            val line =
+                listOfNotNull(
+                    if (r.season != null && r.episode != null) "S${r.season} E${r.episode}" else r.year?.toString(),
+                    r.channel?.let { listOfNotNull(it.number, it.name).joinToString(" ") },
+                    at?.let { dayHeading(it).first + " " + it.time() },
+                    r.minutes?.let { "$it min" },
+                ).joinToString(" · ")
             Text(line, color = Jc.Muted, fontSize = 15.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Chip(if (r.played) "Watched" else if (r.playedPercent > 0) "${r.playedPercent}% watched" else "Not watched", Jc.Panel2, textColor = Jc.Text)
+            Chip(
+                if (r.played) {
+                    "Watched"
+                } else if (r.playedPercent > 0) {
+                    "${r.playedPercent}% watched"
+                } else {
+                    "Not watched"
+                },
+                Jc.Panel2,
+                textColor = Jc.Text,
+            )
             if (r.archived) Chip("Archived", Jc.Panel2, textColor = Jc.Text)
         }
         when {
-            r.recording -> Text("Recording now", color = Jc.Recording, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-            r.statusText != null || r.partial -> Column(
-                Modifier.fillMaxWidth().background(Jc.Amber.copy(alpha = 0.16f), RoundedCornerShape(10.dp)).padding(12.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                Text(r.statusShort ?: "Partial recording", color = Jc.Amber, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-                Text(r.statusText ?: "Too short to count as recorded. Hold OK to keep it or record it again.", color = Jc.Text, fontSize = 14.sp, maxLines = 4, overflow = TextOverflow.Ellipsis)
+            r.recording -> {
+                Text("Recording now", color = Jc.Recording, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+            }
+
+            r.statusText != null || r.partial -> {
+                Column(
+                    Modifier.fillMaxWidth().background(Jc.Amber.copy(alpha = 0.16f), RoundedCornerShape(10.dp)).padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Text(r.statusShort ?: "Partial recording", color = Jc.Amber, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                    Text(r.statusText ?: "Too short to count as recorded. Hold OK to keep it or record it again.", color = Jc.Text, fontSize = 14.sp, maxLines = 4, overflow = TextOverflow.Ellipsis)
+                }
             }
         }
         r.overview?.let { ScrollingText(it, r.id, Modifier.heightIn(max = 130.dp)) }

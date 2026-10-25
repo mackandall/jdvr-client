@@ -1,9 +1,9 @@
 package com.mackandall.jdvr.ui
 
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
@@ -35,13 +35,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.tv.material3.Text
-import com.mackandall.jdvr.data.Jdvr
 import com.mackandall.jdvr.data.CutJob
+import com.mackandall.jdvr.data.Jdvr
 import com.mackandall.jdvr.data.MoveProgress
+import com.mackandall.jdvr.data.attempt
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import com.mackandall.jdvr.data.attempt
 
 private val MoveBlue = Color(0xFF00A4DC)
 private val CutAmber = Color(0xFFE0A100)
@@ -85,16 +85,20 @@ object MoveWatcher {
                 map[m.itemId.plain()] = m
                 m.seriesId?.let { map.putIfAbsent(it.plain(), m) }
             }
-            val before = _moving.value.values.map { it.itemId }.toSet()
+            val before =
+                _moving.value.values
+                    .map { it.itemId }
+                    .toSet()
             if (before.any { id -> list.none { it.itemId == id } }) _finished.value++
             _moving.value = map
             val cuts = attempt { Jdvr.backend.cuts() }.orEmpty()
-            _cutting.value = HashMap<String, CutJob>().apply {
-                cuts.forEach { c ->
-                    put(c.itemId.plain(), c)
-                    c.seriesId?.let { putIfAbsent(it.plain(), c) }
+            _cutting.value =
+                HashMap<String, CutJob>().apply {
+                    cuts.forEach { c ->
+                        put(c.itemId.plain(), c)
+                        c.seriesId?.let { putIfAbsent(it.plain(), c) }
+                    }
                 }
-            }
             val seen = wake.value
             val wait = if (list.isEmpty() && cuts.isEmpty()) 15_000L else 2_000L
             var waited = 0L
@@ -132,15 +136,19 @@ fun MoveWatcherEffect() {
  * "Moving" with the percent, and a progress strip along the bottom.
  */
 @Composable
-fun BoxScope.MovingOverlay(p: MoveProgress) =
-    WorkOverlay(MoveBlue, "⇢", if (p.started) "Moving ${(p.fraction * 100).toInt()}%" else "Waiting to move", p.fraction)
+fun BoxScope.MovingOverlay(p: MoveProgress) = WorkOverlay(MoveBlue, "⇢", if (p.started) "Moving ${(p.fraction * 100).toInt()}%" else "Waiting to move", p.fraction)
 
 /** The same over a card whose recording is being cut: amber, scissors, the phase and percent. */
 @Composable
 fun BoxScope.CuttingOverlay(c: CutJob) = WorkOverlay(CutAmber, "✂", c.label(), c.fraction)
 
 @Composable
-private fun BoxScope.WorkOverlay(colour: Color, icon: String, label: String, progress: Float) {
+private fun BoxScope.WorkOverlay(
+    colour: Color,
+    icon: String,
+    label: String,
+    progress: Float,
+) {
     val shift by rememberInfiniteTransition(label = "moving").animateFloat(
         initialValue = 0f,
         targetValue = 1f,
@@ -156,13 +164,14 @@ private fun BoxScope.WorkOverlay(colour: Color, icon: String, label: String, pro
         clipRect {
             var x = -size.height - gap + offset
             while (x < size.width + gap) {
-                val path = Path().apply {
-                    moveTo(x, size.height)
-                    lineTo(x + band, size.height)
-                    lineTo(x + band + size.height, 0f)
-                    lineTo(x + size.height, 0f)
-                    close()
-                }
+                val path =
+                    Path().apply {
+                        moveTo(x, size.height)
+                        lineTo(x + band, size.height)
+                        lineTo(x + band + size.height, 0f)
+                        lineTo(x + size.height, 0f)
+                        close()
+                    }
                 drawPath(path, colour.copy(alpha = 0.22f))
                 x += gap
             }
@@ -178,7 +187,13 @@ private fun BoxScope.WorkOverlay(colour: Color, icon: String, label: String, pro
             modifier = Modifier.background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(6.dp)).padding(horizontal = 8.dp, vertical = 2.dp),
         )
     }
-    Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().height(5.dp).background(Color.Black.copy(alpha = 0.6f))) {
+    Box(
+        Modifier
+            .align(Alignment.BottomStart)
+            .fillMaxWidth()
+            .height(5.dp)
+            .background(Color.Black.copy(alpha = 0.6f)),
+    ) {
         Box(Modifier.fillMaxWidth(fraction).height(5.dp).background(colour))
     }
 }
@@ -201,25 +216,34 @@ fun MovingBar(p: MoveProgress?) =
  * the original is still untouched ([onStop] null once the cut copy is going in).
  */
 @Composable
-fun CuttingBar(c: CutJob, onStop: (() -> Unit)?) =
-    WorkBar(
-        CutAmber,
-        "✂ " + when (c.kind) {
+fun CuttingBar(
+    c: CutJob,
+    onStop: (() -> Unit)?,
+) = WorkBar(
+    CutAmber,
+    "✂ " +
+        when (c.kind) {
             "audio-format" -> "Fixing the audio format · "
             "commercials" -> "Cutting the commercials out · "
             else -> "Cutting to the program start · "
         } + c.label(),
-        when {
-            c.phase == "finishing" -> "Putting the cut copy in place: can't be stopped now"
-            c.bytes > 0 && c.phase == "cutting" -> "${gb(c.doneBytes)} of about ${gb(c.bytes)}"
-            else -> null
-        },
-        c.fraction,
-        trailing = onStop?.let { stop -> { Button("Stop", onClick = stop) } },
-    )
+    when {
+        c.phase == "finishing" -> "Putting the cut copy in place: can't be stopped now"
+        c.bytes > 0 && c.phase == "cutting" -> "${gb(c.doneBytes)} of about ${gb(c.bytes)}"
+        else -> null
+    },
+    c.fraction,
+    trailing = onStop?.let { stop -> { Button("Stop", onClick = stop) } },
+)
 
 @Composable
-private fun WorkBar(colour: Color, title: String, detail: String?, progress: Float, trailing: (@Composable () -> Unit)? = null) {
+private fun WorkBar(
+    colour: Color,
+    title: String,
+    detail: String?,
+    progress: Float,
+    trailing: (@Composable () -> Unit)? = null,
+) {
     val shift by rememberInfiniteTransition(label = "movingBar").animateFloat(
         initialValue = 0f,
         targetValue = 1f,
@@ -237,7 +261,12 @@ private fun WorkBar(colour: Color, title: String, detail: String?, progress: Flo
             Canvas(Modifier.width(260.dp).height(8.dp).clip(RoundedCornerShape(4.dp))) {
                 drawRect(Jc.Text.copy(alpha = 0.12f))
                 val filled = size.width * fraction
-                drawRect(colour, size = androidx.compose.ui.geometry.Size(filled, size.height))
+                drawRect(
+                    colour,
+                    size =
+                        androidx.compose.ui.geometry
+                            .Size(filled, size.height),
+                )
                 val gap = 16.dp.toPx()
                 clipRect(right = filled) {
                     var x = -gap + shift * gap
@@ -261,7 +290,10 @@ fun MovingTag(p: MoveProgress) = WorkTag(MoveBlue, if (p.started) "⇢ Moving ${
 fun CuttingTag(c: CutJob) = WorkTag(CutAmber, "✂ " + c.label())
 
 @Composable
-private fun WorkTag(colour: Color, text: String) {
+private fun WorkTag(
+    colour: Color,
+    text: String,
+) {
     val pulse by rememberInfiniteTransition(label = "movingTag").animateFloat(
         initialValue = 0.55f,
         targetValue = 1f,

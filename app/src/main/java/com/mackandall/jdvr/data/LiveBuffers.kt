@@ -1,11 +1,11 @@
 package com.mackandall.jdvr.data
 
-import java.util.UUID
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.launch
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import org.jellyfin.sdk.api.client.HttpMethod
+import java.util.UUID
 
 /**
  * Pause and rewind on live TV: the buffer recorded from tune-in. On Jellyfin this is JellyDVR
@@ -70,14 +70,17 @@ data class Stopped(
 class LivePlugin(
     private val server: PluginClient,
 ) : LiveBuffers {
-    override suspend fun buffers(channelId: UUID): List<Buffer> =
-        server.call<Buffers>(HttpMethod.GET, "/JellyDvrLive/Channel/${channelId.plain()}")?.buffers.orEmpty()
+    override suspend fun buffers(channelId: UUID): List<Buffer> = server.call<Buffers>(HttpMethod.GET, "/JellyDvrLive/Channel/${channelId.plain()}")?.buffers.orEmpty()
 
-    override suspend fun startBuffering(channelId: UUID): List<Buffer> =
-        server.call<Buffers>(HttpMethod.POST, "/JellyDvrLive/Channel/${channelId.plain()}/Start")?.buffers.orEmpty()
+    override suspend fun startBuffering(channelId: UUID): List<Buffer> = server.call<Buffers>(HttpMethod.POST, "/JellyDvrLive/Channel/${channelId.plain()}/Start")?.buffers.orEmpty()
 
     override suspend fun bufferPrograms(): Set<String> =
-        server.call<BufferPrograms>(HttpMethod.GET, "/JellyDvrLive/Programs")?.programIds.orEmpty().map { it.plainId() }.toSet()
+        server
+            .call<BufferPrograms>(HttpMethod.GET, "/JellyDvrLive/Programs")
+            ?.programIds
+            .orEmpty()
+            .map { it.plainId() }
+            .toSet()
 
     override suspend fun bufferOfItem(itemId: UUID): Buffer? = server.call(HttpMethod.GET, "/JellyDvrLive/Item/${itemId.plain()}")
 

@@ -3,7 +3,6 @@ package com.mackandall.jdvr.ui
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,6 +14,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -43,20 +43,20 @@ import androidx.compose.ui.unit.sp
 import androidx.tv.material3.Text
 import com.mackandall.jdvr.data.Jdvr
 import com.mackandall.jdvr.data.SavedServer
+import com.mackandall.jdvr.data.attemptQuietly
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.jellyfin.sdk.api.client.extensions.authenticateUserByName
 import org.jellyfin.sdk.api.client.extensions.quickConnectApi
-import org.jellyfin.sdk.api.client.extensions.userApi
 import org.jellyfin.sdk.api.client.extensions.systemApi
+import org.jellyfin.sdk.api.client.extensions.userApi
 import org.jellyfin.sdk.model.api.AuthenticationResult
 import org.jellyfin.sdk.model.api.QuickConnectDto
 import timber.log.Timber
-import com.mackandall.jdvr.data.attemptQuietly
 
 /**
  * Sign in. The server: the last one signed in to, or one found on the network (Jellyfin answers a
@@ -81,6 +81,7 @@ fun LoginScreen(
         }
     }
     if (onCancel != null) androidx.activity.compose.BackHandler { onCancel() }
+
     // Found on the network and not already on the list (nor the server in use, when switching).
     fun FoundServer.isNew() = saved.none { it.url == address } && !(onCancel != null && address == Jdvr.session.serverUrl)
     // Servers that answered on the network.
@@ -149,7 +150,11 @@ fun LoginScreen(
             serverName =
                 attemptQuietly {
                     val api = Jdvr.jellyfin.createApi(baseUrl = c)
-                    withContext(Dispatchers.IO) { api.systemApi.getPublicSystemInfo().content.serverName }
+                    withContext(Dispatchers.IO) {
+                        api.systemApi
+                            .getPublicSystemInfo()
+                            .content.serverName
+                    }
                 }
             if (serverName != null) {
                 base = c
@@ -168,11 +173,11 @@ fun LoginScreen(
         code = null
         try {
             val api = Jdvr.jellyfin.createApi(baseUrl = address)
-            val kept = PendingCode.takeIf { it?.server == address && it.attempt == attempt && System.currentTimeMillis() - it.at < 9 * 60_000 }
+            val kept = pendingCode.takeIf { it?.server == address && it.attempt == attempt && System.currentTimeMillis() - it.at < 9 * 60_000 }
             var state =
                 kept?.let { k -> attemptQuietly { withContext(Dispatchers.IO) { api.quickConnectApi.getQuickConnectState(secret = k.secret).content } } }
                     ?: withContext(Dispatchers.IO) { api.quickConnectApi.initiateQuickConnect().content }.also {
-                        PendingCode = PendingQuickConnect(address, attempt, it.secret, System.currentTimeMillis())
+                        pendingCode = PendingQuickConnect(address, attempt, it.secret, System.currentTimeMillis())
                     }
             code = state.code
             message = null
@@ -180,7 +185,7 @@ fun LoginScreen(
                 delay(3000)
                 state = withContext(Dispatchers.IO) { api.quickConnectApi.getQuickConnectState(secret = state.secret).content }
             }
-            PendingCode = null
+            pendingCode = null
             finish(withContext(Dispatchers.IO) { api.userApi.authenticateWithQuickConnect(QuickConnectDto(secret = state.secret)).content })
         } catch (e: CancellationException) {
             throw e
@@ -193,7 +198,12 @@ fun LoginScreen(
     Box(Modifier.fillMaxSize().screenBackground(), contentAlignment = Alignment.Center) {
         Column(
             // Scrolls when the warnings and the password boxes make it taller than the screen.
-            modifier = Modifier.width(620.dp).verticalScroll(androidx.compose.foundation.rememberScrollState()).background(Jc.Panel, RoundedCornerShape(16.dp)).padding(32.dp),
+            modifier =
+                Modifier
+                    .width(620.dp)
+                    .verticalScroll(androidx.compose.foundation.rememberScrollState())
+                    .background(Jc.Panel, RoundedCornerShape(16.dp))
+                    .padding(32.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             Text("JDVR", color = Jc.Focus, fontSize = 18.sp, fontWeight = FontWeight.Bold)
@@ -278,9 +288,12 @@ fun LoginScreen(
                 Text(
                     when {
                         searching -> "Looking for Jellyfin servers on your network…"
+
                         found.isEmpty() -> "No server found on the network. Type its address."
+
                         // Switching, with only the server in use answering.
                         others.isEmpty() && saved.isEmpty() -> "No other server found on the network. Type its address."
+
                         else -> "Pick a server, or type its address."
                     },
                     color = Jc.Muted,
@@ -369,7 +382,7 @@ private data class PendingQuickConnect(
     val at: Long,
 )
 
-private var PendingCode: PendingQuickConnect? = null
+private var pendingCode: PendingQuickConnect? = null
 
 /**
  * A text box that takes typing only after OK (then the on-screen keyboard opens); otherwise it's a
@@ -387,8 +400,16 @@ private fun Field(
     var editing by remember { mutableStateOf(false) }
     // Typing ends when the box loses focus, but only once it has had it (it starts unfocused).
     var hadFocus by remember { mutableStateOf(false) }
-    val field = remember { androidx.compose.ui.focus.FocusRequester() }
-    val box = remember { androidx.compose.ui.focus.FocusRequester() }
+    val field =
+        remember {
+            androidx.compose.ui.focus
+                .FocusRequester()
+        }
+    val box =
+        remember {
+            androidx.compose.ui.focus
+                .FocusRequester()
+        }
     val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(label, color = Jc.Muted, fontSize = 14.sp)
@@ -399,14 +420,20 @@ private fun Field(
                     editing = true
                 },
                 modifier = Modifier.fillMaxWidth().focusRequester(box),
-                shape = androidx.tv.material3.ClickableSurfaceDefaults.shape(RoundedCornerShape(10.dp)),
-                colors = androidx.tv.material3.ClickableSurfaceDefaults.colors(containerColor = Jc.Panel2, focusedContainerColor = Jc.Panel2, contentColor = Jc.Text, focusedContentColor = Jc.Text),
+                shape =
+                    androidx.tv.material3.ClickableSurfaceDefaults
+                        .shape(RoundedCornerShape(10.dp)),
+                colors =
+                    androidx.tv.material3.ClickableSurfaceDefaults
+                        .colors(containerColor = Jc.Panel2, focusedContainerColor = Jc.Panel2, contentColor = Jc.Text, focusedContentColor = Jc.Text),
                 border =
                     androidx.tv.material3.ClickableSurfaceDefaults.border(
                         border = androidx.tv.material3.Border(BorderStroke(2.dp, Jc.Line)),
                         focusedBorder = androidx.tv.material3.Border(BorderStroke(2.dp, Jc.Focus)),
                     ),
-                scale = androidx.tv.material3.ClickableSurfaceDefaults.scale(focusedScale = 1f),
+                scale =
+                    androidx.tv.material3.ClickableSurfaceDefaults
+                        .scale(focusedScale = 1f),
             ) {
                 Text(
                     if (secret) "•".repeat(value.length) else value.ifEmpty { " " },
@@ -422,16 +449,21 @@ private fun Field(
                 textStyle = TextStyle(color = Jc.Text, fontSize = 18.sp),
                 cursorBrush = SolidColor(Jc.Focus),
                 keyboardOptions = KeyboardOptions(keyboardType = keyboard, imeAction = androidx.compose.ui.text.input.ImeAction.Done),
-                keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = { editing = false }),
+                keyboardActions =
+                    androidx.compose.foundation.text
+                        .KeyboardActions(onDone = { editing = false }),
                 visualTransformation = if (secret) PasswordVisualTransformation() else VisualTransformation.None,
                 modifier =
                     Modifier
                         .fillMaxWidth()
                         .focusRequester(field)
                         .onFocusChanged {
-                            if (it.isFocused) hadFocus = true else if (hadFocus && editing) editing = false
-                        }
-                        .onPreviewKeyEvent { e ->
+                            if (it.isFocused) {
+                                hadFocus = true
+                            } else if (hadFocus && editing) {
+                                editing = false
+                            }
+                        }.onPreviewKeyEvent { e ->
                             val dir =
                                 when (e.key) {
                                     Key.DirectionDown -> androidx.compose.ui.focus.FocusDirection.Down
@@ -444,8 +476,7 @@ private fun Field(
                             } else {
                                 false
                             }
-                        }
-                        .border(BorderStroke(2.dp, Jc.Focus), RoundedCornerShape(10.dp))
+                        }.border(BorderStroke(2.dp, Jc.Focus), RoundedCornerShape(10.dp))
                         .background(Jc.Panel2, RoundedCornerShape(10.dp))
                         .padding(horizontal = 14.dp, vertical = 12.dp),
             )
@@ -473,9 +504,14 @@ private fun Field(
 internal fun insecureRemote(address: String): Boolean {
     val url = address.trim()
     if (!url.startsWith("http://", ignoreCase = true)) return false
-    val host = url.removePrefix("http://").removePrefix("HTTP://").substringBefore('/').let { h ->
-        if (h.startsWith("[")) h.substringAfter('[').substringBefore(']') else h.substringBefore(':')
-    }.lowercase()
+    val host =
+        url
+            .removePrefix("http://")
+            .removePrefix("HTTP://")
+            .substringBefore('/')
+            .let { h ->
+                if (h.startsWith("[")) h.substringAfter('[').substringBefore(']') else h.substringBefore(':')
+            }.lowercase()
     if (host.isEmpty()) return false
     val ipv4 = host.split('.').mapNotNull { it.toIntOrNull() }.takeIf { it.size == 4 && host.count { c -> c == '.' } == 3 }
     if (ipv4 != null) {

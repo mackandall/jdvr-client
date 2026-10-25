@@ -85,13 +85,14 @@ object Weather {
         @SerialName("temperature_2m_min") val min: List<Double> = emptyList(),
     )
 
-    private suspend fun get(url: okhttp3.HttpUrl): String =
-        withContext(Dispatchers.IO) { http.newCall(Request.Builder().url(url).build()).execute().use { it.body.string() } }
+    private suspend fun get(url: okhttp3.HttpUrl): String = withContext(Dispatchers.IO) { http.newCall(Request.Builder().url(url).build()).execute().use { it.body.string() } }
 
     /** A town by name ("Atlanta", "Springfield, IL"): its best match. */
     suspend fun find(name: String): Place? {
         val url =
-            "https://geocoding-api.open-meteo.com/v1/search".toHttpUrl().newBuilder()
+            "https://geocoding-api.open-meteo.com/v1/search"
+                .toHttpUrl()
+                .newBuilder()
                 .addQueryParameter("name", name.substringBefore(',').trim())
                 .addQueryParameter("count", "10")
                 .build()
@@ -107,7 +108,9 @@ object Weather {
         fahrenheit: Boolean,
     ): WeatherNow {
         val url =
-            "https://api.open-meteo.com/v1/forecast".toHttpUrl().newBuilder()
+            "https://api.open-meteo.com/v1/forecast"
+                .toHttpUrl()
+                .newBuilder()
                 .addQueryParameter("latitude", place.latitude.toString())
                 .addQueryParameter("longitude", place.longitude.toString())
                 .addQueryParameter("current", "temperature_2m,weather_code,is_day")
@@ -123,20 +126,31 @@ object Weather {
         val (sky, label) = describe(c.code)
         return WeatherNow(
             temperature = Math.round(c.temperature).toInt(),
-            high = f.daily?.max?.firstOrNull()?.let { Math.round(it).toInt() },
-            low = f.daily?.min?.firstOrNull()?.let { Math.round(it).toInt() },
+            high =
+                f.daily
+                    ?.max
+                    ?.firstOrNull()
+                    ?.let { Math.round(it).toInt() },
+            low =
+                f.daily
+                    ?.min
+                    ?.firstOrNull()
+                    ?.let { Math.round(it).toInt() },
             sky = sky,
             isDay = c.isDay == 1,
             label = label,
             // Times are the town's own (timezone=auto): the hours after this one.
             hours =
-                f.hourly?.let { h ->
-                    h.time.indices.mapNotNull { i ->
-                        val t = runCatching { java.time.LocalDateTime.parse(h.time[i]) }.getOrNull() ?: return@mapNotNull null
-                        val (s, l) = describe(h.code.getOrElse(i) { 3 })
-                        WeatherHour(t, Math.round(h.temperature.getOrElse(i) { 0.0 }).toInt(), s, l)
-                    }.drop(1).take(4)
-                }.orEmpty(),
+                f.hourly
+                    ?.let { h ->
+                        h.time.indices
+                            .mapNotNull { i ->
+                                val t = runCatching { java.time.LocalDateTime.parse(h.time[i]) }.getOrNull() ?: return@mapNotNull null
+                                val (s, l) = describe(h.code.getOrElse(i) { 3 })
+                                WeatherHour(t, Math.round(h.temperature.getOrElse(i) { 0.0 }).toInt(), s, l)
+                            }.drop(1)
+                            .take(4)
+                    }.orEmpty(),
         )
     }
 

@@ -274,7 +274,11 @@ internal class LiveStream(
 
     // Back to where you tuned in: the start of the HLS copy.
     fun backToTuneIn() {
-        if (onHls) player.seekTo(0) else if (canHls) switchToHls(0, play = pausedAt == null)
+        if (onHls) {
+            player.seekTo(0)
+        } else if (canHls) {
+            switchToHls(0, play = pausedAt == null)
+        }
         ui.showOsd()
     }
 

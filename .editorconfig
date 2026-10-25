@@ -1,0 +1,8 @@
+root = true
+
+[*.{kt,kts}]
+# ktlint, matching how this code is written: calls and conditions stay on one line where they
+# fit the screen (no line-length limit), Compose functions are capitalised.
+ktlint_code_style = ktlint_official
+max_line_length = off
+ktlint_function_naming_ignore_when_annotated_with = Composable

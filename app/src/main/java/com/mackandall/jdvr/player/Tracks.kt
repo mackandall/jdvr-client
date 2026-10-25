@@ -26,8 +26,7 @@ private data class TrackOption(
     val selected: Boolean,
 )
 
-private fun languageName(code: String?): String? =
-    code?.takeIf { it.isNotBlank() && it != "und" }?.let { Locale.forLanguageTag(it).displayLanguage.ifBlank { it } }
+private fun languageName(code: String?): String? = code?.takeIf { it.isNotBlank() && it != "und" }?.let { Locale.forLanguageTag(it).displayLanguage.ifBlank { it } }
 
 @OptIn(UnstableApi::class)
 private fun options(
@@ -92,7 +91,10 @@ fun TrackButtons(player: Player) {
         Button("Audio: " + (audio.getOrNull(current)?.label ?: "Auto")) {
             val next = audio[(current + 1).mod(audio.size)]
             player.trackSelectionParameters =
-                player.trackSelectionParameters.buildUpon().setOverrideForType(TrackSelectionOverride(next.group.mediaTrackGroup, next.index)).build()
+                player.trackSelectionParameters
+                    .buildUpon()
+                    .setOverrideForType(TrackSelectionOverride(next.group.mediaTrackGroup, next.index))
+                    .build()
         }
     }
 

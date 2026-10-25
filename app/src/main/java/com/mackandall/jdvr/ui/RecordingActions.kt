@@ -1,7 +1,5 @@
 package com.mackandall.jdvr.ui
 
-import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -10,28 +8,24 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.tv.material3.Text
-import com.mackandall.jdvr.data.Jdvr
-import com.mackandall.jdvr.data.toUuid
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
-import java.util.UUID
 import com.mackandall.jdvr.data.ActiveRecordings
 import com.mackandall.jdvr.data.ArchiveChoices
 import com.mackandall.jdvr.data.CommercialStatus
 import com.mackandall.jdvr.data.FavouriteFor
+import com.mackandall.jdvr.data.Jdvr
 import com.mackandall.jdvr.data.ProgramStartStatus
 import com.mackandall.jdvr.data.ShowDelete
 import com.mackandall.jdvr.data.ShowForget
-import com.mackandall.jdvr.data.attemptResult
 import com.mackandall.jdvr.data.attempt
+import com.mackandall.jdvr.data.attemptResult
+import com.mackandall.jdvr.data.toUuid
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import java.util.UUID
 
-/**
- * "Stop recording" for an item being recorded right now: a recording, or a show with an episode
- * being recorded (one button per recording, named when there are several). Only on a TV allowed
- * to record, for a user who may manage Live TV. Asks for a second press; what was recorded so
- * far is kept.
- */
 /**
  * "Watch live" for each recording in progress behind an item: tunes the channel it is recorded
  * from (Jellyfin shares the recording's stream, so no extra tuner). Shown to anyone; needs Episode
@@ -51,6 +45,12 @@ fun WatchLiveButtons(itemId: UUID) {
     }
 }
 
+/**
+ * "Stop recording" for an item being recorded right now: a recording, or a show with an episode
+ * being recorded (one button per recording, named when there are several). Only on a TV allowed
+ * to record, for a user who may manage Live TV. Asks for a second press; what was recorded so
+ * far is kept.
+ */
 @Composable
 fun StopRecordingButtons(
     itemId: UUID,
@@ -209,7 +209,20 @@ fun RecordingActions(
     RerecordButtons(itemId, onNote)
     val cut = cuttingFor(itemId.toString())
     if (cut != null) {
-        CuttingBar(cut, onStop = if (cut.stoppable && edit != null) { { scope.launch { onNote(attempt { Jdvr.backend.stopCut(itemId)?.message } ?: "Couldn't stop it."); MoveWatcher.kick() } } } else null)
+        CuttingBar(
+            cut,
+            onStop =
+                if (cut.stoppable && edit != null) {
+                    {
+                        scope.launch {
+                            onNote(attempt { Jdvr.backend.stopCut(itemId)?.message } ?: "Couldn't stop it.")
+                            MoveWatcher.kick()
+                        }
+                    }
+                } else {
+                    null
+                },
+        )
     }
     val f = fav
     if (manage && rights.record && f != null && !f.isMovie) {
@@ -241,7 +254,11 @@ fun RecordingActions(
     if (editTools && cut == null) {
         val c = commercials
         // The button changes (scan → scanning → remove): focus stays on it rather than jumping away.
-        val comFocus = remember(itemId) { androidx.compose.ui.focus.FocusRequester() }
+        val comFocus =
+            remember(itemId) {
+                androidx.compose.ui.focus
+                    .FocusRequester()
+            }
         // (The old button reports losing focus as it goes, so "just had it" counts too.)
         var comHadFocus by remember(itemId) { mutableStateOf(false) }
         var comLostAt by remember(itemId) { androidx.compose.runtime.mutableLongStateOf(0L) }
@@ -261,8 +278,11 @@ fun RecordingActions(
             }
         }
         when {
-            c?.inFlight == true -> Button("Scanning for commercials…", modifier = comModifier) {}
-            c?.found == true ->
+            c?.inFlight == true -> {
+                Button("Scanning for commercials…", modifier = comModifier) {}
+            }
+
+            c?.found == true -> {
                 Button(if (armedRemove) "Press again: remove commercials" else "Remove commercials", modifier = comModifier) {
                     if (!armedRemove) {
                         armedRemove = true
@@ -276,13 +296,16 @@ fun RecordingActions(
                         }
                     }
                 }
-            else ->
+            }
+
+            else -> {
                 Button("Scan for commercials", modifier = comModifier) {
                     scope.launch {
                         onNote(attempt { Jdvr.backend.scanCommercials(itemId)?.message } ?: "Couldn't start a scan.")
                         commercialsCheck++
                     }
                 }
+            }
         }
     }
     // Program start: a remembered channel card (set from the player) found in the opening.
@@ -351,7 +374,15 @@ fun RecordingActions(
     }
     // Episode History's "Forget this episode": delete it and forget it, so it records again.
     if (tools && manage && rights.delete && canDelete && cut == null && canForget) {
-        Button(if (armedForget) "Press again: delete and forget" else if (fav?.isMovie == true) "Forget this movie" else "Forget this episode") {
+        Button(
+            if (armedForget) {
+                "Press again: delete and forget"
+            } else if (fav?.isMovie == true) {
+                "Forget this movie"
+            } else {
+                "Forget this episode"
+            },
+        ) {
             if (!armedForget) {
                 armedForget = true
             } else {
@@ -402,36 +433,52 @@ fun RecordingActions(
     // An archive copy: only where this TV may delete from the archive, and it says where from.
     val from = place?.let { " from $it" } ?: " from the archive"
     val trashDays = rememberTrashDays()
-    val deleteLabel = when {
-        manage -> if (armedDelete) (if (trashDays != null) "Press again: move to the trash" else "Press again to delete") else "Delete recording"
-        armedDelete -> if (trashDays != null) "Press again: move to the trash" else "Press again: delete$from for good"
-        else -> "Delete$from"
-    }
-    if (canDelete && (if (manage) rights.delete else rights.deleteArchive) && cut == null) Button(deleteLabel, leading = { TrashMark() }) {
-        if (!armedDelete) {
-            armedDelete = true
-        } else {
-            armedDelete = false
-            scope.launch {
-                attemptResult { Jdvr.backend.deleteRecording(itemId) }
-                    .onSuccess {
-                        onNote(
-                            (if (it.deleted > 1) "Partial recording deleted, with its ${it.deleted - 1} other partial piece${if (it.deleted > 2) "s" else ""}" else if (manage) "Recording deleted" else "Deleted$from") +
-                                ((if (it.trashed) it.trashDays else null)?.let { d -> ": in the trash for ${daysText(d)}" } ?: ""),
-                        )
-                        onDeleted()
-                    }.onFailure { onNote("Couldn't delete it: ${it.message}") }
+    val deleteLabel =
+        when {
+            manage -> if (armedDelete) (if (trashDays != null) "Press again: move to the trash" else "Press again to delete") else "Delete recording"
+            armedDelete -> if (trashDays != null) "Press again: move to the trash" else "Press again: delete$from for good"
+            else -> "Delete$from"
+        }
+    if (canDelete && (if (manage) rights.delete else rights.deleteArchive) && cut == null) {
+        Button(deleteLabel, leading = { TrashMark() }) {
+            if (!armedDelete) {
+                armedDelete = true
+            } else {
+                armedDelete = false
+                scope.launch {
+                    attemptResult { Jdvr.backend.deleteRecording(itemId) }
+                        .onSuccess {
+                            onNote(
+                                (
+                                    if (it.deleted > 1) {
+                                        "Partial recording deleted, with its ${it.deleted - 1} other partial piece${if (it.deleted > 2) "s" else ""}"
+                                    } else if (manage) {
+                                        "Recording deleted"
+                                    } else {
+                                        "Deleted$from"
+                                    }
+                                ) +
+                                    ((if (it.trashed) it.trashDays else null)?.let { d -> ": in the trash for ${daysText(d)}" } ?: ""),
+                            )
+                            onDeleted()
+                        }.onFailure { onNote("Couldn't delete it: ${it.message}") }
+                }
             }
         }
     }
 }
 
 // "Oct 14" from the plugin's UTC timestamp (local date).
-private fun untilDate(utc: String): String? = runCatching {
-    java.time.OffsetDateTime.parse(if (utc.endsWith("Z") || utc.contains('+')) utc else utc + "Z")
-        .atZoneSameInstant(java.time.ZoneId.systemDefault())
-        .format(java.time.format.DateTimeFormatter.ofPattern("MMM d"))
-}.getOrNull()
+private fun untilDate(utc: String): String? =
+    runCatching {
+        java.time.OffsetDateTime
+            .parse(if (utc.endsWith("Z") || utc.contains('+')) utc else utc + "Z")
+            .atZoneSameInstant(java.time.ZoneId.systemDefault())
+            .format(
+                java.time.format.DateTimeFormatter
+                    .ofPattern("MMM d"),
+            )
+    }.getOrNull()
 
 /**
  * What a whole show offers in its quick actions: move all its recordings to the archive

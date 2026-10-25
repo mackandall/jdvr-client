@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -22,6 +23,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
@@ -30,22 +32,20 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.tv.material3.Text
-import androidx.compose.ui.draw.clip
+import com.mackandall.jdvr.data.Buffer
 import com.mackandall.jdvr.data.Channel
+import com.mackandall.jdvr.data.EhProgram
 import com.mackandall.jdvr.data.Jdvr
-import androidx.compose.foundation.verticalScroll
-import com.mackandall.jdvr.data.toUuid
-import com.mackandall.jdvr.data.plainId
+import com.mackandall.jdvr.data.MarkSymbols
 import com.mackandall.jdvr.data.Program
+import com.mackandall.jdvr.data.ScheduleState
+import com.mackandall.jdvr.data.ShowForget
+import com.mackandall.jdvr.data.plainId
+import com.mackandall.jdvr.data.toUuid
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.UUID
-import com.mackandall.jdvr.data.Buffer
-import com.mackandall.jdvr.data.EhProgram
-import com.mackandall.jdvr.data.MarkSymbols
-import com.mackandall.jdvr.data.ScheduleState
-import com.mackandall.jdvr.data.ShowForget
 
 /** The selected programme: details and what can be done with it. */
 @Composable
@@ -347,9 +347,15 @@ private fun FitToButtons(
         Column { footer() }
     }) { m, c ->
         val gap = 10.dp.roundToPx()
-        val b = m[1].measure(androidx.compose.ui.unit.Constraints(maxWidth = c.maxWidth))
+        val b =
+            m[1].measure(
+                androidx.compose.ui.unit
+                    .Constraints(maxWidth = c.maxWidth),
+            )
         val w = maxOf(b.width, 360.dp.roundToPx()).coerceAtMost(c.maxWidth)
-        val fixed = androidx.compose.ui.unit.Constraints(minWidth = w, maxWidth = w)
+        val fixed =
+            androidx.compose.ui.unit
+                .Constraints(minWidth = w, maxWidth = w)
         val h = m[0].measure(fixed)
         val f = m[2].measure(fixed)
         val footerAt = h.height + gap + b.height + gap
@@ -372,8 +378,19 @@ internal fun androidx.compose.foundation.layout.BoxScope.ProgramActionsHost(
     content: @Composable () -> Unit,
 ) {
     if (Jdvr.prefs.programActions == com.mackandall.jdvr.data.Prefs.FLOATING) {
-        androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss, properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)) {
-            Box(Modifier.heightIn(max = 520.dp).clip(RoundedCornerShape(16.dp)).background(Jc.Sheet).padding(6.dp)) { content() }
+        androidx.compose.ui.window.Dialog(
+            onDismissRequest = onDismiss,
+            properties =
+                androidx.compose.ui.window
+                    .DialogProperties(usePlatformDefaultWidth = false),
+        ) {
+            Box(
+                Modifier
+                    .heightIn(max = 520.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(Jc.Sheet)
+                    .padding(6.dp),
+            ) { content() }
         }
     } else {
         Box(Modifier.align(Alignment.CenterEnd).fillMaxHeight().background(Jc.Sheet)) { content() }

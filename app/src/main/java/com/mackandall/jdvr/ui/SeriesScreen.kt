@@ -35,7 +35,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.tv.material3.Text
+import com.mackandall.jdvr.data.FavouriteEntry
+import com.mackandall.jdvr.data.FavouritesList
 import com.mackandall.jdvr.data.Jdvr
+import com.mackandall.jdvr.data.SeriesScheduled
+import com.mackandall.jdvr.data.attempt
+import com.mackandall.jdvr.data.attemptResult
 import com.mackandall.jdvr.data.plainId
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -43,11 +48,6 @@ import org.jellyfin.sdk.model.api.SeriesTimerInfoDto
 import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneId
-import com.mackandall.jdvr.data.FavouriteEntry
-import com.mackandall.jdvr.data.FavouritesList
-import com.mackandall.jdvr.data.SeriesScheduled
-import com.mackandall.jdvr.data.attempt
-import com.mackandall.jdvr.data.attemptResult
 
 /**
  * Series recordings (Jellyfin's, tied to the guide's series id) beside Recording Favourites
@@ -114,9 +114,15 @@ fun SeriesScreen(entry: FocusRequester) {
                 Spacer(8)
                 val list = series
                 when {
-                    list == null -> Text("Loading…", color = Jc.Muted, fontSize = 15.sp)
-                    list.isEmpty() -> Text("No series recordings.", color = Jc.Muted, fontSize = 15.sp)
-                    else ->
+                    list == null -> {
+                        Text("Loading…", color = Jc.Muted, fontSize = 15.sp)
+                    }
+
+                    list.isEmpty() -> {
+                        Text("No series recordings.", color = Jc.Muted, fontSize = 15.sp)
+                    }
+
+                    else -> {
                         LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(bottom = 40.dp)) {
                             items(list, key = { it.id ?: it.name ?: "" }) { s ->
                                 SeriesRow(s, s.id?.let { scheduled[it.plainId()] }, if (s == list.first()) Modifier.focusRequester(entry) else Modifier, onEdit = { editing = s }) {
@@ -127,6 +133,7 @@ fun SeriesScreen(entry: FocusRequester) {
                                 }
                             }
                         }
+                    }
                 }
             }
             // Recording Favourites.
@@ -166,10 +173,19 @@ fun SeriesScreen(entry: FocusRequester) {
                     Spacer(10)
                 }
                 when {
-                    fav == null && !favouritesLoaded -> Text("Loading…", color = Jc.Muted, fontSize = 15.sp)
-                    fav == null -> Text("Recording Favourites need the JellyDVR Schedule plugin on the server.", color = Jc.Muted, fontSize = 15.sp)
-                    fav.favourites.isEmpty() -> Text("No recording favourites yet.", color = Jc.Muted, fontSize = 15.sp)
-                    else ->
+                    fav == null && !favouritesLoaded -> {
+                        Text("Loading…", color = Jc.Muted, fontSize = 15.sp)
+                    }
+
+                    fav == null -> {
+                        Text("Recording Favourites need the JellyDVR Schedule plugin on the server.", color = Jc.Muted, fontSize = 15.sp)
+                    }
+
+                    fav.favourites.isEmpty() -> {
+                        Text("No recording favourites yet.", color = Jc.Muted, fontSize = 15.sp)
+                    }
+
+                    else -> {
                         LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(bottom = 40.dp)) {
                             items(fav.favourites.sortedBy { it.title.lowercase() }, key = { it.id }) { f ->
                                 FavouriteRow(
@@ -181,6 +197,7 @@ fun SeriesScreen(entry: FocusRequester) {
                                 )
                             }
                         }
+                    }
                 }
             }
         }
@@ -341,7 +358,12 @@ internal fun SeriesTimerRows(
     first: FocusRequester,
     onChange: (SeriesTimerInfoDto) -> Unit,
 ) {
-    val start = t.startDate?.let { java.time.LocalDateTime.ofInstant(it.atZone(java.time.ZoneOffset.UTC).toInstant(), java.time.ZoneId.systemDefault()).time() }
+    val start =
+        t.startDate?.let {
+            java.time.LocalDateTime
+                .ofInstant(it.atZone(java.time.ZoneOffset.UTC).toInstant(), java.time.ZoneId.systemDefault())
+                .time()
+        }
     EditRow("Episodes", "Which airings to record.", if (t.recordNewOnly == true) "New episodes only" else "All episodes", Modifier.focusRequester(first)) {
         onChange(t.copy(recordNewOnly = t.recordNewOnly != true))
     }
@@ -376,10 +398,18 @@ private fun EditRow(
     androidx.tv.material3.Surface(
         onClick = onClick,
         modifier = modifier.fillMaxWidth(0.8f),
-        shape = androidx.tv.material3.ClickableSurfaceDefaults.shape(RoundedCornerShape(10.dp)),
-        colors = androidx.tv.material3.ClickableSurfaceDefaults.colors(containerColor = Jc.Panel, focusedContainerColor = Jc.FocusFill, contentColor = Jc.Text, focusedContentColor = Jc.Text),
-        border = androidx.tv.material3.ClickableSurfaceDefaults.border(focusedBorder = androidx.tv.material3.Border(BorderStroke(2.dp, Jc.Focus))),
-        scale = androidx.tv.material3.ClickableSurfaceDefaults.scale(focusedScale = 1.01f),
+        shape =
+            androidx.tv.material3.ClickableSurfaceDefaults
+                .shape(RoundedCornerShape(10.dp)),
+        colors =
+            androidx.tv.material3.ClickableSurfaceDefaults
+                .colors(containerColor = Jc.Panel, focusedContainerColor = Jc.FocusFill, contentColor = Jc.Text, focusedContentColor = Jc.Text),
+        border =
+            androidx.tv.material3.ClickableSurfaceDefaults
+                .border(focusedBorder = androidx.tv.material3.Border(BorderStroke(2.dp, Jc.Focus))),
+        scale =
+            androidx.tv.material3.ClickableSurfaceDefaults
+                .scale(focusedScale = 1.01f),
     ) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {

@@ -20,9 +20,9 @@ import androidx.tv.material3.Border
 import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
+import com.mackandall.jdvr.data.MarkSymbols
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
-import com.mackandall.jdvr.data.MarkSymbols
 
 /** Text on a coloured tag: dark on amber; on a light theme, white on the darker status colours. */
 fun badgeText(
@@ -62,10 +62,29 @@ fun MenuColumns(
     fit: Boolean = false,
 ) {
     val column = if (fit) Modifier.width(androidx.compose.foundation.layout.IntrinsicSize.Max) else null
-    androidx.compose.foundation.layout.Row(if (fit) Modifier else Modifier.fillMaxWidth(), horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(16.dp)) {
+    androidx.compose.foundation.layout.Row(
+        if (fit) Modifier else Modifier.fillMaxWidth(),
+        horizontalArrangement =
+            androidx.compose.foundation.layout.Arrangement
+                .spacedBy(16.dp),
+    ) {
         androidx.compose.runtime.CompositionLocalProvider(LocalWideButtons provides true) {
-            androidx.compose.foundation.layout.Column(column ?: Modifier.weight(1f), verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(10.dp), content = left)
-            androidx.compose.foundation.layout.Column(column ?: Modifier.weight(1f), verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(10.dp), content = right)
+            androidx.compose.foundation.layout
+                .Column(
+                    column ?: Modifier.weight(1f),
+                    verticalArrangement =
+                        androidx.compose.foundation.layout.Arrangement
+                            .spacedBy(10.dp),
+                    content = left,
+                )
+            androidx.compose.foundation.layout
+                .Column(
+                    column ?: Modifier.weight(1f),
+                    verticalArrangement =
+                        androidx.compose.foundation.layout.Arrangement
+                            .spacedBy(10.dp),
+                    content = right,
+                )
         }
     }
 }
@@ -95,18 +114,28 @@ fun Button(
                 // Light: whatever the button, focus turns it white (as Emby's Apple theme does).
                 focusedContainerColor = if (primary && !Jc.Light) Jc.Focus else Jc.FocusFill,
                 contentColor = if (primary) Jc.OnFocus else Jc.OnButton,
-                focusedContentColor = if (npvr) NextPvrInk else if (primary && !Jc.Light) Jc.OnFocus else Jc.Text,
+                focusedContentColor =
+                    if (npvr) {
+                        NextPvrInk
+                    } else if (primary && !Jc.Light) {
+                        Jc.OnFocus
+                    } else {
+                        Jc.Text
+                    },
             ),
         border = ClickableSurfaceDefaults.border(focusedBorder = Border(BorderStroke(2.dp, Jc.Focus))),
         scale = ClickableSurfaceDefaults.scale(focusedScale = if (Jc.Light) 1.06f else 1.03f),
     ) {
         // The gloss fills the whole button, also when it's wider than its label.
         if (focused && (sage || npvr)) {
-            androidx.compose.foundation.layout.Box(Modifier.matchParentSize().then(if (sage) Modifier.sageGloss() else Modifier.nextPvrGloss()))
+            androidx.compose.foundation.layout
+                .Box(Modifier.matchParentSize().then(if (sage) Modifier.sageGloss() else Modifier.nextPvrGloss()))
         }
         androidx.compose.foundation.layout.Row(
             modifier = Modifier.padding(horizontal = if (compact) 12.dp else 16.dp, vertical = if (compact) 5.dp else 12.dp),
-            horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(10.dp),
+            horizontalArrangement =
+                androidx.compose.foundation.layout.Arrangement
+                    .spacedBy(10.dp),
             verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
         ) {
             leading?.invoke()
@@ -126,14 +155,23 @@ fun Modifier.sageGloss(): Modifier =
                 1f to Color(0xFF2470D8),
             ),
         )
-        drawRect(Color.White.copy(alpha = 0.55f), size = androidx.compose.ui.geometry.Size(size.width, 1.dp.toPx()))
+        drawRect(
+            Color.White.copy(alpha = 0.55f),
+            size =
+                androidx.compose.ui.geometry
+                    .Size(size.width, 1.dp.toPx()),
+        )
     }
 
 /** Type on NextPVR's pale selection. */
 val NextPvrInk = Color(0xFF000305)
 
 /** NextPVR's selection: white at the top fading to pale blue. */
-fun Modifier.nextPvrGloss(): Modifier = background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Color(0xFFFAFCFF), Color(0xFFADD6FF))))
+fun Modifier.nextPvrGloss(): Modifier =
+    background(
+        androidx.compose.ui.graphics.Brush
+            .verticalGradient(listOf(Color(0xFFFAFCFF), Color(0xFFADD6FF))),
+    )
 
 private val TimeFormat = DateTimeFormatter.ofPattern("h:mm a")
 private val DayFormat = DateTimeFormatter.ofPattern("EEE MMM d")

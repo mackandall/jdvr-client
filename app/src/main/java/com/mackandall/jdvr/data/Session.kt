@@ -12,7 +12,12 @@ class Session(
     // or that build would take this Jellyfin address for a NextPVR server.
     var serverUrl: String?
         get() = prefs.getString("serverUrl", null)
-        set(v) = prefs.edit().putString("serverUrl", v).remove("backend").apply()
+        set(v) =
+            prefs
+                .edit()
+                .putString("serverUrl", v)
+                .remove("backend")
+                .apply()
 
     /** Signed in to a NextPVR server by a NextPVR build: this build can't use it. */
     val otherBackend: Boolean
@@ -35,23 +40,31 @@ class Session(
         get() {
             prefs.getString("accessTokenEnc", null)?.let { enc -> return TokenCipher.decrypt(enc) }
             val plain = prefs.getString("accessToken", null) ?: return null
-            TokenCipher.encrypt(plain)?.let { prefs.edit().putString("accessTokenEnc", it).remove("accessToken").apply() }
+            TokenCipher.encrypt(plain)?.let {
+                prefs
+                    .edit()
+                    .putString("accessTokenEnc", it)
+                    .remove("accessToken")
+                    .apply()
+            }
             return plain
         }
         set(v) {
             val enc = v?.let { TokenCipher.encrypt(it) }
-            prefs.edit().apply {
-                if (v == null) {
-                    remove("accessTokenEnc")
-                    remove("accessToken")
-                } else if (enc != null) {
-                    putString("accessTokenEnc", enc)
-                    remove("accessToken")
-                } else {
-                    putString("accessToken", v)
-                    remove("accessTokenEnc")
-                }
-            }.apply()
+            prefs
+                .edit()
+                .apply {
+                    if (v == null) {
+                        remove("accessTokenEnc")
+                        remove("accessToken")
+                    } else if (enc != null) {
+                        putString("accessTokenEnc", enc)
+                        remove("accessToken")
+                    } else {
+                        putString("accessToken", v)
+                        remove("accessTokenEnc")
+                    }
+                }.apply()
         }
 
     /** The last live channel watched (opened again at start, SageTV style). */
@@ -70,9 +83,13 @@ class Session(
 
     /** Forgets the signed-in server; the remembered ones stay. */
     fun clear() =
-        prefs.edit().apply {
-            prefs.all.keys.filter { it != "servers" }.forEach { remove(it) }
-        }.apply()
+        prefs
+            .edit()
+            .apply {
+                prefs.all.keys
+                    .filter { it != "servers" }
+                    .forEach { remove(it) }
+            }.apply()
 
     /**
      * Servers signed in to before, most recent first, each with its token (encrypted like the
@@ -101,7 +118,8 @@ class Session(
             v.forEach { s ->
                 // A token that can't be encrypted isn't kept: that server asks to sign in again.
                 arr.put(
-                    org.json.JSONObject()
+                    org.json
+                        .JSONObject()
                         .put("backend", s.backend)
                         .put("url", s.url)
                         .put("name", s.name)
@@ -116,7 +134,11 @@ class Session(
         }
 
     fun restoreChannels(s: SavedServer) {
-        prefs.edit().putString("lastChannelId", s.lastChannelId).putString("recentChannels", s.recentChannels.joinToString(",")).apply()
+        prefs
+            .edit()
+            .putString("lastChannelId", s.lastChannelId)
+            .putString("recentChannels", s.recentChannels.joinToString(","))
+            .apply()
     }
 }
 
@@ -140,7 +162,10 @@ private object TokenCipher {
     private const val ALIAS = "jdvr-session"
 
     private fun key(): javax.crypto.SecretKey {
-        val ks = java.security.KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+        val ks =
+            java.security.KeyStore
+                .getInstance("AndroidKeyStore")
+                .apply { load(null) }
         (ks.getKey(ALIAS, null) as? javax.crypto.SecretKey)?.let { return it }
         val gen = javax.crypto.KeyGenerator.getInstance(android.security.keystore.KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore")
         gen.init(

@@ -93,8 +93,7 @@ internal class LiveInfo {
     fun channel(id: UUID) = channels.firstOrNull { it.id == id }
 
     /** The programme on now really records (not just JellyDVR Live's buffer). */
-    fun realRecording(channelId: UUID): Boolean =
-        buffers.currentBuffer()?.kept == true || channel(channelId)?.now?.let { it.timerId != null && it.id.toString().plainId() !in bufferIds } == true
+    fun realRecording(channelId: UUID): Boolean = buffers.currentBuffer()?.kept == true || channel(channelId)?.now?.let { it.timerId != null && it.id.toString().plainId() !in bufferIds } == true
 
     suspend fun loadChannels() {
         attempt { channels = Jdvr.backend.channels() }
@@ -134,19 +133,23 @@ internal class LiveInfo {
                     Jdvr.backend.keepBuffer(b.id, false)
                     "Won't record ${now.name} (back to a buffer)"
                 }
+
                 realTimer != null && System.currentTimeMillis() < recordArmedUntil -> {
                     recordArmedUntil = 0L
                     Jdvr.backend.cancelRecording(realTimer)
                     "Stopped recording ${now.name}"
                 }
+
                 realTimer != null -> {
                     recordArmedUntil = System.currentTimeMillis() + 4000
                     "Already recording ${now.name}: press ● again to stop it"
                 }
+
                 b != null -> {
                     Jdvr.backend.keepBuffer(b.id, true)
                     "Recording ${now.name}" + (b.startedUtc?.let { s -> runCatching { " from " + LocalDateTime.ofInstant(Instant.parse(s), ZoneId.systemDefault()).time() + " (when you tuned in)" }.getOrNull() } ?: "")
                 }
+
                 else -> {
                     Jdvr.backend.record(now.id, series = false)
                     "Recording ${now.name}"

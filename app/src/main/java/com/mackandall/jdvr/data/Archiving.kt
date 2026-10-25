@@ -1,9 +1,9 @@
 package com.mackandall.jdvr.data
 
-import java.util.UUID
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import org.jellyfin.sdk.api.client.HttpMethod
+import java.util.UUID
 
 /**
  * Moving recordings to archive locations, and what this TV may do. On Jellyfin this is JellyDVR
@@ -20,7 +20,10 @@ interface Archiving {
     suspend fun archiveChoices(itemId: UUID): ArchiveChoices?
 
     /** Move a recording to an archive location (in the background on the server); admins. */
-    suspend fun archive(itemId: UUID, target: String): Message?
+    suspend fun archive(
+        itemId: UUID,
+        target: String,
+    ): Message?
 }
 
 /**
@@ -87,6 +90,8 @@ class SpacePlugin(
 
     override suspend fun archiveChoices(itemId: UUID): ArchiveChoices? = server.call(HttpMethod.GET, "/JellyDvrSpace/Archive/$itemId")
 
-    override suspend fun archive(itemId: UUID, target: String): Message? =
-        server.call(HttpMethod.POST, "/JellyDvrSpace/Archive/$itemId", mapOf("target" to target))
+    override suspend fun archive(
+        itemId: UUID,
+        target: String,
+    ): Message? = server.call(HttpMethod.POST, "/JellyDvrSpace/Archive/$itemId", mapOf("target" to target))
 }

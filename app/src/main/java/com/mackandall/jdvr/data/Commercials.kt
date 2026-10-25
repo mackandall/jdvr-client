@@ -3,10 +3,10 @@ package com.mackandall.jdvr.data
 import android.graphics.BitmapFactory
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
-import java.util.UUID
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import org.jellyfin.sdk.api.client.HttpMethod
+import java.util.UUID
 
 /**
  * Commercial breaks and recording edits: badges, scans, the live scan, the program start and
@@ -41,16 +41,30 @@ interface Commercials {
      * Comskip plugin: "Starts here (this recording)" at [seconds]; editors. [keyframe]: [seconds] is
      * a keyframe picked from [keyframes], and a cut starts exactly there.
      */
-    suspend fun setProgramStart(itemId: UUID, seconds: Double, keyframe: Boolean = false): ProgramStartResult?
+    suspend fun setProgramStart(
+        itemId: UUID,
+        seconds: Double,
+        keyframe: Boolean = false,
+    ): ProgramStartResult?
 
     /** The keyframes either side of [seconds]: a cut can only start on one (Comskip plugin; editors). */
-    suspend fun keyframes(itemId: UUID, seconds: Double): Keyframes?
+    suspend fun keyframes(
+        itemId: UUID,
+        seconds: Double,
+    ): Keyframes?
 
     /** The picture at [seconds] of a recording, to choose a keyframe by. */
-    suspend fun frame(itemId: UUID, seconds: Double, width: Int = 400): androidx.compose.ui.graphics.ImageBitmap?
+    suspend fun frame(
+        itemId: UUID,
+        seconds: Double,
+        width: Int = 400,
+    ): androidx.compose.ui.graphics.ImageBitmap?
 
     /** "Remember card (all recordings)": the frame at [seconds] is the channel's card before its programs; editors. */
-    suspend fun rememberStartCard(itemId: UUID, seconds: Double): ProgramStartResult?
+    suspend fun rememberStartCard(
+        itemId: UUID,
+        seconds: Double,
+    ): ProgramStartResult?
 
     /** Comskip plugin: whether this user may edit recordings (administrators, and users the plugin allows), and what a trim keeps. */
     suspend fun editing(): Editing?
@@ -161,11 +175,12 @@ data class Editing(
 ) {
     /** How a trim can be taken back, for the confirmations. */
     val undoNote: String
-        get() = when {
-            keepOriginal -> "Undo trim puts it back."
-            undoDays > 0 -> "Undo trim can put it back for $undoDays day${if (undoDays == 1) "" else "s"}."
-            else -> "This can't be undone."
-        }
+        get() =
+            when {
+                keepOriginal -> "Undo trim puts it back."
+                undoDays > 0 -> "Undo trim can put it back for $undoDays day${if (undoDays == 1) "" else "s"}."
+                else -> "This can't be undone."
+            }
 }
 
 @Serializable
@@ -213,9 +228,15 @@ class ComskipPlugin(
     private val server: PluginClient,
 ) : Commercials {
     override suspend fun commercialBadges(ids: List<UUID>): Map<String, CommercialBadge> =
-        ids.chunked(250).flatMap { chunk ->
-            server.call<CommercialBadges>(HttpMethod.GET, "/ComskipSegments/Badges", mapOf("ids" to chunk.joinToString(",") { it.plain() }))?.items.orEmpty().entries
-        }.associate { it.key.plainId() to it.value }
+        ids
+            .chunked(250)
+            .flatMap { chunk ->
+                server
+                    .call<CommercialBadges>(HttpMethod.GET, "/ComskipSegments/Badges", mapOf("ids" to chunk.joinToString(",") { it.plain() }))
+                    ?.items
+                    .orEmpty()
+                    .entries
+            }.associate { it.key.plainId() to it.value }
 
     override suspend fun scanCommercials(itemId: UUID): Message? = server.call(HttpMethod.POST, "/ComskipSegments/Detect/$itemId", mapOf("force" to true))
 
@@ -225,18 +246,30 @@ class ComskipPlugin(
 
     override suspend fun fixAudioFormat(itemId: UUID): Message? = server.call(HttpMethod.POST, "/ComskipSegments/AudioTrim/Apply/$itemId")
 
-    override suspend fun setProgramStart(itemId: UUID, seconds: Double, keyframe: Boolean): ProgramStartResult? =
-        server.call(HttpMethod.POST, "/ComskipSegments/ProgramStart/$itemId", mapOf("seconds" to seconds, "keyframe" to keyframe))
+    override suspend fun setProgramStart(
+        itemId: UUID,
+        seconds: Double,
+        keyframe: Boolean,
+    ): ProgramStartResult? = server.call(HttpMethod.POST, "/ComskipSegments/ProgramStart/$itemId", mapOf("seconds" to seconds, "keyframe" to keyframe))
 
-    override suspend fun keyframes(itemId: UUID, seconds: Double): Keyframes? =
-        server.call(HttpMethod.GET, "/ComskipSegments/ProgramStart/$itemId/Keyframes", mapOf("seconds" to seconds))
+    override suspend fun keyframes(
+        itemId: UUID,
+        seconds: Double,
+    ): Keyframes? = server.call(HttpMethod.GET, "/ComskipSegments/ProgramStart/$itemId/Keyframes", mapOf("seconds" to seconds))
 
-    override suspend fun frame(itemId: UUID, seconds: Double, width: Int): ImageBitmap? =
-        server.bytes(HttpMethod.GET, "/ComskipSegments/ProgramStart/$itemId/Frame", mapOf("seconds" to seconds, "width" to width))
+    override suspend fun frame(
+        itemId: UUID,
+        seconds: Double,
+        width: Int,
+    ): ImageBitmap? =
+        server
+            .bytes(HttpMethod.GET, "/ComskipSegments/ProgramStart/$itemId/Frame", mapOf("seconds" to seconds, "width" to width))
             ?.let { BitmapFactory.decodeByteArray(it, 0, it.size)?.asImageBitmap() }
 
-    override suspend fun rememberStartCard(itemId: UUID, seconds: Double): ProgramStartResult? =
-        server.call(HttpMethod.POST, "/ComskipSegments/ProgramStart/$itemId/Card", mapOf("seconds" to seconds))
+    override suspend fun rememberStartCard(
+        itemId: UUID,
+        seconds: Double,
+    ): ProgramStartResult? = server.call(HttpMethod.POST, "/ComskipSegments/ProgramStart/$itemId/Card", mapOf("seconds" to seconds))
 
     override suspend fun editing(): Editing? = server.call(HttpMethod.GET, "/ComskipSegments/Editing")
 
@@ -246,8 +279,7 @@ class ComskipPlugin(
 
     override suspend fun undoTrim(itemId: UUID): ProgramStartResult? = server.call(HttpMethod.POST, "/ComskipSegments/ProgramStart/$itemId/Undo")
 
-    override suspend fun findProgramStart(itemId: UUID): ProgramStartResult? =
-        server.call(HttpMethod.POST, "/ComskipSegments/ProgramStart/$itemId/Find")
+    override suspend fun findProgramStart(itemId: UUID): ProgramStartResult? = server.call(HttpMethod.POST, "/ComskipSegments/ProgramStart/$itemId/Find")
 
     override suspend fun cuts(): List<CutJob>? = server.call(HttpMethod.GET, "/ComskipSegments/Cuts")
 
@@ -259,11 +291,17 @@ class ComskipPlugin(
     }
 
     override suspend fun guideScanning(): Map<String, Int?> =
-        server.call<GuideBadges>(HttpMethod.GET, "/ComskipSegments/Badges/Guide")?.programs.orEmpty().filter { it.state == "scanning" }.associate { it.programId.plainId() to it.minutes }
+        server
+            .call<GuideBadges>(HttpMethod.GET, "/ComskipSegments/Badges/Guide")
+            ?.programs
+            .orEmpty()
+            .filter { it.state == "scanning" }
+            .associate { it.programId.plainId() to it.minutes }
 
     override suspend fun recordingOfProgram(programId: UUID): UUID? {
         val key = programId.plain()
-        return server.call<GuideBadges>(HttpMethod.GET, "/ComskipSegments/Badges/Guide")
+        return server
+            .call<GuideBadges>(HttpMethod.GET, "/ComskipSegments/Badges/Guide")
             ?.programs
             ?.firstOrNull { it.programId.replace("-", "").equals(key, ignoreCase = true) }
             ?.recordingItemId

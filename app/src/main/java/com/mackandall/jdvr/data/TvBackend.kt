@@ -1,8 +1,8 @@
 package com.mackandall.jdvr.data
 
+import org.jellyfin.sdk.model.api.SeriesTimerInfoDto
 import java.time.LocalDateTime
 import java.util.UUID
-import org.jellyfin.sdk.model.api.SeriesTimerInfoDto
 
 /**
  * Everything the screens ask of the server. [JellyfinBackend] is the Jellyfin one. The

@@ -5,8 +5,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -46,6 +46,11 @@ import coil3.compose.AsyncImage
 import com.mackandall.jdvr.PlayRecording
 import com.mackandall.jdvr.data.Channel
 import com.mackandall.jdvr.data.Jdvr
+import com.mackandall.jdvr.data.LibItem
+import com.mackandall.jdvr.data.Library
+import com.mackandall.jdvr.data.MarkSymbols
+import com.mackandall.jdvr.data.RecordingCard
+import com.mackandall.jdvr.data.attempt
 import com.mackandall.jdvr.data.plainId
 import com.mackandall.jdvr.data.toUuid
 import kotlinx.coroutines.delay
@@ -55,11 +60,6 @@ import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneId
 import java.util.UUID
-import com.mackandall.jdvr.data.LibItem
-import com.mackandall.jdvr.data.Library
-import com.mackandall.jdvr.data.MarkSymbols
-import com.mackandall.jdvr.data.RecordingCard
-import com.mackandall.jdvr.data.attempt
 
 /** Home's panels: see-through over the weather sky, solid otherwise. */
 private val LocalSeeThrough = androidx.compose.runtime.compositionLocalOf { false }
@@ -110,7 +110,10 @@ fun HomeScreen(
         val place = prefs.weatherPlace ?: return@LaunchedEffect
         if (!prefs.weatherOn) return@LaunchedEffect
         while (true) {
-            attempt { com.mackandall.jdvr.data.Weather.now(place, prefs.fahrenheit) }?.let { weather = it }
+            attempt {
+                com.mackandall.jdvr.data.Weather
+                    .now(place, prefs.fahrenheit)
+            }?.let { weather = it }
             delay(15 * 60_000L)
         }
     }
@@ -154,15 +157,40 @@ fun HomeScreen(
         }
     // Channels whose only "recording" is a live TV buffer: their tuner shows a faint dot, not red.
     val bufferChannels =
-        recordingNow.groupBy { it.channelNumber }.filterValues { rs -> rs.all { it.programId?.plainId() in bufferIds } }.keys.filterNotNull().toSet()
+        recordingNow
+            .groupBy { it.channelNumber }
+            .filterValues { rs -> rs.all { it.programId?.plainId() in bufferIds } }
+            .keys
+            .filterNotNull()
+            .toSet()
     val nextLines =
         upcoming.filter { !it.recordingNow && it.programId?.plainId() !in bufferIds }.take(5).map { u ->
             val start = localOf(u.start)
             TileLine(
                 key = u.timerId,
                 title = u.name + (u.episodeTitle?.let { " · $it" } ?: ""),
-                detail = listOfNotNull(listOfNotNull(u.channelNumber, u.channelName).joinToString(" ").ifEmpty { null }, if (u.kind == "series") "series" else if (u.kind == "favourite") "favourite" else "one-off").joinToString(" · "),
-                side = start?.let { if (it.toLocalDate() == now.toLocalDate()) it.time() else it.dayOfWeek.name.take(3).lowercase().replaceFirstChar { c -> c.uppercase() } + " " + it.time() },
+                detail =
+                    listOfNotNull(
+                        listOfNotNull(u.channelNumber, u.channelName).joinToString(" ").ifEmpty { null },
+                        if (u.kind == "series") {
+                            "series"
+                        } else if (u.kind == "favourite") {
+                            "favourite"
+                        } else {
+                            "one-off"
+                        },
+                    ).joinToString(" · "),
+                side =
+                    start?.let {
+                        if (it.toLocalDate() == now.toLocalDate()) {
+                            it.time()
+                        } else {
+                            it.dayOfWeek.name
+                                .take(3)
+                                .lowercase()
+                                .replaceFirstChar { c -> c.uppercase() } + " " + it.time()
+                        }
+                    },
                 dot = null,
             ) { onOpenScreen(com.mackandall.jdvr.Screen.Scheduled) }
         }
@@ -181,12 +209,14 @@ fun HomeScreen(
         }
 
     // Which tiles show (Settings › Home): ON, OFF, or AUTO (only with something to show).
-    fun shown(key: String, has: Boolean = true) =
-        when (prefs.homeTile(key)) {
-            com.mackandall.jdvr.data.Prefs.ON -> true
-            com.mackandall.jdvr.data.Prefs.AUTO -> has
-            else -> false
-        }
+    fun shown(
+        key: String,
+        has: Boolean = true,
+    ) = when (prefs.homeTile(key)) {
+        com.mackandall.jdvr.data.Prefs.ON -> true
+        com.mackandall.jdvr.data.Prefs.AUTO -> has
+        else -> false
+    }
     val showLive = shown("live")
     val showWeather = shown("weather") && prefs.weatherOn
     val showNow = shown("now", nowLines.isNotEmpty())
@@ -210,6 +240,7 @@ fun HomeScreen(
             showFresh && !fresh.isNullOrEmpty() -> "fresh"
             else -> null
         }
+
     fun entryFor(key: String) = if (entryAt == key && returnPoster == null) Modifier.focusRequester(entry) else Modifier
     // Watch live holds the screen's entry, unless a library poster is getting focus back.
     val spare = remember { FocusRequester() }
@@ -217,123 +248,163 @@ fun HomeScreen(
 
     val w = weather
     androidx.compose.runtime.CompositionLocalProvider(LocalSeeThrough provides (w != null)) {
-    Box(Modifier.fillMaxSize()) {
-    if (w != null) {
-        WeatherPicture(w.sky, w.isDay)
-        // A light shade so text stays readable on bright skies; a light theme's dark text needs more
-        // (the picture's dark ground, trees, night sky).
-        Box(Modifier.fillMaxSize().background(Jc.Ink.copy(alpha = if (Jc.Light) 0.66f else 0.35f)))
-    }
-    // Home is one screen of tiles; the libraries' rows wait below it (▼ from New recordings), and
-    // focus back in the tiles brings the whole page back up.
-    BoxWithConstraints(Modifier.fillMaxSize()) {
-    val pageHeight = maxHeight
-    val page = rememberScrollState()
-    // The page stays at the top unless focus is in the library rows: a focused tile's
-    // bring-into-view, or focus going off to the menu, would otherwise nudge it up and cut off the clock.
-    var inRows by remember { mutableStateOf(false) }
-    LaunchedEffect(inRows) {
-        if (!inRows) androidx.compose.runtime.snapshotFlow { page.value }.collect { if (it > 0) page.animateScrollTo(0) }
-    }
-    Column(Modifier.fillMaxSize().verticalScroll(page)) {
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .height(pageHeight)
-            .padding(start = 28.dp, top = 16.dp, end = 28.dp, bottom = 20.dp),
-    ) {
-        // The clock and date; the weather and tuners have tiles of their own.
-        Row(Modifier.padding(bottom = 12.dp), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            Text("JDVR", color = Jc.Brand, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-            Text("Home", color = Jc.Muted, fontSize = 18.sp)
-            Box(Modifier.weight(1f))
-            Text(now.day(), color = Jc.Muted, fontSize = 15.sp, modifier = Modifier.padding(bottom = 3.dp))
-            Text(now.time(), color = Jc.Text, fontSize = 30.sp, fontWeight = FontWeight.SemiBold)
-        }
-
-        // The tiles: each row shares its width by the tiles' weights, the rows share the height;
-        // a tile turned off (or an Auto one with nothing to show) shrinks away and the others grow.
-        val r1 = animatedWeight(if (row1) 1.2f else 0f)
-        if (r1 > 0.01f) {
-            Row(Modifier.weight(r1).fillMaxWidth().padding(bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                val wl = animatedWeight(if (showLive) 3f else 0f)
-                if (wl > 0.01f) {
-                    Box(Modifier.weight(wl).fillMaxHeight()) {
-                        if (loaded && !hasLiveTv) {
-                            NoLiveTvCard(liveEntry, Modifier.fillMaxSize(), onSearch = { onOpenScreen(com.mackandall.jdvr.Screen.Search) })
-                        } else {
-                            LiveCard(last, fromStart, last?.now?.id?.toString()?.plainId() in bufferIds, symbols, liveEntry, Modifier.fillMaxSize(), onPlayChannel, onPlayRecording, onGuide = { onOpenScreen(com.mackandall.jdvr.Screen.Guide) })
-                        }
+        Box(Modifier.fillMaxSize()) {
+            if (w != null) {
+                WeatherPicture(w.sky, w.isDay)
+                // A light shade so text stays readable on bright skies; a light theme's dark text needs more
+                // (the picture's dark ground, trees, night sky).
+                Box(Modifier.fillMaxSize().background(Jc.Ink.copy(alpha = if (Jc.Light) 0.66f else 0.35f)))
+            }
+            // Home is one screen of tiles; the libraries' rows wait below it (▼ from New recordings), and
+            // focus back in the tiles brings the whole page back up.
+            BoxWithConstraints(Modifier.fillMaxSize()) {
+                val pageHeight = maxHeight
+                val page = rememberScrollState()
+                // The page stays at the top unless focus is in the library rows: a focused tile's
+                // bring-into-view, or focus going off to the menu, would otherwise nudge it up and cut off the clock.
+                var inRows by remember { mutableStateOf(false) }
+                LaunchedEffect(inRows) {
+                    if (!inRows) {
+                        androidx.compose.runtime
+                            .snapshotFlow { page.value }
+                            .collect { if (it > 0) page.animateScrollTo(0) }
                     }
                 }
-                val ww = animatedWeight(if (showWeather) 2f else 0f)
-                if (ww > 0.01f) {
-                    WeatherTile(w, prefs.weatherPlace?.name?.substringBefore(','), Modifier.weight(ww).fillMaxHeight(), homePanel(), homePanel2())
-                }
-                val wn = animatedWeight(if (showNow) 2f else 0f)
-                if (wn > 0.01f) {
-                    ListTile("RECORDING NOW", nowLines, if (loaded) "Nothing is recording." else "Loading…", Modifier.weight(wn).fillMaxHeight(), homePanel(), homePanel2(), entryFor("now"), leftmost = !showLive && !showWeather)
-                }
-            }
-        }
-        val r2 = animatedWeight(if (row2) 1f else 0f)
-        if (r2 > 0.01f) {
-            Row(Modifier.weight(r2).fillMaxWidth().padding(bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                val wx = animatedWeight(if (showNext) 3f else 0f)
-                if (wx > 0.01f) {
-                    ListTile("RECORDING NEXT", nextLines, if (loaded) "Nothing more scheduled." else "Loading…", Modifier.weight(wx).fillMaxHeight(), homePanel(), homePanel2(), entryFor("next"), leftmost = true)
-                }
-                val wa = animatedWeight(if (showAttention) 2f else 0f)
-                if (wa > 0.01f) {
-                    ListTile("NEEDS ATTENTION", attentionLines, if (loaded) "All recordings are fine." else "Loading…", Modifier.weight(wa).fillMaxHeight(), homePanel(), homePanel2(), entryFor("attention"), leftmost = !showNext)
-                }
-                val wt = animatedWeight(if (showTuners) 2f else 0f)
-                if (wt > 0.01f) {
-                    TunersTile(tuners, extras?.drive, Modifier.weight(wt).fillMaxHeight(), homePanel(), homePanel2(), loaded = loaded, bufferChannels = bufferChannels)
-                }
-            }
-        }
+                Column(Modifier.fillMaxSize().verticalScroll(page)) {
+                    Column(
+                        Modifier
+                            .fillMaxWidth()
+                            .height(pageHeight)
+                            .padding(start = 28.dp, top = 16.dp, end = 28.dp, bottom = 20.dp),
+                    ) {
+                        // The clock and date; the weather and tuners have tiles of their own.
+                        Row(Modifier.padding(bottom = 12.dp), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                            Text("JDVR", color = Jc.Brand, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                            Text("Home", color = Jc.Muted, fontSize = 18.sp)
+                            Box(Modifier.weight(1f))
+                            Text(now.day(), color = Jc.Muted, fontSize = 15.sp, modifier = Modifier.padding(bottom = 3.dp))
+                            Text(now.time(), color = Jc.Text, fontSize = 30.sp, fontWeight = FontWeight.SemiBold)
+                        }
 
-        // New recordings: a strip under the tiles, more room when there are fewer of them.
-        val rf = animatedWeight(if (showFresh) (if (tileRows == 0) 3f else if (tileRows == 1) 1.1f else 0.78f) else 0f)
-        if (rf > 0.01f) {
-            Column(Modifier.weight(rf).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text(if (freshFromLibrary) "Recently added" else "New recordings", color = Jc.Text, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
-                    Text(if (freshFromLibrary) "unwatched · newest first · from your libraries" else "unwatched · newest first", color = Jc.Muted, fontSize = 13.sp)
-                }
-                val list = fresh
-                when {
-                    list == null || !loaded -> Text("Loading…", color = Jc.Muted, fontSize = 14.sp)
-                    list.isEmpty() -> Text("All caught up.", color = Jc.Muted, fontSize = 14.sp)
-                    else ->
-                        // As tall as the strip allows: the pictures shrink (keeping their shape) so
-                        // the names under them always show.
-                        Row(Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            list.forEachIndexed { i, c ->
-                                NewCard(c, Modifier.weight(1f), if (i == 0) entryFor("fresh") else Modifier) {
-                                    if (c.type == "Series") onOpenShow(c.id) else c.id.toUuid()?.let { onPlayRecording(PlayRecording(it)) }
+                        // The tiles: each row shares its width by the tiles' weights, the rows share the height;
+                        // a tile turned off (or an Auto one with nothing to show) shrinks away and the others grow.
+                        val r1 = animatedWeight(if (row1) 1.2f else 0f)
+                        if (r1 > 0.01f) {
+                            Row(Modifier.weight(r1).fillMaxWidth().padding(bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                val wl = animatedWeight(if (showLive) 3f else 0f)
+                                if (wl > 0.01f) {
+                                    Box(Modifier.weight(wl).fillMaxHeight()) {
+                                        if (loaded && !hasLiveTv) {
+                                            NoLiveTvCard(liveEntry, Modifier.fillMaxSize(), onSearch = { onOpenScreen(com.mackandall.jdvr.Screen.Search) })
+                                        } else {
+                                            LiveCard(
+                                                last,
+                                                fromStart,
+                                                last
+                                                    ?.now
+                                                    ?.id
+                                                    ?.toString()
+                                                    ?.plainId() in bufferIds,
+                                                symbols,
+                                                liveEntry,
+                                                Modifier.fillMaxSize(),
+                                                onPlayChannel,
+                                                onPlayRecording,
+                                                onGuide = { onOpenScreen(com.mackandall.jdvr.Screen.Guide) },
+                                            )
+                                        }
+                                    }
+                                }
+                                val ww = animatedWeight(if (showWeather) 2f else 0f)
+                                if (ww > 0.01f) {
+                                    WeatherTile(w, prefs.weatherPlace?.name?.substringBefore(','), Modifier.weight(ww).fillMaxHeight(), homePanel(), homePanel2())
+                                }
+                                val wn = animatedWeight(if (showNow) 2f else 0f)
+                                if (wn > 0.01f) {
+                                    ListTile("RECORDING NOW", nowLines, if (loaded) "Nothing is recording." else "Loading…", Modifier.weight(wn).fillMaxHeight(), homePanel(), homePanel2(), entryFor("now"), leftmost = !showLive && !showWeather)
                                 }
                             }
-                            repeat(6 - list.size) { Box(Modifier.weight(1f)) }
                         }
+                        val r2 = animatedWeight(if (row2) 1f else 0f)
+                        if (r2 > 0.01f) {
+                            Row(Modifier.weight(r2).fillMaxWidth().padding(bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                val wx = animatedWeight(if (showNext) 3f else 0f)
+                                if (wx > 0.01f) {
+                                    ListTile("RECORDING NEXT", nextLines, if (loaded) "Nothing more scheduled." else "Loading…", Modifier.weight(wx).fillMaxHeight(), homePanel(), homePanel2(), entryFor("next"), leftmost = true)
+                                }
+                                val wa = animatedWeight(if (showAttention) 2f else 0f)
+                                if (wa > 0.01f) {
+                                    ListTile("NEEDS ATTENTION", attentionLines, if (loaded) "All recordings are fine." else "Loading…", Modifier.weight(wa).fillMaxHeight(), homePanel(), homePanel2(), entryFor("attention"), leftmost = !showNext)
+                                }
+                                val wt = animatedWeight(if (showTuners) 2f else 0f)
+                                if (wt > 0.01f) {
+                                    TunersTile(tuners, extras?.drive, Modifier.weight(wt).fillMaxHeight(), homePanel(), homePanel2(), loaded = loaded, bufferChannels = bufferChannels)
+                                }
+                            }
+                        }
+
+                        // New recordings: a strip under the tiles, more room when there are fewer of them.
+                        val rf =
+                            animatedWeight(
+                                if (showFresh) {
+                                    (
+                                        if (tileRows == 0) {
+                                            3f
+                                        } else if (tileRows == 1) {
+                                            1.1f
+                                        } else {
+                                            0.78f
+                                        }
+                                    )
+                                } else {
+                                    0f
+                                },
+                            )
+                        if (rf > 0.01f) {
+                            Column(Modifier.weight(rf).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                    Text(if (freshFromLibrary) "Recently added" else "New recordings", color = Jc.Text, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+                                    Text(if (freshFromLibrary) "unwatched · newest first · from your libraries" else "unwatched · newest first", color = Jc.Muted, fontSize = 13.sp)
+                                }
+                                val list = fresh
+                                when {
+                                    list == null || !loaded -> {
+                                        Text("Loading…", color = Jc.Muted, fontSize = 14.sp)
+                                    }
+
+                                    list.isEmpty() -> {
+                                        Text("All caught up.", color = Jc.Muted, fontSize = 14.sp)
+                                    }
+
+                                    else -> {
+                                        // As tall as the strip allows: the pictures shrink (keeping their shape) so
+                                        // the names under them always show.
+                                        Row(Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                            list.forEachIndexed { i, c ->
+                                                NewCard(c, Modifier.weight(1f), if (i == 0) entryFor("fresh") else Modifier) {
+                                                    if (c.type == "Series") onOpenShow(c.id) else c.id.toUuid()?.let { onPlayRecording(PlayRecording(it)) }
+                                                }
+                                            }
+                                            repeat(6 - list.size) { Box(Modifier.weight(1f)) }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        if (!row1 && !row2 && !showFresh) {
+                            Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                                Text("Turn Home's tiles on in Settings › Home.", color = Jc.Muted, fontSize = 18.sp)
+                            }
+                        }
+                    }
+                    if (showLibraries) {
+                        LibraryRows(onOpenLibraryItem, returnPoster, entry, onReturned, Modifier.onFocusChanged { inRows = it.hasFocus })
+                    } else if (returnPoster != null) {
+                        LaunchedEffect(Unit) { onReturned() }
+                    }
                 }
             }
         }
-        if (!row1 && !row2 && !showFresh) {
-            Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                Text("Turn Home's tiles on in Settings › Home.", color = Jc.Muted, fontSize = 18.sp)
-            }
-        }
-    }
-    if (showLibraries) {
-        LibraryRows(onOpenLibraryItem, returnPoster, entry, onReturned, Modifier.onFocusChanged { inRows = it.hasFocus })
-    } else if (returnPoster != null) {
-        LaunchedEffect(Unit) { onReturned() }
-    }
-    }
-    }
-    }
     }
 }
 
@@ -360,7 +431,10 @@ private fun LibraryRows(
             attempt { Jdvr.backend.libraries() }?.let { libs ->
                 rows =
                     libs.filter { it.id.toString() !in prefs.hiddenLibraries && it.id.toString() !in prefs.homeHiddenLibraries }.inMenuOrder().mapNotNull { l ->
-                        Jdvr.backend.latestIn(l.id)?.takeIf { it.isNotEmpty() }?.let { l to it }
+                        Jdvr.backend
+                            .latestIn(l.id)
+                            ?.takeIf { it.isNotEmpty() }
+                            ?.let { l to it }
                     }
                 libraryRowsCache = Jdvr.serverKey to rows
                 // The poster is gone (deleted, or no longer among the latest): focus goes to Watch live.
@@ -375,7 +449,9 @@ private fun LibraryRows(
             // Starts at the poster to return to, so it's composed and can take focus.
             val start = items.indexOfFirst { it.id == returnPoster }.coerceAtLeast(0)
             LazyRow(
-                state = androidx.compose.foundation.lazy.rememberLazyListState(initialFirstVisibleItemIndex = start),
+                state =
+                    androidx.compose.foundation.lazy
+                        .rememberLazyListState(initialFirstVisibleItemIndex = start),
                 horizontalArrangement = Arrangement.spacedBy(14.dp),
                 contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp),
             ) {
@@ -418,7 +494,12 @@ private fun PosterCard(
                         color = Jc.Text,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
-                        modifier = Modifier.align(Alignment.TopEnd).padding(6.dp).background(Jc.Ink.copy(alpha = 0.85f), RoundedCornerShape(5.dp)).padding(horizontal = 6.dp, vertical = 2.dp),
+                        modifier =
+                            Modifier
+                                .align(Alignment.TopEnd)
+                                .padding(6.dp)
+                                .background(Jc.Ink.copy(alpha = 0.85f), RoundedCornerShape(5.dp))
+                                .padding(horizontal = 6.dp, vertical = 2.dp),
                     )
                 }
             }
@@ -574,7 +655,12 @@ private fun NewCard(
                     color = Jc.Text,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Bold,
-                    modifier = Modifier.align(Alignment.BottomStart).padding(6.dp).background(Jc.Ink.copy(alpha = 0.85f), RoundedCornerShape(5.dp)).padding(horizontal = 6.dp, vertical = 2.dp),
+                    modifier =
+                        Modifier
+                            .align(Alignment.BottomStart)
+                            .padding(6.dp)
+                            .background(Jc.Ink.copy(alpha = 0.85f), RoundedCornerShape(5.dp))
+                            .padding(horizontal = 6.dp, vertical = 2.dp),
                 )
             }
         }

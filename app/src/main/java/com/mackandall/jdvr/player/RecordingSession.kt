@@ -140,17 +140,23 @@ internal class RecordingSession(
             }
         val ids = ordered.mapNotNull { it.id.toUuid() }
         if (itemId in ids) return ids
-        return series.toUuid()?.let { attempt { Jdvr.backend.episodes(it, null) } }?.map { it.id }.orEmpty()
+        return series
+            .toUuid()
+            ?.let { attempt { Jdvr.backend.episodes(it, null) } }
+            ?.map { it.id }
+            .orEmpty()
     }
 }
 
 /** The recording, with the subtitle files Jellyfin keeps beside the video as extra tracks. */
 private fun mediaItemOf(p: ItemPlayback): MediaItem =
-    MediaItem.Builder()
+    MediaItem
+        .Builder()
         .setUri(p.url)
         .setSubtitleConfigurations(
             p.subtitles.map { st ->
-                MediaItem.SubtitleConfiguration.Builder(android.net.Uri.parse(st.url))
+                MediaItem.SubtitleConfiguration
+                    .Builder(android.net.Uri.parse(st.url))
                     .setMimeType(st.mimeType)
                     .setLanguage(st.language)
                     .setLabel(st.label)

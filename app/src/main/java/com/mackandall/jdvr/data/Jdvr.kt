@@ -6,9 +6,9 @@ import com.mackandall.jdvr.profile.MediaCodecCapabilitiesTest
 import com.mackandall.jdvr.profile.createDeviceProfile
 import okhttp3.OkHttpClient
 import org.jellyfin.sdk.Jellyfin
+import org.jellyfin.sdk.android.androidDevice
 import org.jellyfin.sdk.api.client.ApiClient
 import org.jellyfin.sdk.api.okhttp.OkHttpFactory
-import org.jellyfin.sdk.android.androidDevice
 import org.jellyfin.sdk.createJellyfin
 import org.jellyfin.sdk.model.ClientInfo
 import org.jellyfin.sdk.model.api.DeviceProfile

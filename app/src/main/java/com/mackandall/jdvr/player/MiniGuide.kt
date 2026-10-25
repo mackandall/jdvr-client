@@ -1,7 +1,5 @@
 package com.mackandall.jdvr.player
 
-import com.mackandall.jdvr.ui.ProgramActionsHost
-import android.view.KeyEvent as AndroidKeyEvent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
@@ -10,15 +8,15 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -33,6 +31,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.nativeKeyCode
@@ -45,21 +44,22 @@ import androidx.compose.ui.unit.sp
 import androidx.tv.material3.Text
 import com.mackandall.jdvr.data.Channel
 import com.mackandall.jdvr.data.Jdvr
-import com.mackandall.jdvr.data.plain
+import com.mackandall.jdvr.data.MarkSymbols
 import com.mackandall.jdvr.data.Program
+import com.mackandall.jdvr.data.attempt
+import com.mackandall.jdvr.data.plain
 import com.mackandall.jdvr.ui.Jc
-import com.mackandall.jdvr.ui.seeThrough
-import androidx.compose.ui.graphics.compositeOver
 import com.mackandall.jdvr.ui.Marks
+import com.mackandall.jdvr.ui.ProgramActionsHost
+import com.mackandall.jdvr.ui.seeThrough
 import com.mackandall.jdvr.ui.time
+import com.mackandall.jdvr.ui.tryFocus
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.time.Duration
 import java.time.LocalDateTime
 import java.util.UUID
-import com.mackandall.jdvr.data.MarkSymbols
-import com.mackandall.jdvr.data.attempt
-import com.mackandall.jdvr.ui.tryFocus
+import android.view.KeyEvent as AndroidKeyEvent
 
 private const val ROWS = 4
 private const val WINDOW_MIN = 90L
@@ -101,7 +101,13 @@ fun MiniGuide(
     var detail by remember { mutableStateOf<Program?>(null) }
     var typed by remember { mutableStateOf("") }
     // Recent channels (not this one), most recent first; ◀ at "now" goes up to them.
-    val recent = remember { Jdvr.session.recentChannels.mapNotNull { id -> channels.firstOrNull { it.id.toString() == id } }.filter { it.id != currentChannelId }.take(6) }
+    val recent =
+        remember {
+            Jdvr.session.recentChannels
+                .mapNotNull { id -> channels.firstOrNull { it.id.toString() == id } }
+                .filter { it.id != currentChannelId }
+                .take(6)
+        }
     var inRecent by remember { mutableStateOf(false) }
     var recentIndex by remember { mutableIntStateOf(0) }
     var typedAt by remember { mutableStateOf(0L) }
@@ -112,7 +118,9 @@ fun MiniGuide(
     LaunchedEffect(top, windowStart, reload) {
         val need = windowStart.plusMinutes(WINDOW_MIN)
         val want =
-            channels.subList((top - 4).coerceAtLeast(0), (top + ROWS + 4).coerceAtMost(channels.size)).map { it.id }
+            channels
+                .subList((top - 4).coerceAtLeast(0), (top + ROWS + 4).coerceAtMost(channels.size))
+                .map { it.id }
                 .filter { reload > 0 || fetchedTo[it]?.isBefore(need) != false }
         if (want.isEmpty()) return@LaunchedEffect
         val to = windowStart.plusHours(4)
@@ -165,217 +173,279 @@ fun MiniGuide(
     // The panel closed: the band has the remote again.
     LaunchedEffect(detail) { if (detail == null) focus.tryFocus() }
     Box(modifier) {
-    Column(
-        Modifier
-            .align(Alignment.BottomCenter)
-            .fillMaxWidth()
-            .background(Jc.Ink.copy(alpha = 0.86f))
-            .focusRequester(focus)
-            .focusable()
-            .onKeyEvent { e ->
-                if (e.type != KeyEventType.KeyDown) return@onKeyEvent false
-                if (inRecent) {
+        Column(
+            Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .background(Jc.Ink.copy(alpha = 0.86f))
+                .focusRequester(focus)
+                .focusable()
+                .onKeyEvent { e ->
+                    if (e.type != KeyEventType.KeyDown) return@onKeyEvent false
+                    if (inRecent) {
+                        when (e.key.nativeKeyCode) {
+                            AndroidKeyEvent.KEYCODE_DPAD_LEFT -> {
+                                recentIndex = (recentIndex - 1).coerceAtLeast(0)
+                            }
+
+                            AndroidKeyEvent.KEYCODE_DPAD_RIGHT -> {
+                                recentIndex = (recentIndex + 1).coerceAtMost(recent.lastIndex)
+                            }
+
+                            AndroidKeyEvent.KEYCODE_DPAD_DOWN -> {
+                                inRecent = false
+                            }
+
+                            AndroidKeyEvent.KEYCODE_DPAD_CENTER, AndroidKeyEvent.KEYCODE_ENTER -> {
+                                recent.getOrNull(recentIndex)?.let { onWatch(it.id) }
+                            }
+
+                            AndroidKeyEvent.KEYCODE_DPAD_UP -> {}
+
+                            else -> {
+                                return@onKeyEvent false
+                            }
+                        }
+                        return@onKeyEvent true
+                    }
                     when (e.key.nativeKeyCode) {
-                        AndroidKeyEvent.KEYCODE_DPAD_LEFT -> recentIndex = (recentIndex - 1).coerceAtLeast(0)
-                        AndroidKeyEvent.KEYCODE_DPAD_RIGHT -> recentIndex = (recentIndex + 1).coerceAtMost(recent.lastIndex)
-                        AndroidKeyEvent.KEYCODE_DPAD_DOWN -> inRecent = false
-                        AndroidKeyEvent.KEYCODE_DPAD_CENTER, AndroidKeyEvent.KEYCODE_ENTER -> recent.getOrNull(recentIndex)?.let { onWatch(it.id) }
-                        AndroidKeyEvent.KEYCODE_DPAD_UP -> {}
-                        else -> return@onKeyEvent false
-                    }
-                    return@onKeyEvent true
-                }
-                when (e.key.nativeKeyCode) {
-                    AndroidKeyEvent.KEYCODE_DPAD_UP -> move(-1)
-                    AndroidKeyEvent.KEYCODE_DPAD_DOWN -> move(1)
-                    AndroidKeyEvent.KEYCODE_CHANNEL_UP, AndroidKeyEvent.KEYCODE_PAGE_UP -> move(-ROWS)
-                    AndroidKeyEvent.KEYCODE_CHANNEL_DOWN, AndroidKeyEvent.KEYCODE_PAGE_DOWN -> move(ROWS)
-                    // Two hours ahead / back (not before now).
-                    AndroidKeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> {
-                        windowStart = windowStart.plusHours(2)
-                        at = windowStart
-                    }
-                    AndroidKeyEvent.KEYCODE_MEDIA_REWIND -> {
-                        windowStart = windowStart.minusHours(2).let { if (it.isBefore(earliest)) earliest else it }
-                        at = if (windowStart == earliest) LocalDateTime.now() else windowStart
-                    }
-                    AndroidKeyEvent.KEYCODE_INFO, AndroidKeyEvent.KEYCODE_MENU -> detail = sel
-                    in AndroidKeyEvent.KEYCODE_0..AndroidKeyEvent.KEYCODE_9 -> {
-                        typed = (typed + (e.key.nativeKeyCode - AndroidKeyEvent.KEYCODE_0)).takeLast(4)
-                        typedAt = System.currentTimeMillis()
-                    }
-                    AndroidKeyEvent.KEYCODE_DPAD_RIGHT -> {
-                        val next = sel?.let { s -> rowPrograms(row).firstOrNull { !it.start.isBefore(s.end) } }
-                        if (next != null) {
-                            at = next.start
-                            follow(next)
+                        AndroidKeyEvent.KEYCODE_DPAD_UP -> {
+                            move(-1)
+                        }
+
+                        AndroidKeyEvent.KEYCODE_DPAD_DOWN -> {
+                            move(1)
+                        }
+
+                        AndroidKeyEvent.KEYCODE_CHANNEL_UP, AndroidKeyEvent.KEYCODE_PAGE_UP -> {
+                            move(-ROWS)
+                        }
+
+                        AndroidKeyEvent.KEYCODE_CHANNEL_DOWN, AndroidKeyEvent.KEYCODE_PAGE_DOWN -> {
+                            move(ROWS)
+                        }
+
+                        // Two hours ahead / back (not before now).
+                        AndroidKeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> {
+                            windowStart = windowStart.plusHours(2)
+                            at = windowStart
+                        }
+
+                        AndroidKeyEvent.KEYCODE_MEDIA_REWIND -> {
+                            windowStart = windowStart.minusHours(2).let { if (it.isBefore(earliest)) earliest else it }
+                            at = if (windowStart == earliest) LocalDateTime.now() else windowStart
+                        }
+
+                        AndroidKeyEvent.KEYCODE_INFO, AndroidKeyEvent.KEYCODE_MENU -> {
+                            detail = sel
+                        }
+
+                        in AndroidKeyEvent.KEYCODE_0..AndroidKeyEvent.KEYCODE_9 -> {
+                            typed = (typed + (e.key.nativeKeyCode - AndroidKeyEvent.KEYCODE_0)).takeLast(4)
+                            typedAt = System.currentTimeMillis()
+                        }
+
+                        AndroidKeyEvent.KEYCODE_DPAD_RIGHT -> {
+                            val next = sel?.let { s -> rowPrograms(row).firstOrNull { !it.start.isBefore(s.end) } }
+                            if (next != null) {
+                                at = next.start
+                                follow(next)
+                            }
+                        }
+
+                        AndroidKeyEvent.KEYCODE_DPAD_LEFT -> {
+                            val prev = sel?.let { s -> rowPrograms(row).lastOrNull { !it.end.isAfter(s.start) && it.end.isAfter(LocalDateTime.now()) } }
+                            if (prev != null) {
+                                at = if (prev.start.isBefore(LocalDateTime.now())) LocalDateTime.now() else prev.start
+                                follow(prev)
+                            } else if (recent.isNotEmpty()) {
+                                // At "now": up to the recent channels.
+                                inRecent = true
+                                recentIndex = 0
+                            }
+                        }
+
+                        AndroidKeyEvent.KEYCODE_DPAD_CENTER, AndroidKeyEvent.KEYCODE_ENTER -> {
+                            val p = sel ?: return@onKeyEvent true
+                            if (p.start.isBefore(LocalDateTime.now())) onWatch(p.channelId) else detail = p
+                        }
+
+                        else -> {
+                            return@onKeyEvent false
                         }
                     }
-                    AndroidKeyEvent.KEYCODE_DPAD_LEFT -> {
-                        val prev = sel?.let { s -> rowPrograms(row).lastOrNull { !it.end.isAfter(s.start) && it.end.isAfter(LocalDateTime.now()) } }
-                        if (prev != null) {
-                            at = if (prev.start.isBefore(LocalDateTime.now())) LocalDateTime.now() else prev.start
-                            follow(prev)
-                        } else if (recent.isNotEmpty()) {
-                            // At "now": up to the recent channels.
-                            inRecent = true
-                            recentIndex = 0
+                    true
+                }.padding(horizontal = 24.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(5.dp),
+        ) {
+            // Recent channels: ◀ at "now" comes up here; OK tunes, ▼ or Back goes back down.
+            if (recent.isNotEmpty()) {
+                Row(Modifier.height(30.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("Recent", color = if (inRecent) Jc.Text else Jc.Muted, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.width(60.dp))
+                    recent.forEachIndexed { i, ch ->
+                        val on = inRecent && i == recentIndex
+                        Row(
+                            Modifier
+                                .background(if (on) Jc.FocusFill else Jc.Panel.seeThrough(0.9f), RoundedCornerShape(7.dp))
+                                .then(if (on) Modifier.border(2.dp, Jc.Focus, RoundedCornerShape(7.dp)) else Modifier)
+                                .padding(horizontal = 9.dp, vertical = 4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(ch.number, color = Jc.Muted, fontSize = 12.sp)
+                            Text(ch.name, color = Jc.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                            ch.now?.let { Text(it.name, color = Jc.Muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 120.dp)) }
                         }
                     }
-                    AndroidKeyEvent.KEYCODE_DPAD_CENTER, AndroidKeyEvent.KEYCODE_ENTER -> {
-                        val p = sel ?: return@onKeyEvent true
-                        if (p.start.isBefore(LocalDateTime.now())) onWatch(p.channelId) else detail = p
-                    }
-                    else -> return@onKeyEvent false
                 }
-                true
-            }.padding(horizontal = 24.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(5.dp),
-    ) {
-        // Recent channels: ◀ at "now" comes up here; OK tunes, ▼ or Back goes back down.
-        if (recent.isNotEmpty()) {
-            Row(Modifier.height(30.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("Recent", color = if (inRecent) Jc.Text else Jc.Muted, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.width(60.dp))
-                recent.forEachIndexed { i, ch ->
-                    val on = inRecent && i == recentIndex
+            }
+            // The selected programme.
+            Row(Modifier.height(28.dp), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                val marks = Marks.parse(sel?.rawEpisodeTitle, symbols)
+                Text(sel?.name ?: "", color = Jc.Text, fontSize = 20.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                val ch = channels.getOrNull(row)
+                Text(
+                    listOfNotNull(sel?.seasonEpisode, marks.title, sel?.let { "${it.start.time()}–${it.end.time()}" }, ch?.let { "${it.number} ${it.name}" }).joinToString(" · "),
+                    color = Jc.Muted,
+                    fontSize = 14.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+                if (sel != null && recording(sel)) Text("● Recording", color = Jc.Recording, fontSize = 13.sp)
+                Text(
+                    note ?: (
+                        if (typed.isNotEmpty()) {
+                            "Channel $typed…"
+                        } else if (sel != null && sel.start.isBefore(LocalDateTime.now())) {
+                            "OK watch · ◀ recent · Info options · Back close"
+                        } else {
+                            "OK options · ⏩⏪ 2 h · Back close"
+                        }
+                    ),
+                    color = if (note != null) Jc.Text else Jc.Muted,
+                    fontSize = 13.sp,
+                )
+            }
+            // Time ruler.
+            Row(Modifier.height(18.dp)) {
+                Box(Modifier.width(150.dp))
+                Row(Modifier.weight(1f)) {
+                    repeat(3) { i -> Text(windowStart.plusMinutes(30L * i).time(), color = Jc.Muted, fontSize = 12.sp, modifier = Modifier.weight(1f)) }
+                }
+            }
+            for (i in top until (top + ROWS).coerceAtMost(channels.size)) {
+                val ch = channels[i]
+                Row(Modifier.fillMaxWidth().height(40.dp), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                     Row(
                         Modifier
-                            .background(if (on) Jc.FocusFill else Jc.Panel.seeThrough(0.9f), RoundedCornerShape(7.dp))
-                            .then(if (on) Modifier.border(2.dp, Jc.Focus, RoundedCornerShape(7.dp)) else Modifier)
-                            .padding(horizontal = 9.dp, vertical = 4.dp),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            .width(145.dp)
+                            .fillMaxHeight()
+                            .background(if (i == row) Jc.FocusFill else Jc.Panel.seeThrough(0.9f), RoundedCornerShape(7.dp))
+                            .padding(horizontal = 10.dp),
                         verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        Text(ch.number, color = Jc.Muted, fontSize = 12.sp)
-                        Text(ch.name, color = Jc.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 1)
-                        ch.now?.let { Text(it.name, color = Jc.Muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 120.dp)) }
+                        Text(ch.number, color = Jc.Muted, fontSize = 13.sp)
+                        Text(ch.name, color = Jc.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
-                }
-            }
-        }
-        // The selected programme.
-        Row(Modifier.height(28.dp), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            val marks = Marks.parse(sel?.rawEpisodeTitle, symbols)
-            Text(sel?.name ?: "", color = Jc.Text, fontSize = 20.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
-            val ch = channels.getOrNull(row)
-            Text(
-                listOfNotNull(sel?.seasonEpisode, marks.title, sel?.let { "${it.start.time()}–${it.end.time()}" }, ch?.let { "${it.number} ${it.name}" }).joinToString(" · "),
-                color = Jc.Muted,
-                fontSize = 14.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f),
-            )
-            if (sel != null && recording(sel)) Text("● Recording", color = Jc.Recording, fontSize = 13.sp)
-            Text(
-                note ?: (if (typed.isNotEmpty()) "Channel $typed…" else if (sel != null && sel.start.isBefore(LocalDateTime.now())) "OK watch · ◀ recent · Info options · Back close" else "OK options · ⏩⏪ 2 h · Back close"),
-                color = if (note != null) Jc.Text else Jc.Muted,
-                fontSize = 13.sp,
-            )
-        }
-        // Time ruler.
-        Row(Modifier.height(18.dp)) {
-            Box(Modifier.width(150.dp))
-            Row(Modifier.weight(1f)) {
-                repeat(3) { i -> Text(windowStart.plusMinutes(30L * i).time(), color = Jc.Muted, fontSize = 12.sp, modifier = Modifier.weight(1f)) }
-            }
-        }
-        for (i in top until (top + ROWS).coerceAtMost(channels.size)) {
-            val ch = channels[i]
-            Row(Modifier.fillMaxWidth().height(40.dp), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                Row(
-                    Modifier.width(145.dp).fillMaxHeight().background(if (i == row) Jc.FocusFill else Jc.Panel.seeThrough(0.9f), RoundedCornerShape(7.dp)).padding(horizontal = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Text(ch.number, color = Jc.Muted, fontSize = 13.sp)
-                    Text(ch.name, color = Jc.Text, fontSize = 14.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                }
-                BoxWithConstraints(Modifier.weight(1f).fillMaxHeight()) {
-                    // A light theme's frosted cells would let the now line show through: solid there.
-                    val cellColour = if (Jc.Light) Jc.Panel2.compositeOver(Jc.Sheet) else Jc.Panel2.seeThrough(0.9f)
-                    val w = maxWidth
-                    val windowEnd = windowStart.plusMinutes(WINDOW_MIN)
-                    // Now: behind the cells (as in the guide), so it shows in the gaps between them,
-                    // never across a title.
-                    val nowFrac = Duration.between(windowStart, LocalDateTime.now()).toMinutes().toFloat() / WINDOW_MIN
-                    if (nowFrac in 0f..1f) Box(Modifier.offset(x = w * nowFrac).width(2.dp).fillMaxHeight().background(Jc.Focus.copy(alpha = 0.8f)))
-                    rowPrograms(i).filter { it.end.isAfter(windowStart) && it.start.isBefore(windowEnd) }.forEach { p ->
-                        val from = (Duration.between(windowStart, maxOf(p.start, windowStart)).toMinutes().toFloat() / WINDOW_MIN).coerceIn(0f, 1f)
-                        val to = (Duration.between(windowStart, minOf(p.end, windowEnd)).toMinutes().toFloat() / WINDOW_MIN).coerceIn(0f, 1f)
-                        val isSel = i == row && p.id == sel?.id
-                        Column(
-                            Modifier
-                                .offset(x = w * from)
-                                .width((w * (to - from) - 4.dp).coerceAtLeast(6.dp))
-                                .fillMaxHeight()
-                                .background(if (isSel) Jc.FocusFill else cellColour, RoundedCornerShape(7.dp))
-                                .then(if (isSel) Modifier.border(2.dp, Jc.Focus, RoundedCornerShape(7.dp)) else Modifier)
-                                .padding(horizontal = 8.dp),
-                            verticalArrangement = Arrangement.Center,
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                // Red dot for a recording, two when a series records it (as in the guide).
-                                if (recording(p)) {
-                                    if (p.seriesTimerId != null) com.mackandall.jdvr.ui.SeriesDots(height = 8.dp)
-                                    else Box(Modifier.size(8.dp).background(Jc.Recording, CircleShape))
+                    BoxWithConstraints(Modifier.weight(1f).fillMaxHeight()) {
+                        // A light theme's frosted cells would let the now line show through: solid there.
+                        val cellColour = if (Jc.Light) Jc.Panel2.compositeOver(Jc.Sheet) else Jc.Panel2.seeThrough(0.9f)
+                        val w = maxWidth
+                        val windowEnd = windowStart.plusMinutes(WINDOW_MIN)
+                        // Now: behind the cells (as in the guide), so it shows in the gaps between them,
+                        // never across a title.
+                        val nowFrac = Duration.between(windowStart, LocalDateTime.now()).toMinutes().toFloat() / WINDOW_MIN
+                        if (nowFrac in 0f..1f) {
+                            Box(
+                                Modifier
+                                    .offset(x = w * nowFrac)
+                                    .width(2.dp)
+                                    .fillMaxHeight()
+                                    .background(Jc.Focus.copy(alpha = 0.8f)),
+                            )
+                        }
+                        rowPrograms(i).filter { it.end.isAfter(windowStart) && it.start.isBefore(windowEnd) }.forEach { p ->
+                            val from = (Duration.between(windowStart, maxOf(p.start, windowStart)).toMinutes().toFloat() / WINDOW_MIN).coerceIn(0f, 1f)
+                            val to = (Duration.between(windowStart, minOf(p.end, windowEnd)).toMinutes().toFloat() / WINDOW_MIN).coerceIn(0f, 1f)
+                            val isSel = i == row && p.id == sel?.id
+                            Column(
+                                Modifier
+                                    .offset(x = w * from)
+                                    .width((w * (to - from) - 4.dp).coerceAtLeast(6.dp))
+                                    .fillMaxHeight()
+                                    .background(if (isSel) Jc.FocusFill else cellColour, RoundedCornerShape(7.dp))
+                                    .then(if (isSel) Modifier.border(2.dp, Jc.Focus, RoundedCornerShape(7.dp)) else Modifier)
+                                    .padding(horizontal = 8.dp),
+                                verticalArrangement = Arrangement.Center,
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    // Red dot for a recording, two when a series records it (as in the guide).
+                                    if (recording(p)) {
+                                        if (p.seriesTimerId != null) {
+                                            com.mackandall.jdvr.ui
+                                                .SeriesDots(height = 8.dp)
+                                        } else {
+                                            Box(Modifier.size(8.dp).background(Jc.Recording, CircleShape))
+                                        }
+                                    }
+                                    Text(p.name, color = Jc.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 }
-                                Text(p.name, color = Jc.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            }
-                            // Episode History's marks, as in the guide: ■ skipped, ↪ other airing,
-                            // ● in the library, ✓ watched, then the episode title.
-                            val marks = Marks.parse(p.rawEpisodeTitle, symbols)
-                            if (marks.any || marks.title != null) {
-                                androidx.compose.foundation.layout.Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                                    if (marks.skipped) Text("■", color = Jc.Amber, fontSize = 11.sp)
-                                    if (marks.otherAiring) Text("↪", color = Jc.Focus, fontSize = 11.sp)
-                                    if (marks.inLibrary) Text("●", color = Jc.Green, fontSize = 11.sp)
-                                    if (marks.watched) Text("✓", color = Jc.Green, fontSize = 11.sp)
-                                    marks.title?.let { Text(it, color = Jc.Muted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                                // Episode History's marks, as in the guide: ■ skipped, ↪ other airing,
+                                // ● in the library, ✓ watched, then the episode title.
+                                val marks = Marks.parse(p.rawEpisodeTitle, symbols)
+                                if (marks.any || marks.title != null) {
+                                    androidx.compose.foundation.layout.Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                                        if (marks.skipped) Text("■", color = Jc.Amber, fontSize = 11.sp)
+                                        if (marks.otherAiring) Text("↪", color = Jc.Focus, fontSize = 11.sp)
+                                        if (marks.inLibrary) Text("●", color = Jc.Green, fontSize = 11.sp)
+                                        if (marks.watched) Text("✓", color = Jc.Green, fontSize = 11.sp)
+                                        marks.title?.let { Text(it, color = Jc.Muted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                                    }
                                 }
                             }
                         }
+                        if (programs[ch.id] == null) Text("…", color = Jc.Muted, fontSize = 13.sp, modifier = Modifier.align(Alignment.CenterStart).padding(start = 8.dp))
                     }
-                    if (programs[ch.id] == null) Text("…", color = Jc.Muted, fontSize = 13.sp, modifier = Modifier.align(Alignment.CenterStart).padding(start = 8.dp))
                 }
             }
         }
-    }
-    // The guide's programme panel, on the right over the picture.
-    detail?.let { p ->
-        androidx.activity.compose.BackHandler { detail = null }
-        ProgramActionsHost(onDismiss = { detail = null }) {
-            com.mackandall.jdvr.ui.ProgramPanel(
-                program = p,
-                channel = channels.firstOrNull { it.id == p.channelId },
-                symbols = symbols,
-                onWatch = {
-                    detail = null
-                    onWatch(p.channelId)
-                },
-                onWatchFromStart = { id ->
-                    detail = null
-                    onPlayRecording(com.mackandall.jdvr.PlayRecording(id, startMs = 0L))
-                },
-                onPlayItem = {
-                    detail = null
-                    onPlayRecording(it)
-                },
-                onChanged = { reload++ },
-                onClose = { detail = null },
-                onActed = { msg ->
-                    note = msg
-                    detail = null
-                    scope.launch {
-                        delay(1500)
-                        reload++
-                        delay(2000)
-                        note = null
-                    }
-                },
-                modifier = Modifier.width(380.dp),
-            )
+        // The guide's programme panel, on the right over the picture.
+        detail?.let { p ->
+            androidx.activity.compose.BackHandler { detail = null }
+            ProgramActionsHost(onDismiss = { detail = null }) {
+                com.mackandall.jdvr.ui.ProgramPanel(
+                    program = p,
+                    channel = channels.firstOrNull { it.id == p.channelId },
+                    symbols = symbols,
+                    onWatch = {
+                        detail = null
+                        onWatch(p.channelId)
+                    },
+                    onWatchFromStart = { id ->
+                        detail = null
+                        onPlayRecording(com.mackandall.jdvr.PlayRecording(id, startMs = 0L))
+                    },
+                    onPlayItem = {
+                        detail = null
+                        onPlayRecording(it)
+                    },
+                    onChanged = { reload++ },
+                    onClose = { detail = null },
+                    onActed = { msg ->
+                        note = msg
+                        detail = null
+                        scope.launch {
+                            delay(1500)
+                            reload++
+                            delay(2000)
+                            note = null
+                        }
+                    },
+                    modifier = Modifier.width(380.dp),
+                )
+            }
         }
-    }
     }
 }

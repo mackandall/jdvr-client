@@ -33,7 +33,13 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.tv.material3.Text
+import com.mackandall.jdvr.data.Airing
+import com.mackandall.jdvr.data.AiringsResult
+import com.mackandall.jdvr.data.DateChannel
 import com.mackandall.jdvr.data.Jdvr
+import com.mackandall.jdvr.data.RerecordState
+import com.mackandall.jdvr.data.attempt
+import com.mackandall.jdvr.data.attemptResult
 import com.mackandall.jdvr.data.toUuid
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -43,12 +49,6 @@ import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.ZoneOffset
 import java.util.UUID
-import com.mackandall.jdvr.data.Airing
-import com.mackandall.jdvr.data.AiringsResult
-import com.mackandall.jdvr.data.DateChannel
-import com.mackandall.jdvr.data.RerecordState
-import com.mackandall.jdvr.data.attemptResult
-import com.mackandall.jdvr.data.attempt
 
 private val Reasons = listOf("Partial", "Picture trouble", "Audio trouble", "Ads or edited version", "Other")
 
@@ -76,32 +76,36 @@ private fun summary(
         val channel = listOfNotNull(next.channelNumber, next.channelName).joinToString(" ").ifEmpty { null }?.let { " on $it" } ?: ""
         // "today", "tomorrow" mid-sentence; a day name stays as it is.
         val whenText = at?.let { t -> dayWord(t).let { if (it == "Today" || it == "Tomorrow") it.lowercase() else it } + " at " + t.time() }
-        val first = when {
-            next.onNow -> "On now$channel" + if (airings.size > 1) ", and ${airings.size - 1} more in the guide" else ""
-            whenText == null -> "${airings.size} airing${if (airings.size == 1) "" else "s"} in the guide"
-            airings.size == 1 -> "Airs again $whenText$channel"
-            else -> "${airings.size} airings in the guide, the next $whenText$channel"
-        }
+        val first =
+            when {
+                next.onNow -> "On now$channel" + if (airings.size > 1) ", and ${airings.size - 1} more in the guide" else ""
+                whenText == null -> "${airings.size} airing${if (airings.size == 1) "" else "s"} in the guide"
+                airings.size == 1 -> "Airs again $whenText$channel"
+                else -> "${airings.size} airings in the guide, the next $whenText$channel"
+            }
         return listOfNotNull(first, if (r.tuners > 0) "${r.tuners} tuners" else null).joinToString(" · ")
     }
     val until = localOf(r.guideUntil)?.day()
-    val head = when {
-        rerecord -> "Not in the guide yet: Automatic goes on looking."
-        fromGuide -> "No other airings in the guide."
-        else -> "Not in the guide."
-    }
+    val head =
+        when {
+            rerecord -> "Not in the guide yet: Automatic goes on looking."
+            fromGuide -> "No other airings in the guide."
+            else -> "Not in the guide."
+        }
     val f = r.guideFirst?.label
     val l = r.guideLast?.label
-    val has = when {
-        r.isMovie || r.guideShowings == 0 -> null
-        f != null && l != null && f != l -> "$f to $l"
-        else -> l
-    }
-    val reach = when {
-        has != null -> "The guide has $has" + (until?.let { ", up to $it" } ?: "") + "."
-        until != null -> "The guide runs to $until."
-        else -> null
-    }
+    val has =
+        when {
+            r.isMovie || r.guideShowings == 0 -> null
+            f != null && l != null && f != l -> "$f to $l"
+            else -> l
+        }
+    val reach =
+        when {
+            has != null -> "The guide has $has" + (until?.let { ", up to $it" } ?: "") + "."
+            until != null -> "The guide runs to $until."
+            else -> null
+        }
     return listOfNotNull(head, reach).joinToString(" ")
 }
 
@@ -109,7 +113,13 @@ private fun summary(
 private fun localOf(iso: String?): LocalDateTime? =
     iso?.let {
         runCatching { LocalDateTime.ofInstant(Instant.parse(it), ZoneId.systemDefault()) }.getOrNull()
-            ?: runCatching { LocalDateTime.parse(it).atOffset(ZoneOffset.UTC).atZoneSameInstant(ZoneId.systemDefault()).toLocalDateTime() }.getOrNull()
+            ?: runCatching {
+                LocalDateTime
+                    .parse(it)
+                    .atOffset(ZoneOffset.UTC)
+                    .atZoneSameInstant(ZoneId.systemDefault())
+                    .toLocalDateTime()
+            }.getOrNull()
     }
 
 /**
@@ -170,57 +180,57 @@ fun AiringsDialog(
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         // Opened from Quick actions, whose buttons fill the menu: not in here.
         androidx.compose.runtime.CompositionLocalProvider(LocalWideButtons provides false) {
-        Column(
-            Modifier
-                .width(700.dp)
-                .heightIn(max = 640.dp)
-                .clip(RoundedCornerShape(16.dp))
-                .background(Jc.Sheet)
-                .verticalScroll(rememberScrollState())
-                .padding(28.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            val r = result
-            val airings = r?.airings.orEmpty().filter { !it.isThis }
-            // Close at the top, where focus starts: one stray OK mustn't record or re-record anything.
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(if (rerecord) "Re-record" else "Other airings", color = Jc.Title, fontSize = 24.sp, fontWeight = FontWeight.SemiBold)
-                Spacer(Modifier.weight(1f))
-                Button("Close", modifier = Modifier.focusRequester(first), onClick = onDismiss)
-            }
-            r?.title?.let { Text(it, color = Jc.Text, fontSize = 17.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
-            Text(
-                when {
-                    !loaded -> "Looking in the guide…"
-                    r == null -> "Episode History isn't on this server."
-                    else -> summary(r, airings, rerecord, fromGuide = programId != null)
-                },
-                color = Jc.Muted,
-                fontSize = 15.sp,
-            )
-            if (rerecord && r != null) {
-                Text("What's wrong with it?", color = Jc.Muted, fontSize = 14.sp)
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Reasons.forEach { x -> Button(x, primary = reason == x) { reason = if (reason == x) null else x } }
+            Column(
+                Modifier
+                    .width(700.dp)
+                    .heightIn(max = 640.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(Jc.Sheet)
+                    .verticalScroll(rememberScrollState())
+                    .padding(28.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                val r = result
+                val airings = r?.airings.orEmpty().filter { !it.isThis }
+                // Close at the top, where focus starts: one stray OK mustn't record or re-record anything.
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(if (rerecord) "Re-record" else "Other airings", color = Jc.Title, fontSize = 24.sp, fontWeight = FontWeight.SemiBold)
+                    Spacer(Modifier.weight(1f))
+                    Button("Close", modifier = Modifier.focusRequester(first), onClick = onDismiss)
                 }
-                Button(
-                    "Automatic: the best airing (a free tuner, commercial-free, soonest)",
-                    primary = true,
-                    modifier = Modifier.fillMaxWidth(),
-                ) { doRerecord(null) }
+                r?.title?.let { Text(it, color = Jc.Text, fontSize = 17.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                Text(
+                    when {
+                        !loaded -> "Looking in the guide…"
+                        r == null -> "Episode History isn't on this server."
+                        else -> summary(r, airings, rerecord, fromGuide = programId != null)
+                    },
+                    color = Jc.Muted,
+                    fontSize = 15.sp,
+                )
+                if (rerecord && r != null) {
+                    Text("What's wrong with it?", color = Jc.Muted, fontSize = 14.sp)
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Reasons.forEach { x -> Button(x, primary = reason == x) { reason = if (reason == x) null else x } }
+                    }
+                    Button(
+                        "Automatic: the best airing (a free tuner, commercial-free, soonest)",
+                        primary = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { doRerecord(null) }
+                }
+                airings.forEach { a ->
+                    AiringRow(
+                        a,
+                        action =
+                            when {
+                                a.onNow || a.recording != null || !canRecord -> null
+                                rerecord -> "Re-record here"
+                                else -> "Record"
+                            },
+                    ) { if (rerecord) doRerecord(a.programId) else doRecord(a) }
+                }
             }
-            airings.forEach { a ->
-                AiringRow(
-                    a,
-                    action =
-                        when {
-                            a.onNow || a.recording != null || !canRecord -> null
-                            rerecord -> "Re-record here"
-                            else -> "Record"
-                        },
-                ) { if (rerecord) doRerecord(a.programId) else doRecord(a) }
-            }
-        }
         }
     }
 }

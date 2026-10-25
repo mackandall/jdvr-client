@@ -120,6 +120,7 @@ private fun DrawScope.drawIcon(
 ) {
     val w = size.width
     val h = size.height
+
     fun triangle(
         left: Float,
         right: Float,
@@ -138,33 +139,47 @@ private fun DrawScope.drawIcon(
         p.close()
         drawPath(p, color)
     }
+
     fun bar(
         left: Float,
         width: Float,
     ) = drawRect(color, Offset(left, 0f), Size(width, h))
     when (icon) {
-        TransportIcon.Play -> triangle(w * 0.15f, w * 0.95f, true)
+        TransportIcon.Play -> {
+            triangle(w * 0.15f, w * 0.95f, true)
+        }
+
         TransportIcon.Pause -> {
             bar(w * 0.15f, w * 0.25f)
             bar(w * 0.6f, w * 0.25f)
         }
-        TransportIcon.Stop -> drawRect(color, Offset(w * 0.1f, h * 0.1f), Size(w * 0.8f, h * 0.8f))
+
+        TransportIcon.Stop -> {
+            drawRect(color, Offset(w * 0.1f, h * 0.1f), Size(w * 0.8f, h * 0.8f))
+        }
+
         TransportIcon.Rewind -> {
             triangle(0f, w / 2, false)
             triangle(w / 2, w, false)
         }
+
         TransportIcon.Forward -> {
             triangle(0f, w / 2, true)
             triangle(w / 2, w, true)
         }
+
         TransportIcon.Previous -> {
             bar(w * 0.1f, w * 0.15f)
             triangle(w * 0.25f, w * 0.9f, false)
         }
+
         TransportIcon.Next -> {
             triangle(w * 0.1f, w * 0.75f, true)
             bar(w * 0.75f, w * 0.15f)
         }
-        TransportIcon.Record -> drawCircle(color, radius = w * 0.42f)
+
+        TransportIcon.Record -> {
+            drawCircle(color, radius = w * 0.42f)
+        }
     }
 }

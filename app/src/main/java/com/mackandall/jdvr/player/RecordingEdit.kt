@@ -27,12 +27,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.tv.material3.Text
+import com.mackandall.jdvr.data.Editing
 import com.mackandall.jdvr.data.Jdvr
 import com.mackandall.jdvr.data.ProgramStartResult
 import com.mackandall.jdvr.data.ProgramStartStatus
 import com.mackandall.jdvr.data.attempt
 import com.mackandall.jdvr.ui.Button
-import com.mackandall.jdvr.data.Editing
 import com.mackandall.jdvr.ui.Jc
 import com.mackandall.jdvr.ui.tryFocus
 import kotlinx.coroutines.CoroutineScope
@@ -153,7 +153,8 @@ internal class RecordingEditor(
             },
         )
         if (r?.ok == true && !r.trimmed) reloadSegments()
-        com.mackandall.jdvr.ui.MoveWatcher.kick()
+        com.mackandall.jdvr.ui.MoveWatcher
+            .kick()
         delay(7000)
         say(null)
     }
@@ -327,7 +328,11 @@ private fun EditActions(
                 else -> "Press again: skip to here from the start"
             },
     ) {
-        if (edit.programStartTrims) editor.chooseKeyframe() else if (editor.pressed("start")) editor.programStart(card = false)
+        if (edit.programStartTrims) {
+            editor.chooseKeyframe()
+        } else if (editor.pressed("start")) {
+            editor.programStart(card = false)
+        }
     }
     Button(if (armed == "card") "Press again: remember this card for this channel's recordings" else "Remember card (all recordings)") {
         if (editor.pressed("card")) editor.programStart(card = true)
