@@ -7,6 +7,7 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
@@ -69,7 +70,10 @@ import kotlin.math.sin
 
 /** A tile's share of its row (or a row's of the screen), eased to its new size when tiles come and go. */
 @Composable
-fun animatedWeight(target: Float): Float = animateFloatAsState(target, tween(450, easing = FastOutSlowInEasing), label = "homeWeight").value
+fun animatedWeight(
+    target: Float,
+    instant: Boolean = false,
+): Float = animateFloatAsState(target, if (instant) snap() else tween(450, easing = FastOutSlowInEasing), label = "homeWeight").value
 
 @Composable
 fun HomeTileFrame(
