@@ -11,6 +11,7 @@ import com.mackandall.jdvr.data.ItemDetails
 import com.mackandall.jdvr.data.Jdvr
 import com.mackandall.jdvr.data.Program
 import com.mackandall.jdvr.data.attempt
+import com.mackandall.jdvr.data.attemptQuietly
 import com.mackandall.jdvr.data.attemptResult
 import com.mackandall.jdvr.data.plainId
 import com.mackandall.jdvr.ui.time
@@ -114,7 +115,8 @@ internal class LiveInfo {
         nowDetails = null
         nextUp = null
         val now = channel(channelId)?.now ?: return
-        nowDetails = attempt { Jdvr.backend.details(now.id) }
+        // Quietly: NextPVR has no programme details, and each tune would log that.
+        nowDetails = attemptQuietly { Jdvr.backend.details(now.id) }
         nextUp = attempt { Jdvr.backend.programs(listOf(channelId), now.end, now.end.plusHours(3)) }?.firstOrNull { !it.start.isBefore(now.end) }
     }
 
