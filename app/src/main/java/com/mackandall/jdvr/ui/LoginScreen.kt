@@ -69,8 +69,10 @@ fun LoginScreen(
     onSignedIn: () -> Unit,
     // Switching from a server still signed in to: Back returns to it.
     onCancel: (() -> Unit)? = null,
+    // Why this shows instead of the app (the server in use didn't let JDVR in).
+    notice: String? = null,
 ) {
-    var server by remember { mutableStateOf(if (onCancel != null) "" else Jdvr.session.serverUrl ?: "") }
+    var server by remember { mutableStateOf(if (onCancel != null || notice != null) "" else Jdvr.session.serverUrl ?: "") }
     // Servers signed in to before: one press goes back to one (not the one in use).
     var saved by remember { mutableStateOf(Jdvr.servers.filterNot { onCancel != null && Jdvr.isCurrent(it) }) }
     var forgetArmed by remember { mutableStateOf<SavedServer?>(null) }
@@ -228,6 +230,7 @@ fun LoginScreen(
                 fontSize = 28.sp,
                 fontWeight = FontWeight.SemiBold,
             )
+            notice?.let { Text(it, color = Jc.Amber, fontSize = 15.sp) }
             if (saved.isNotEmpty()) {
                 Text("Your servers", color = Jc.Muted, fontSize = 14.sp)
                 saved.forEach { s ->

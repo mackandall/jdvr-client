@@ -88,6 +88,34 @@ class MainActivity : ComponentActivity() {
 fun AppShell() {
     var serverKey by remember { mutableStateOf(Jdvr.serverKey) }
     var switching by remember { mutableStateOf(false) }
+    // A NextPVR server is signed in to afresh at start (its session doesn't outlive the app): until
+    // that works the screens stay away, and if it doesn't, the server screen says why.
+    var checked by remember { mutableStateOf(!Jdvr.isNextPvr) }
+    var refused by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(Unit) {
+        if (!checked) {
+            refused = Jdvr.nextPvrBackend?.let { b -> runCatching { b.checkSignIn() }.exceptionOrNull() }?.let { e ->
+                "Couldn't sign in to NextPVR at ${Jdvr.session.serverUrl} (${e.message ?: e.javaClass.simpleName}). Pick a server, or type its address."
+            }
+            checked = true
+        }
+    }
+    if (!checked) {
+        Box(Modifier.fillMaxSize().screenBackground())
+        return
+    }
+    refused?.let { why ->
+        Box(Modifier.fillMaxSize().screenBackground()) {
+            LoginScreen(
+                onSignedIn = {
+                    serverKey = Jdvr.serverKey
+                    refused = null
+                },
+                notice = why,
+            )
+        }
+        return
+    }
     if (switching) {
         Box(Modifier.fillMaxSize().screenBackground()) {
             LoginScreen(

@@ -77,6 +77,11 @@ class NextPvrBackend(
             sid ?: withContext(Dispatchers.IO) { login(baseUrl, pinMd5) }.also { sid = it }
         }
 
+    /** Signs in, or throws why not (a wrong PIN, or no NextPVR at the address). */
+    suspend fun checkSignIn() {
+        session()
+    }
+
     /** Calls a method; signs in again once when the session has expired. */
     private suspend fun call(method: String, params: Map<String, Any?> = emptyMap()): JsonElement =
         withContext(Dispatchers.IO) {
