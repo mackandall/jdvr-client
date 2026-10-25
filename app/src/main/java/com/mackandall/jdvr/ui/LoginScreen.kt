@@ -128,7 +128,6 @@ fun LoginScreen(
                     Timber.w(e, "Jellyfin discovery failed")
                 }
             }
-            }
         }
         // Not when switching: there the list is the choice.
         if (onCancel == null) found.filter { it.isNew() }.singleOrNull()?.let { if (server.isBlank()) server = it.address }

@@ -75,7 +75,7 @@ fun DetailsPage(
     var d by remember { mutableStateOf<LiveTvRepository.ItemDetails?>(null) }
     var note by remember { mutableStateOf<String?>(null) }
     var commercials by remember { mutableStateOf<LiveTvRepository.CommercialBadge?>(null) }
-    LaunchedEffect(itemId, refresh) { commercials = runCatching { Jdvr.liveTv.commercialBadges(listOf(itemId)).values.firstOrNull() }.getOrNull() }
+    LaunchedEffect(itemId, refresh, CommercialMarks.changed) { commercials = runCatching { Jdvr.liveTv.commercialBadges(listOf(itemId)).values.firstOrNull() }.getOrNull() }
     LaunchedEffect(note) {
         if (note != null) {
             kotlinx.coroutines.delay(4000)
@@ -149,7 +149,8 @@ fun DetailsPage(
             }
 
             // What's in the file.
-            Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            // Wraps onto a second line rather than squeezing the last box into a sliver.
+            androidx.compose.foundation.layout.FlowRow(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 det.video?.let { Info("Video", it) }
                 if (det.audio.isNotEmpty()) Info("Audio", det.audio.first() + if (det.audio.size > 1) "  +${det.audio.size - 1}" else "")
                 if (det.subtitles.isNotEmpty()) Info("Subtitles", det.subtitles.take(2).joinToString(", ") + if (det.subtitles.size > 2) "  +${det.subtitles.size - 2}" else "")
