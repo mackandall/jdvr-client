@@ -244,7 +244,7 @@ fun HomeScreen(
     ) {
         // The clock and date; the weather and tuners have tiles of their own.
         Row(Modifier.padding(bottom = 12.dp), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            Text("JDVR", color = Jc.Focus, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+            Text("JDVR", color = Jc.Brand, fontSize = 22.sp, fontWeight = FontWeight.Bold)
             Text("Home", color = Jc.Muted, fontSize = 18.sp)
             Box(Modifier.weight(1f))
             Text(now.day(), color = Jc.Muted, fontSize = 15.sp, modifier = Modifier.padding(bottom = 3.dp))
@@ -468,7 +468,7 @@ private fun LiveCard(
         Text("BACK TO LIVE · LAST CHANNEL", color = Jc.Muted, fontSize = 12.sp, fontWeight = FontWeight.Bold)
         Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(listOfNotNull(channel?.number, channel?.name).joinToString(" "), color = Jc.Muted, fontSize = 16.sp)
-            Text(p?.name ?: channel?.name ?: "…", color = Jc.Text, fontSize = 24.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(p?.name ?: channel?.name ?: "…", color = Jc.Title, fontSize = 24.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         val sub = listOfNotNull(p?.let { listOfNotNull(it.season?.let { s -> "S$s" }, it.episode?.let { e -> "E$e" }).joinToString("").ifEmpty { null } }, p?.rawEpisodeTitle?.let { Marks.parse(it, symbols).title }).joinToString(" · ")
         if (sub.isNotEmpty()) Text(sub, color = Jc.Text, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)

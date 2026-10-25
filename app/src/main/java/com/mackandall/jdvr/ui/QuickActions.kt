@@ -45,7 +45,6 @@ import java.util.UUID
 import com.mackandall.jdvr.data.ItemDetails
 import com.mackandall.jdvr.data.LibItem
 import com.mackandall.jdvr.data.attemptResult
-import com.mackandall.jdvr.data.attempt
 
 /** Holding OK does something of its own (Settings › Remote); off, a hold is just a press. */
 val holdEnabled: Boolean get() = Jdvr.prefs.holdOk != Prefs.HOLD_OFF
@@ -148,7 +147,7 @@ fun QuickActions(
             // Close at the top right, as in the Other airings popup; focus still starts on Play.
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text(item?.let { titleOf(it) } ?: if (failed) "Couldn't load this item" else "Loading…", color = Jc.Text, fontSize = 24.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Text(item?.let { titleOf(it) } ?: if (failed) "Couldn't load this item" else "Loading…", color = Jc.Title, fontSize = 24.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     item?.let { subtitleOf(it, det) }?.let { Text(it, color = Jc.Muted, fontSize = 15.sp) }
                 }
                 Button("Close", modifier = if (failed) Modifier.focusRequester(first).onFocusChanged { if (it.isFocused) firstFocused = true } else Modifier, onClick = onDismiss)

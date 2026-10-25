@@ -100,7 +100,7 @@ fun TrashScreen(entry: FocusRequester) {
     Column(Modifier.fillMaxSize().padding(start = 28.dp, top = 24.dp, end = 28.dp)) {
         val t = trash
         Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            Text("Trash", color = Jc.Text, fontSize = 28.sp, fontWeight = FontWeight.SemiBold)
+            Text("Trash", color = Jc.Title, fontSize = 28.sp, fontWeight = FontWeight.SemiBold)
             if (t != null && t.items.isNotEmpty()) {
                 Text("${t.items.size} item${if (t.items.size == 1) "" else "s"} · ${gb(t.bytes)}", color = Jc.Muted, fontSize = 15.sp, modifier = Modifier.padding(bottom = 4.dp))
             }

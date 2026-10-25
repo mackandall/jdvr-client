@@ -334,7 +334,7 @@ private fun DateDetails(r: DateRecording) {
                 AsyncImage(model = image, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize().background(Jc.Panel2, RoundedCornerShape(12.dp)))
             }
         }
-        Text(r.title, color = Jc.Text, fontSize = 24.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        Text(r.title, color = Jc.Title, fontSize = 24.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
         r.episodeTitle?.let { Text(it, color = Jc.Text, fontSize = 19.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             r.channel?.let { ChannelTile(it, numberInside = false, width = 84, height = 46) }

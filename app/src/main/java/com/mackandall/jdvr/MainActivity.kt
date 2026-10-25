@@ -6,7 +6,6 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
@@ -32,6 +31,7 @@ import com.mackandall.jdvr.player.PlayerScreen
 import com.mackandall.jdvr.player.RecordingPlayerScreen
 import com.mackandall.jdvr.ui.ChannelsScreen
 import com.mackandall.jdvr.ui.GuideScreen
+import com.mackandall.jdvr.ui.menuHome
 import com.mackandall.jdvr.ui.screenBackground
 import com.mackandall.jdvr.ui.HomeScreen
 import com.mackandall.jdvr.ui.LibraryScreen
@@ -149,7 +149,7 @@ fun AppRoot(
         }
     }
     // The SageTV themes have no slide-out menu: Home is their menu. Back on it twice leaves the app.
-    val themedHome = Jc.Style != com.mackandall.jdvr.ui.UiStyle.Standard
+    val themedHome = Jc.Style.menuHome
     var exitArmed by remember { mutableStateOf(false) }
     LaunchedEffect(exitArmed) {
         if (exitArmed) {

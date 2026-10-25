@@ -184,7 +184,7 @@ fun AiringsDialog(
             val airings = r?.airings.orEmpty().filter { !it.isThis }
             // Close at the top, where focus starts: one stray OK mustn't record or re-record anything.
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(if (rerecord) "Re-record" else "Other airings", color = Jc.Text, fontSize = 24.sp, fontWeight = FontWeight.SemiBold)
+                Text(if (rerecord) "Re-record" else "Other airings", color = Jc.Title, fontSize = 24.sp, fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.weight(1f))
                 Button("Close", modifier = Modifier.focusRequester(first), onClick = onDismiss)
             }

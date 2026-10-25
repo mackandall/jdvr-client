@@ -74,7 +74,7 @@ fun ScheduledScreen(
 
     Column(Modifier.fillMaxSize().padding(start = 28.dp, top = 24.dp, end = 28.dp)) {
         Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            Text("Scheduled", color = Jc.Text, fontSize = 28.sp, fontWeight = FontWeight.SemiBold)
+            Text("Scheduled", color = Jc.Title, fontSize = 28.sp, fontWeight = FontWeight.SemiBold)
             items?.let { Text("${it.size} recording" + (if (it.size == 1) "" else "s"), color = Jc.Muted, fontSize = 15.sp, modifier = Modifier.padding(bottom = 4.dp)) }
             note?.let { Text(it, color = Jc.Muted, fontSize = 15.sp, modifier = Modifier.padding(bottom = 4.dp)) }
         }

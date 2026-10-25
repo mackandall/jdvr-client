@@ -80,7 +80,7 @@ fun ChannelsScreen(
     }
 
     Column(Modifier.fillMaxSize().padding(start = 28.dp, top = 24.dp, end = 28.dp)) {
-        Text("Live TV", color = Jc.Text, fontSize = 28.sp, fontWeight = FontWeight.SemiBold)
+        Text("Live TV", color = Jc.Title, fontSize = 28.sp, fontWeight = FontWeight.SemiBold)
         Spacer(12)
         error?.let { Text(it, color = Jc.Amber, fontSize = 16.sp) }
         val list = channels

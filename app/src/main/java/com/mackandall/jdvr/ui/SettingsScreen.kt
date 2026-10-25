@@ -75,7 +75,7 @@ fun SettingsScreen(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(start = 28.dp, top = 24.dp, end = 28.dp, bottom = 32.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Text("Settings", color = Jc.Text, fontSize = 28.sp, fontWeight = FontWeight.SemiBold)
+        Text("Settings", color = Jc.Title, fontSize = 28.sp, fontWeight = FontWeight.SemiBold)
         Spacer(6)
         Section("Appearance")
         // OK on Theme opens the gallery (Gemstone's colours are on its card there).
@@ -450,7 +450,7 @@ private fun MenuSettings(libraries: List<Library>) {
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("Settings", color = Jc.Text, fontSize = 28.sp, fontWeight = FontWeight.SemiBold)
+            Text("Settings", color = Jc.Title, fontSize = 28.sp, fontWeight = FontWeight.SemiBold)
             Text("› Menu", color = Jc.Muted, fontSize = 20.sp, modifier = Modifier.padding(bottom = 3.dp))
         }
         Text(

@@ -236,9 +236,9 @@ internal fun ThemeGallery(onDismiss: () -> Unit) {
     }
     val groups =
         listOf(
-            "Dark" to Palettes.filter { !it.light && it.style == UiStyle.Standard },
+            "Dark" to Palettes.filter { !it.light && !it.style.menuHome },
             "Light" to Palettes.filter { it.light },
-            "SageTV · Home becomes their menu" to Palettes.filter { it.style != UiStyle.Standard },
+            "SageTV · Home becomes their menu" to Palettes.filter { it.style.menuHome },
         )
     Dialog(onDismissRequest = { cancel() }, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         Column(
@@ -250,7 +250,7 @@ internal fun ThemeGallery(onDismiss: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                Text("Theme", color = Jc.Text, fontSize = 26.sp, fontWeight = FontWeight.SemiBold)
+                Text("Theme", color = Jc.Title, fontSize = 26.sp, fontWeight = FontWeight.SemiBold)
                 Text("The app changes as you move · OK keeps it · Back puts ${paletteFor(startTheme).name} back", color = Jc.Muted, fontSize = 13.sp, modifier = Modifier.padding(bottom = 4.dp))
             }
             FlowRow(horizontalArrangement = Arrangement.spacedBy(40.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -354,6 +354,9 @@ private fun ThemeSample(p: Palette) {
                 if (p.style == UiStyle.Sage) {
                     drawRect(Brush.radialGradient(listOf(Color(0xFF2A5BB0), Color(0xFF133779), Color(0xFF0A1D4A)), center = Offset(size.width * 0.15f, size.height * 0.1f), radius = size.width))
                 }
+                if (p.style == UiStyle.NextPvr) {
+                    drawRect(Brush.radialGradient(listOf(Color(0xFF0D3A78), Color(0xFF061C45), Color(0xFF020A1C)), center = Offset(size.width * 0.3f, size.height * 0.2f), radius = size.width))
+                }
             },
     ) {
         Box(Modifier.width(16.dp).fillMaxHeight().background(p.rail))
@@ -363,6 +366,7 @@ private fun ThemeSample(p: Palette) {
             Box(Modifier.fillMaxWidth().height(14.dp).clip(RoundedCornerShape(3.dp)).background(p.panel2))
             when (p.style) {
                 UiStyle.Sage -> Box(Modifier.width(46.dp).height(11.dp).clip(RoundedCornerShape(3.dp)).sageGloss())
+                UiStyle.NextPvr -> Box(Modifier.width(46.dp).height(11.dp).clip(RoundedCornerShape(3.dp)).nextPvrGloss())
                 UiStyle.Gem ->
                     Box(
                         Modifier

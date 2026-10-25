@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -229,7 +230,7 @@ fun Rail(
                     .padding(start = 14.dp, end = 14.dp, top = 16.dp, bottom = 12.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            Text("JDVR", color = Jc.Focus, fontWeight = FontWeight.Bold, fontSize = 18.sp, modifier = Modifier.height(40.dp).padding(start = 10.dp, top = 8.dp))
+            Text("JDVR", color = Jc.Brand, fontWeight = FontWeight.Bold, fontSize = 18.sp, modifier = Modifier.height(40.dp).padding(start = 10.dp, top = 8.dp))
             // One scrolling list (no boundary for focus to cross). The scroll area clips at its edges,
             // so it keeps a little room inside them: the first or last entry, focused (a touch
             // bigger, with its ring), isn't cut off.
@@ -380,22 +381,25 @@ private fun RailItem(
         androidx.compose.animation.core.spring(dampingRatio = 0.55f, stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow),
         label = "menuIcon",
     )
+    // NextPVR: the focused row is a dark grey bar with a green edge, white type.
+    val npvr = Jc.Style == UiStyle.NextPvr
     Surface(
         onClick = onClick,
         modifier = modifier.width(width).onFocusChanged { focused = it.isFocused }.onSizeChanged { rowHeight = it.height },
-        shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(12.dp)),
+        shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(if (npvr) 3.dp else 12.dp)),
         colors =
             ClickableSurfaceDefaults.colors(
                 containerColor = if (selected) Jc.Panel2 else Jc.Rail,
-                focusedContainerColor = Jc.FocusFill,
+                focusedContainerColor = if (npvr) Color(0xFF282828) else Jc.FocusFill,
                 contentColor = if (selected) Jc.Text else Jc.Muted,
-                focusedContentColor = Jc.Text,
+                focusedContentColor = if (npvr) Color.White else Jc.Text,
             ),
-        border = ClickableSurfaceDefaults.border(focusedBorder = Border(BorderStroke(2.dp, Jc.Focus))),
+        border = ClickableSurfaceDefaults.border(focusedBorder = if (npvr) Border.None else Border(BorderStroke(2.dp, Jc.Focus))),
         scale = ClickableSurfaceDefaults.scale(focusedScale = 1.03f),
     ) {
         val pad = if (small) 7.dp else 8.dp
         val withIcon = icon != null && iconSet != null
+        if (npvr && focused) Box(Modifier.matchParentSize().wrapContentWidth(Alignment.Start).width(5.dp).background(Jc.Green))
         Row(Modifier.padding(start = if (withIcon) 10.dp else 16.dp, end = 12.dp, top = pad, bottom = pad), verticalAlignment = Alignment.CenterVertically) {
             if (withIcon) {
                 Box(Modifier.width(base + 10.dp), contentAlignment = Alignment.Center) {
@@ -404,7 +408,7 @@ private fun RailItem(
                         icon!!,
                         iconSet!!,
                         base,
-                        if (focused) Jc.Focus else if (selected) Jc.Text else Jc.Muted,
+                        if (focused) (if (npvr) Color.White else Jc.Focus) else if (selected) Jc.Text else Jc.Muted,
                         Jc.Focus,
                         Modifier.graphicsLayer {
                             scaleX = s

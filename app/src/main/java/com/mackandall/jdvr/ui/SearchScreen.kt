@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -145,7 +144,7 @@ fun SearchScreen(
 
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize().padding(start = 28.dp, top = 20.dp, end = 28.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("Search", color = Jc.Text, fontSize = 26.sp, fontWeight = FontWeight.SemiBold)
+            Text("Search", color = Jc.Title, fontSize = 26.sp, fontWeight = FontWeight.SemiBold)
             BasicTextField(
                 value = text,
                 onValueChange = { text = it },

@@ -15,8 +15,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
@@ -248,7 +246,7 @@ private fun LibraryGrid(
 
     Column(Modifier.fillMaxSize().padding(start = 28.dp, top = 20.dp, end = 28.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            Text(library.name, color = Jc.Text, fontSize = 26.sp, fontWeight = FontWeight.SemiBold)
+            Text(library.name, color = Jc.Title, fontSize = 26.sp, fontWeight = FontWeight.SemiBold)
             if (total >= 0) Text("$total", color = Jc.Muted, fontSize = 15.sp)
             Box(Modifier.weight(1f))
             Button(if (newest) "Recently added" else "A–Z") { Jdvr.prefs.changeLibraryNewest(library.id.toString(), !newest) }

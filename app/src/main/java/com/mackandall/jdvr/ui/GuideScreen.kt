@@ -429,7 +429,7 @@ fun GuideScreen(
     Row(Modifier.weight(1f).fillMaxWidth()) {
         Column(Modifier.weight(if (infoBand) 1f else 0.74f).fillMaxHeight().padding(start = 20.dp, top = if (infoOnTop) 8.dp else 20.dp)) {
             Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                Text("Guide", color = Jc.Text, fontSize = 28.sp, fontWeight = FontWeight.SemiBold)
+                Text("Guide", color = Jc.Title, fontSize = 28.sp, fontWeight = FontWeight.SemiBold)
                 Text(windowStart.day(), color = Jc.Muted, fontSize = 16.sp, modifier = Modifier.padding(bottom = 4.dp))
                 error?.let { Text(it, color = Jc.Amber, fontSize = 14.sp, modifier = Modifier.padding(bottom = 4.dp)) }
                 guideNote?.let { Text(it, color = Jc.Focus, fontSize = 15.sp, modifier = Modifier.padding(bottom = 4.dp)) }
@@ -630,7 +630,7 @@ private fun InfoBand(
             }
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(p.name, color = Jc.Text, fontSize = 24.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(p.name, color = Jc.Title, fontSize = 24.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
             marks.title?.takeIf { it.isNotBlank() }?.let { Text(it, color = Jc.Text, fontSize = 17.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 channel?.let { ChannelLogoTile(it) }
@@ -686,7 +686,7 @@ private fun InfoPanel(
 ) {
     val marks = Marks.parse(p.rawEpisodeTitle, symbols)
     Column(Modifier.fillMaxSize().padding(22.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text(p.name, color = Jc.Text, fontSize = 24.sp, fontWeight = FontWeight.SemiBold, maxLines = 3)
+        Text(p.name, color = Jc.Title, fontSize = 24.sp, fontWeight = FontWeight.SemiBold, maxLines = 3)
         val episode = listOfNotNull(p.seasonEpisode, marks.title).joinToString(" · ")
         if (episode.isNotEmpty()) Text(episode, color = Jc.Text, fontSize = 17.sp)
         Text("${p.start.day()} · ${p.start.time()} – ${p.end.time()}", color = Jc.Muted, fontSize = 15.sp)
@@ -827,14 +827,22 @@ private fun ProgramCell(
     val extras = LocalGuideExtras.current
     // SageTV: red cells will record, green ones a Recording Favourite will; the focused one is glossy.
     val sage = Jc.Style == UiStyle.Sage
+    // NextPVR: deep red cells will record; the focused cell turns green, or bright red if it records.
+    val npvr = Jc.Style == UiStyle.NextPvr
     var cellFocused by remember { mutableStateOf(false) }
     val idle =
         when {
             sage && extras.isFavourite(program) -> Jc.Green.copy(alpha = 0.55f)
             sage && extras.realRecording(program) -> Jc.Recording.copy(alpha = 0.45f)
+            npvr && extras.realRecording(program) -> Color(0xFF8F0A00)
             extras.realRecording(program) -> Jc.Recording.copy(alpha = 0.14f)
             else -> guidePanel()
         }
+    val npvrFocus = if (extras.realRecording(program)) Color(0xFFD60E00) else Jc.Green
+    // Dark type on the green, white on red and everywhere else.
+    val darkType = npvr && cellFocused && !extras.realRecording(program)
+    val titleColor = if (darkType) NextPvrInk else Jc.Text
+    val subColor = if (darkType) NextPvrInk.copy(alpha = 0.75f) else if (npvr && cellFocused) Color.White.copy(alpha = 0.8f) else Jc.Muted
     Surface(
         onClick = onClick,
         modifier =
@@ -861,11 +869,11 @@ private fun ProgramCell(
         colors =
             ClickableSurfaceDefaults.colors(
                 containerColor = idle,
-                focusedContainerColor = Jc.FocusFill,
+                focusedContainerColor = if (npvr) npvrFocus else Jc.FocusFill,
                 contentColor = Jc.Text,
-                focusedContentColor = Jc.Text,
+                focusedContentColor = titleColor,
             ),
-        border = ClickableSurfaceDefaults.border(focusedBorder = Border(BorderStroke(2.dp, Jc.Focus))),
+        border = ClickableSurfaceDefaults.border(focusedBorder = if (npvr) Border.None else Border(BorderStroke(2.dp, Jc.Focus))),
         scale = ClickableSurfaceDefaults.scale(focusedScale = 1f),
     ) {
         Column((if (sage && cellFocused) Modifier.sageGloss() else Modifier).fillMaxSize().padding(horizontal = 8.dp, vertical = 5.dp), verticalArrangement = Arrangement.Center) {
@@ -876,7 +884,7 @@ private fun ProgramCell(
                     if (program.seriesTimerId != null && !extras.isBuffer(program)) SeriesDots(height = 8.dp)
                     else Box(Modifier.size(8.dp).background(Jc.Recording.copy(alpha = if (extras.isBuffer(program)) 0.35f else 1f), CircleShape))
                 }
-                Text(program.name, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                Text(program.name, color = titleColor, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
                 if (extras.scanning(program)) Text("CS", color = Jc.OnAmber, fontSize = 10.sp, fontWeight = FontWeight.Bold, modifier = Modifier.background(Jc.Amber, RoundedCornerShape(4.dp)).padding(horizontal = 4.dp))
             }
             val sub = marks.title ?: if (program.isMovie) "Movie" else null
@@ -885,7 +893,7 @@ private fun ProgramCell(
                 if (marks.otherAiring) Text("↪", color = Jc.Focus, fontSize = 12.sp)
                 if (marks.inLibrary) Text("●", color = Jc.Green, fontSize = 12.sp)
                 if (marks.watched) Text("✓", color = Jc.Green, fontSize = 12.sp)
-                if (sub != null) Text(sub, color = Jc.Muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (sub != null) Text(sub, color = subColor, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
     }
@@ -1002,7 +1010,7 @@ internal fun ProgramPanel(
     ) {
         FitToButtons(
             header = {
-                Text(p.name, color = Jc.Text, fontSize = 24.sp, fontWeight = FontWeight.SemiBold, maxLines = 2)
+                Text(p.name, color = Jc.Title, fontSize = 24.sp, fontWeight = FontWeight.SemiBold, maxLines = 2)
                 val episode = listOfNotNull(p.seasonEpisode, marks.title).joinToString(" · ")
                 if (episode.isNotEmpty()) Text(episode, color = Jc.Text, fontSize = 16.sp)
                 Text(

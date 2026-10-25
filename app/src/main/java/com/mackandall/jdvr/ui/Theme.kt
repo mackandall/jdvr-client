@@ -67,6 +67,8 @@ data class Palette(
     val wash: Boolean = true,
     // SageTV's themes change more than colours: Home becomes their main menu ([UiStyle]).
     val style: UiStyle = UiStyle.Standard,
+    // Screen titles, when not the text colour (NextPVR's yellow).
+    val title: Color? = null,
 )
 
 /** How much a theme changes besides its colours. */
@@ -78,7 +80,14 @@ enum class UiStyle {
 
     // SageTV's Gemstone theme: fanart behind black glass, the same side menu in one gem colour.
     Gem,
+
+    // After NextPVR's own client: black glass on a deep blue glow, a white-to-pale-blue selection,
+    // a dark menu bar with a green edge, green guide selection. Home stays the tiles.
+    NextPvr,
 }
+
+/** The themes whose Home is their main menu (no slide-out menu). */
+val UiStyle.menuHome get() = this == UiStyle.Sage || this == UiStyle.Gem
 
 /** Gemstone's accent (the swatches under its card in the theme gallery). */
 data class Gem(
@@ -178,6 +187,14 @@ val Palettes =
             text = Color(0xFFF2F3F5), muted = Color(0xFF9AA0AA), focus = Gems.first().color, focusFill = Color(0xFF1C2A25), onFocus = Color(0xFF07140E),
             sheet = Color(0xFF14161B), style = UiStyle.Gem,
         ),
+        // After NextPVR's own client: deep blue glow, black glass, yellow titles, pale-blue selection.
+        Palette(
+            "nextpvr", "NextPVR",
+            ink = Color(0xFF020A1C), rail = Color(0xFF000305).copy(alpha = 0.92f), panel = Color(0xFF000305).copy(alpha = 0.8f), panel2 = Color(0xFF0E2A4E), line = Color(0x61C2E9FF),
+            text = Color(0xFFEAF4FF), muted = Color(0xFF8DB8E3), focus = Color(0xFF1F8FFF), focusFill = Color(0xFF143A66), onFocus = Color.White,
+            recording = Color(0xFFFF3B2F), amber = Color(0xFFFF9D00), green = Color(0xFF00C23D), sheet = Color(0xFF061A36),
+            style = UiStyle.NextPvr, title = Color(0xFFFFF04A),
+        ),
         // Light, after Emby's Apple TV theme: frosted panels on a soft wash, slate tiles, white focus.
         Palette(
             "ode", "Ode to Emby's Apple",
@@ -241,6 +258,10 @@ object Jc {
     val OnButton get() = palette.onButton ?: palette.text
     val Light get() = palette.light
     val Style get() = palette.style
+    val Title get() = palette.title ?: palette.text
+
+    // The app's name in Home's header and the menu.
+    val Brand get() = palette.title ?: palette.focus
 
     // The light themes' backdrop (Settings › Backdrop).
     var wash by mutableStateOf(Washes.first())
@@ -263,6 +284,17 @@ fun Modifier.screenBackground(): Modifier =
                     listOf(Color(0xFF2A5BB0), Color(0xFF133779), Color(0xFF0A1D4A), Color(0xFF06122F)),
                     center = Offset(size.width * 0.18f, size.height * 0.1f),
                     radius = size.width * 0.75f,
+                ),
+            )
+            return@drawBehind
+        }
+        if (Jc.Style == UiStyle.NextPvr) {
+            drawRect(Color(0xFF020A1C))
+            drawRect(
+                Brush.radialGradient(
+                    listOf(Color(0xFF0D3A78), Color(0xFF061C45), Color(0xFF020A1C)),
+                    center = Offset(size.width * 0.3f, size.height * 0.2f),
+                    radius = size.width * 0.8f,
                 ),
             )
             return@drawBehind

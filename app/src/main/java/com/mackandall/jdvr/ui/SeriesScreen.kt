@@ -102,7 +102,7 @@ fun SeriesScreen(entry: FocusRequester) {
 
     Column(Modifier.fillMaxSize().padding(start = 28.dp, top = 24.dp, end = 28.dp)) {
         Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            Text("Series", color = Jc.Text, fontSize = 28.sp, fontWeight = FontWeight.SemiBold)
+            Text("Series", color = Jc.Title, fontSize = 28.sp, fontWeight = FontWeight.SemiBold)
             note?.let { Text(it, color = Jc.Muted, fontSize = 15.sp, modifier = Modifier.padding(bottom = 4.dp)) }
         }
         Spacer(12)
@@ -320,7 +320,7 @@ private fun SeriesEditor(
         Modifier.fillMaxSize().verticalScroll(androidx.compose.foundation.rememberScrollState()).padding(start = 28.dp, top = 24.dp, end = 28.dp, bottom = 32.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Text(t.name ?: "Series recording", color = Jc.Text, fontSize = 28.sp, fontWeight = FontWeight.SemiBold)
+        Text(t.name ?: "Series recording", color = Jc.Title, fontSize = 28.sp, fontWeight = FontWeight.SemiBold)
         Text("Series recording options · OK changes a row · Back cancels", color = Jc.Muted, fontSize = 14.sp)
         Spacer(4)
         SeriesTimerRows(t, first) { t = it }

@@ -29,7 +29,6 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.tv.material3.Text
 import com.mackandall.jdvr.data.Jdvr
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.jellyfin.sdk.model.api.SeriesTimerInfoDto
 import java.util.UUID
@@ -80,7 +79,7 @@ fun SeriesOptions(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 val t = timer
-                Text(t?.name?.ifEmpty { null } ?: programName.ifEmpty { "Series recording" }, color = Jc.Text, fontSize = 26.sp, fontWeight = FontWeight.SemiBold)
+                Text(t?.name?.ifEmpty { null } ?: programName.ifEmpty { "Series recording" }, color = Jc.Title, fontSize = 26.sp, fontWeight = FontWeight.SemiBold)
                 Text("Record series · OK changes a row · Back cancels", color = Jc.Muted, fontSize = 14.sp)
                 problem?.let { Text(it, color = Jc.Amber, fontSize = 15.sp) }
                 if (t == null) {
