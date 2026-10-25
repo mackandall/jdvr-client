@@ -100,8 +100,12 @@ fun Button(
         border = ClickableSurfaceDefaults.border(focusedBorder = Border(BorderStroke(2.dp, Jc.Focus))),
         scale = ClickableSurfaceDefaults.scale(focusedScale = if (Jc.Light) 1.06f else 1.03f),
     ) {
+        // The gloss fills the whole button, also when it's wider than its label.
+        if (focused && (sage || npvr)) {
+            androidx.compose.foundation.layout.Box(Modifier.matchParentSize().then(if (sage) Modifier.sageGloss() else Modifier.nextPvrGloss()))
+        }
         androidx.compose.foundation.layout.Row(
-            modifier = (if (sage && focused) Modifier.sageGloss() else if (npvr && focused) Modifier.nextPvrGloss() else Modifier).padding(horizontal = if (compact) 12.dp else 16.dp, vertical = if (compact) 5.dp else 12.dp),
+            modifier = Modifier.padding(horizontal = if (compact) 12.dp else 16.dp, vertical = if (compact) 5.dp else 12.dp),
             horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(10.dp),
             verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
         ) {
