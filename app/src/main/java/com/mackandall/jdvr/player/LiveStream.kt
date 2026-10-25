@@ -79,6 +79,9 @@ internal class LiveStream(
     // Where the buffer file last ended (it's reopened there; ending at the same spot again: it stopped growing).
     private var lastEnd = -1L
 
+    // How far the buffer file has played (sampled every 2 s): the player can say 0 at its end.
+    private var copyPlayedTo = 0L
+
     // What this start opened (each Try again or reconnect is a new start), to close when it ends.
     private var opened: LivePlayback? = null
 
@@ -203,6 +206,7 @@ internal class LiveStream(
             delay(2000)
             val playing = player.playWhenReady && pausedAt == null && !tuning && showing
             val pos = player.currentPosition
+            if (onHls && pos > 0) copyPlayedTo = pos
             val now = android.os.SystemClock.elapsedRealtime()
             if (!playing || pos != lastPos) {
                 lastPos = pos
@@ -262,6 +266,7 @@ internal class LiveStream(
         player.playWhenReady = play
         player.prepare()
         onHls = true
+        copyPlayedTo = positionMs
     }
 
     fun rewind() {
@@ -284,6 +289,9 @@ internal class LiveStream(
             player.prepare()
             directStartedAt = android.os.SystemClock.elapsedRealtime()
             onHls = false
+            // A new buffer: where the old one ended says nothing about it.
+            lastEnd = -1L
+            copyPlayedTo = 0L
             if (Jdvr.backend.liveCopyIsFile) {
                 // The old buffer is still listed for a few seconds before NextPVR deletes it.
                 val old = copyUrl
@@ -306,10 +314,11 @@ internal class LiveStream(
      */
     fun copyEnded() {
         if (!onHls || !Jdvr.backend.liveCopyIsFile) return
-        val at = player.currentPosition
-        val stuck = lastEnd >= 0 && at - lastEnd < 1000
+        val at = player.currentPosition.takeIf { it > 0 } ?: copyPlayedTo
+        val stuck = lastEnd >= 0 && at >= lastEnd && at - lastEnd < 1000
         lastEnd = at
-        if (stuck || behindLiveMs() <= 10_000) {
+        val behind = android.os.SystemClock.elapsedRealtime() - directStartedAt - at
+        if (stuck || behind <= 10_000) {
             lastEnd = -1L
             toLive()
         } else {
