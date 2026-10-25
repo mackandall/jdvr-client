@@ -342,7 +342,7 @@ private fun livePlayer(context: android.content.Context): ExoPlayer {
     return ExoPlayer
         .Builder(context, renderersFactory(context))
         .setMediaSourceFactory(
-            DefaultMediaSourceFactory(OkHttpDataSource.Factory(Jdvr.http), extractors)
+            DefaultMediaSourceFactory(GrowingFileDataSource.Factory(OkHttpDataSource.Factory(Jdvr.http)), extractors)
                 .setLoadErrorHandlingPolicy(NoRetryOnServerError),
         ).build()
         .apply {

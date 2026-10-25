@@ -24,6 +24,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
 import okhttp3.HttpUrl.Companion.toHttpUrl
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.MediaType.Companion.toMediaType
 import okio.buffer
 import org.jellyfin.sdk.model.api.PlayMethod
@@ -389,6 +390,8 @@ class NextPvrBackend(
     override val liveCopyIsFile: Boolean get() = true
 
     override fun liveCopyOpenUrl(url: String): String = pinnedNow(url)
+
+    override fun liveCopyGrowingUrl(url: String): String? = growingFile(url)
 
     override fun holdLive(on: Boolean) = if (on) LiveHold.park() else LiveHold.release()
 
@@ -1732,6 +1735,17 @@ class NextPvrBackend(
                 .setQueryParameter(SNAPSHOT, "auto" + System.nanoTime())
                 .build()
                 .toString()
+
+        /** A [pinnedNow] URL's plain file (no size pin); null for anything else. */
+        fun growingFile(url: String): String? {
+            val u = url.toHttpUrlOrNull() ?: return null
+            if (u.queryParameter(SNAPSHOT)?.startsWith("auto") != true) return null
+            return u
+                .newBuilder()
+                .removeAllQueryParameters(SNAPSHOT)
+                .build()
+                .toString()
+        }
 
         val snapshotLength =
             okhttp3.Interceptor { chain ->

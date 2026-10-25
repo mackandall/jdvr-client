@@ -77,6 +77,9 @@ interface TvBackend :
     /** The copy's URL to open now (a growing file: pinned to its size at this moment). */
     fun liveCopyOpenUrl(url: String): String = url
 
+    /** For a [liveCopyOpenUrl] still growing: the plain file, to read on past the size it was opened at. */
+    fun liveCopyGrowingUrl(url: String): String? = null
+
     /**
      * On: the player is about to leave the live stream for the copy, and the stream must stay
      * open meanwhile (NextPVR drops the tuner and its buffer once it closes). Off: let it go.

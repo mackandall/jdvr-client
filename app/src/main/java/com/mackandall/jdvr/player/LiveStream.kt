@@ -272,9 +272,20 @@ internal class LiveStream(
         copyPlayedTo = positionMs
     }
 
+    // A buffer file plays on past the size it was opened at, but seeks only within it: further on,
+    // open it again there.
+    private fun seekCopy(positionMs: Long) {
+        val openedTo = player.duration
+        if (Jdvr.backend.liveCopyIsFile && openedTo != C.TIME_UNSET && positionMs > openedTo - 1000) {
+            switchToHls(positionMs, play = pausedAt == null)
+        } else {
+            player.seekTo(positionMs)
+        }
+    }
+
     fun rewind() {
         when {
-            onHls -> player.seekTo((player.currentPosition - 10_000).coerceAtLeast(0))
+            onHls -> seekCopy((player.currentPosition - 10_000).coerceAtLeast(0))
             canHls -> switchToHls(hlsPositionOf(player.currentPosition - 10_000), play = pausedAt == null)
             else -> ui.flash("Rewind isn't available on this channel.")
         }
@@ -312,9 +323,9 @@ internal class LiveStream(
     }
 
     /**
-     * The player reached the end. The buffer file was opened at its size then: at that end, open it
-     * again (or, within 10 s of live, go live; further back, going live would skip programme). If it
-     * ends again at the same spot, it has stopped growing (the server let the tuner go): live again.
+     * The player reached the end. The buffer file reads on as it grows, so this is it having stopped
+     * growing for a while: open it again (or, within 10 s of live, go live; further back, going live
+     * would skip programme). If it ends again at the same spot, the server let the tuner go: live again.
      */
     fun copyEnded() {
         if (!onHls || !Jdvr.backend.liveCopyIsFile) return
@@ -333,7 +344,7 @@ internal class LiveStream(
     fun forward() {
         if (!onHls) return
         // No further than live: within 30 s of it, back to the live stream itself.
-        if (behindLiveMs() <= 30_000) toLive() else player.seekTo(player.currentPosition + 30_000)
+        if (behindLiveMs() <= 30_000) toLive() else seekCopy(player.currentPosition + 30_000)
         ui.showOsd()
     }
 
