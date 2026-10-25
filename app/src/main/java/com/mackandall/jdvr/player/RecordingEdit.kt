@@ -353,7 +353,7 @@ internal fun clock(ms: Long): String {
 }
 
 /** 1:04.1 */
-private fun clockTenths(seconds: Double): String {
+internal fun clockTenths(seconds: Double): String {
     val tenths = (seconds * 10).toLong()
     val s = tenths / 10
     return (if (s >= 3600) "%d:%02d:%02d".format(s / 3600, s / 60 % 60, s % 60) else "%d:%02d".format(s / 60, s % 60)) + ".${tenths % 10}"
