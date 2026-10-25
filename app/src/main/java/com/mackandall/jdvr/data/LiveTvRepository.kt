@@ -102,7 +102,10 @@ class LiveTvRepository : TvBackend {
         return if (any.isEmpty()) emptyList() else listOf(ALL_CHANNELS, FAVOURITE_CHANNELS)
     }
 
-    override suspend fun channels(): List<Channel> = channelList(favourites = Jdvr.prefs.channelGroup == FAVOURITE_CHANNELS)
+    // Favourites with none left (unfavourited in the web client) would leave the guide and Home
+    // empty, as if the server had no channels: every channel then.
+    override suspend fun channels(): List<Channel> =
+        if (Jdvr.prefs.channelGroup == FAVOURITE_CHANNELS) channelList(favourites = true).ifEmpty { channelList(favourites = false) } else channelList(favourites = false)
 
     override suspend fun allChannels(): List<Channel> = channelList(favourites = false)
 
