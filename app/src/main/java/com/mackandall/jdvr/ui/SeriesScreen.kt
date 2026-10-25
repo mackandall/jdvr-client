@@ -37,6 +37,7 @@ import androidx.compose.ui.unit.sp
 import androidx.tv.material3.Text
 import com.mackandall.jdvr.data.Jdvr
 import com.mackandall.jdvr.data.LiveTvRepository
+import com.mackandall.jdvr.data.plainId
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.jellyfin.sdk.model.api.SeriesTimerInfoDto
@@ -58,12 +59,15 @@ fun SeriesScreen(entry: FocusRequester) {
     var keyword by remember { mutableStateOf(false) }
     // A series recording being edited (its options), in place of the lists.
     var editing by remember { mutableStateOf<SeriesTimerInfoDto?>(null) }
+    // What each one has scheduled (shown on its row).
+    var scheduled by remember { mutableStateOf<Map<String, LiveTvRepository.SeriesScheduled>>(emptyMap()) }
     val scope = rememberCoroutineScope()
 
     // Recording Favourites answered (or didn't: the JellyDVR Schedule plugin isn't on this server).
     var favouritesLoaded by remember { mutableStateOf(false) }
     LaunchedEffect(reload) {
         series = runCatching { Jdvr.liveTv.seriesTimers() }.getOrNull()
+        scheduled = runCatching { Jdvr.liveTv.seriesScheduled() }.getOrDefault(emptyMap())
         favourites = Jdvr.liveTv.favourites()
         favouritesLoaded = true
     }
@@ -114,7 +118,7 @@ fun SeriesScreen(entry: FocusRequester) {
                     else ->
                         LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(bottom = 40.dp)) {
                             items(list, key = { it.id ?: it.name ?: "" }) { s ->
-                                SeriesRow(s, if (s == list.first()) Modifier.focusRequester(entry) else Modifier, onEdit = { editing = s }) {
+                                SeriesRow(s, s.id?.let { scheduled[it.plainId()] }, if (s == list.first()) Modifier.focusRequester(entry) else Modifier, onEdit = { editing = s }) {
                                     act {
                                         Jdvr.liveTv.cancelSeries(s.id!!)
                                         "Series recording cancelled: ${s.name}"
@@ -185,6 +189,7 @@ fun SeriesScreen(entry: FocusRequester) {
 @Composable
 private fun SeriesRow(
     s: SeriesTimerInfoDto,
+    next: LiveTvRepository.SeriesScheduled?,
     modifier: Modifier,
     onEdit: () -> Unit,
     onCancel: () -> Unit,
@@ -212,6 +217,12 @@ private fun SeriesRow(
                 s.keepUpTo?.takeIf { it > 0 }?.let { "keeps the latest $it" },
             ).joinToString(" · ")
         Text(details, color = Jc.Muted, fontSize = 14.sp)
+        Text(
+            next?.let { "${it.count} scheduled · next ${it.next.day()} ${it.next.time()}" + (it.nextChannel?.let { c -> " $c" } ?: "") }
+                ?: "Nothing scheduled: not in the guide right now.",
+            color = Jc.Text,
+            fontSize = 14.sp,
+        )
         Row(Modifier.padding(top = 4.dp)) {
             Button("Edit", modifier = modifier.padding(end = 8.dp), onClick = onEdit)
             Button(if (armed) "Press again: cancel the series" else "Cancel series recording", leading = { SeriesDots(height = 14.dp, crossed = true) }) {
@@ -304,7 +315,6 @@ private fun SeriesEditor(
     var t by remember { mutableStateOf(timer) }
     val first = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { first.requestFocus() } }
-    val start = t.startDate?.let { java.time.LocalDateTime.ofInstant(it.atZone(java.time.ZoneOffset.UTC).toInstant(), java.time.ZoneId.systemDefault()).time() }
     Column(
         Modifier.fillMaxSize().verticalScroll(androidx.compose.foundation.rememberScrollState()).padding(start = 28.dp, top = 24.dp, end = 28.dp, bottom = 32.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -312,31 +322,45 @@ private fun SeriesEditor(
         Text(t.name ?: "Series recording", color = Jc.Text, fontSize = 28.sp, fontWeight = FontWeight.SemiBold)
         Text("Series recording options · OK changes a row · Back cancels", color = Jc.Muted, fontSize = 14.sp)
         Spacer(4)
-        EditRow("Episodes", "Which airings to record.", if (t.recordNewOnly == true) "New episodes only" else "All episodes", Modifier.focusRequester(first)) {
-            t = t.copy(recordNewOnly = t.recordNewOnly != true)
-        }
-        EditRow("Channel", "Only the channel it was set up on, or wherever it airs.", if (t.recordAnyChannel == true) "Any channel" else "Only ${t.channelName ?: "this channel"}") {
-            t = t.copy(recordAnyChannel = t.recordAnyChannel != true)
-        }
-        EditRow("Time", "Only around the time it was set up for, or any airing.", if (t.recordAnyTime == true) "Any time" else "Only around ${start ?: "this time"}") {
-            t = t.copy(recordAnyTime = t.recordAnyTime != true)
-        }
-        EditRow("Skip episodes already in a library", "Don't record an episode you already have.", if (t.skipEpisodesInLibrary == true) "Skip them" else "Record them anyway") {
-            t = t.copy(skipEpisodesInLibrary = t.skipEpisodesInLibrary != true)
-        }
-        EditRow("Start early", "Begin recording before the guide's start time.", padding(t.prePaddingSeconds, "early") ?: "On time") {
-            t = t.copy(prePaddingSeconds = nextOf(PrePad, PrePad.minByOrNull { kotlin.math.abs(it - (t.prePaddingSeconds ?: 0)) }!!))
-        }
-        EditRow("End late", "Keep recording after the guide's end time (for overruns).", padding(t.postPaddingSeconds, "late") ?: "On time") {
-            t = t.copy(postPaddingSeconds = nextOf(PostPad, PostPad.minByOrNull { kotlin.math.abs(it - (t.postPaddingSeconds ?: 0)) }!!))
-        }
-        EditRow("Keep", "How many recordings of this series to keep.", (t.keepUpTo ?: 0).let { if (it <= 0) "All of them" else "The latest $it" }) {
-            t = t.copy(keepUpTo = nextOf(KeepCounts, KeepCounts.minByOrNull { kotlin.math.abs(it - (t.keepUpTo ?: 0)) }!!))
-        }
+        SeriesTimerRows(t, first) { t = it }
         Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Button("Save", primary = true) { onSave(t) }
             Button("Cancel", onClick = onCancel)
         }
+    }
+}
+
+/**
+ * The rows of a Jellyfin series recording's options (the Series screen's editor, and Record series
+ * in the guide): OK on a row steps through its choices.
+ */
+@Composable
+internal fun SeriesTimerRows(
+    t: SeriesTimerInfoDto,
+    first: FocusRequester,
+    onChange: (SeriesTimerInfoDto) -> Unit,
+) {
+    val start = t.startDate?.let { java.time.LocalDateTime.ofInstant(it.atZone(java.time.ZoneOffset.UTC).toInstant(), java.time.ZoneId.systemDefault()).time() }
+    EditRow("Episodes", "Which airings to record.", if (t.recordNewOnly == true) "New episodes only" else "All episodes", Modifier.focusRequester(first)) {
+        onChange(t.copy(recordNewOnly = t.recordNewOnly != true))
+    }
+    EditRow("Channel", "Only the channel it was set up on, or wherever it airs.", if (t.recordAnyChannel == true) "Any channel" else "Only ${t.channelName ?: "this channel"}") {
+        onChange(t.copy(recordAnyChannel = t.recordAnyChannel != true))
+    }
+    EditRow("Time", "Only around the time it was set up for, or any airing.", if (t.recordAnyTime == true) "Any time" else "Only around ${start ?: "this time"}") {
+        onChange(t.copy(recordAnyTime = t.recordAnyTime != true))
+    }
+    EditRow("Skip episodes already in a library", "Don't record an episode you already have.", if (t.skipEpisodesInLibrary == true) "Skip them" else "Record them anyway") {
+        onChange(t.copy(skipEpisodesInLibrary = t.skipEpisodesInLibrary != true))
+    }
+    EditRow("Start early", "Begin recording before the guide's start time.", padding(t.prePaddingSeconds, "early") ?: "On time") {
+        onChange(t.copy(prePaddingSeconds = nextOf(PrePad, PrePad.minByOrNull { kotlin.math.abs(it - (t.prePaddingSeconds ?: 0)) }!!)))
+    }
+    EditRow("End late", "Keep recording after the guide's end time (for overruns).", padding(t.postPaddingSeconds, "late") ?: "On time") {
+        onChange(t.copy(postPaddingSeconds = nextOf(PostPad, PostPad.minByOrNull { kotlin.math.abs(it - (t.postPaddingSeconds ?: 0)) }!!)))
+    }
+    EditRow("Keep", "How many recordings of this series to keep.", (t.keepUpTo ?: 0).let { if (it <= 0) "All of them" else "The latest $it" }) {
+        onChange(t.copy(keepUpTo = nextOf(KeepCounts, KeepCounts.minByOrNull { kotlin.math.abs(it - (t.keepUpTo ?: 0)) }!!)))
     }
 }
 

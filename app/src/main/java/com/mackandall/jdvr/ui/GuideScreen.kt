@@ -875,6 +875,8 @@ internal fun ProgramPanel(
 ) {
     var p by remember(program.id) { mutableStateOf(program) }
     var airingsHere by remember(program.id) { mutableStateOf(false) }
+    // Record series' options (Settings › Record series), shown over the panel.
+    var seriesOptions by remember(program.id) { mutableStateOf(false) }
     // Episode History (watched mark, a copy to play, forget) and JellyDVR Live (is this only a buffer).
     var eh by remember(program.id) { mutableStateOf<LiveTvRepository.EhProgram?>(null) }
     // What "Forget this show" would forget (administrators, a show with history).
@@ -943,6 +945,13 @@ internal fun ProgramPanel(
             delay(1500) // the server schedules in the background
             refresh()
             onChanged()
+        }
+    }
+
+    if (seriesOptions) {
+        SeriesOptions(programId = program.id, programName = program.name) { msg ->
+            seriesOptions = false
+            if (msg != null) act { msg }
         }
     }
 
@@ -1042,6 +1051,10 @@ internal fun ProgramPanel(
                                 }
                             } else {
                                 Button("Record series", modifier = Modifier.fillMaxWidth(), leading = { SeriesDots() }) {
+                                    if (Jdvr.prefs.seriesOptionsFirst) {
+                                        seriesOptions = true
+                                        return@Button
+                                    }
                                     act {
                                         Jdvr.liveTv.record(p.id, series = true)
                                         "Series recording set up."

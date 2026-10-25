@@ -1477,6 +1477,26 @@ class LiveTvRepository : TvBackend {
     /** Saves a series recording's options (new only, any channel / time, padding, keep…). */
     override suspend fun updateSeriesTimer(t: org.jellyfin.sdk.model.api.SeriesTimerInfoDto): Unit = io { api.liveTvApi.updateSeriesTimer(t.id!!, t) }
 
+    override suspend fun seriesScheduled(): Map<String, SeriesScheduled> =
+        io { api.liveTvApi.getTimers().content.items }
+            .filter { it.seriesTimerId != null && it.startDate != null }
+            .groupBy { it.seriesTimerId!!.plainId() }
+            .mapValues { (_, timers) ->
+                val next = timers.minBy { it.startDate!! }
+                SeriesScheduled(timers.size, next.startDate!!, next.channelName)
+            }
+
+    /** A series recording's scheduled airings: how many, and when and where the next one is. */
+    data class SeriesScheduled(
+        val count: Int,
+        val next: java.time.LocalDateTime,
+        val nextChannel: String?,
+    )
+
+    override suspend fun newSeriesTimer(programId: UUID): org.jellyfin.sdk.model.api.SeriesTimerInfoDto = io { api.liveTvApi.getDefaultTimer(programId.toString()).content }
+
+    override suspend fun createSeriesTimer(t: org.jellyfin.sdk.model.api.SeriesTimerInfoDto): Unit = io { api.liveTvApi.createSeriesTimer(t) }
+
     override suspend fun seriesTimers(): List<org.jellyfin.sdk.model.api.SeriesTimerInfoDto> =
         io { api.liveTvApi.getSeriesTimers().content.items }
 

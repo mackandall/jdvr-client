@@ -116,6 +116,12 @@ fun SettingsScreen(
         ) { prefs.changeGuideArtSeconds(it) }
         Section("Recordings")
         Options(
+            label = "Record series",
+            help = "Show the series options first (which episodes, which channel, padding, how many to keep), or set it up straight away with the server's defaults.",
+            options = listOf(Opt(true, "Show the options first"), Opt(false, "Set it up straight away")),
+            selected = prefs.seriesOptionsFirst,
+        ) { prefs.changeSeriesOptionsFirst(it) }
+        Options(
             label = "Commercials",
             help = "Found by Comskip, also while a programme is still recording.",
             options = SkipOptions,

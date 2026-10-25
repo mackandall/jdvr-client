@@ -86,6 +86,15 @@ class Prefs(
         p.edit().putInt("guideArtSeconds", v).apply()
     }
 
+    /** Record series opens the series options first (which episodes, channel, keep…); off: set up with the server's defaults. */
+    var seriesOptionsFirst by mutableStateOf(p.getBoolean("seriesOptionsFirst", true))
+        private set
+
+    fun changeSeriesOptionsFirst(v: Boolean) {
+        seriesOptionsFirst = v
+        p.edit().putBoolean("seriesOptionsFirst", v).apply()
+    }
+
     /** The colour theme (Settings › Appearance): a key of [com.mackandall.jdvr.ui.Palettes]. */
     var theme by mutableStateOf(p.getString("theme", "midnight") ?: "midnight")
         private set

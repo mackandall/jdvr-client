@@ -306,6 +306,15 @@ interface TvBackend {
     /** Saves a series recording's options (new only, any channel / time, padding, keep…). */
     suspend fun updateSeriesTimer(t: org.jellyfin.sdk.model.api.SeriesTimerInfoDto)
 
+    /** What each series recording has scheduled, by its id ([plainId]): how many, and the first of them. */
+    suspend fun seriesScheduled(): Map<String, LiveTvRepository.SeriesScheduled> = emptyMap()
+
+    /** A new series recording for [programId] as the server would set it up, to change before [createSeriesTimer]. */
+    suspend fun newSeriesTimer(programId: UUID): org.jellyfin.sdk.model.api.SeriesTimerInfoDto? = null
+
+    /** Sets up a series recording with the options chosen. */
+    suspend fun createSeriesTimer(t: org.jellyfin.sdk.model.api.SeriesTimerInfoDto) {}
+
     suspend fun seriesTimers(): List<org.jellyfin.sdk.model.api.SeriesTimerInfoDto>
 
     suspend fun favourites(): FavouritesList?
