@@ -96,6 +96,17 @@ fun HomeScreen(
     val tuners = data.tuners
     val extras = data.extras
     val loaded = data.loaded
+
+    // While Home first fills in, tiles take their places at once: one growing in from nothing (Needs
+    // attention, when its list comes) was squashed while it grew.
+    var settled by remember { mutableStateOf(false) }
+    LaunchedEffect(loaded, extras != null) {
+        if (!loaded) return@LaunchedEffect
+        // Without the extras (no Episode History, or the call failed): settled all the same.
+        if (extras == null) delay(10_000)
+        delay(300)
+        settled = true
+    }
     var fromStart by remember { mutableStateOf<UUID?>(null) }
     // Without Episode History, the new-recordings row is Jellyfin's "recently added" instead.
     val freshFromLibrary = loaded && data.shows == null
@@ -288,10 +299,10 @@ fun HomeScreen(
 
                         // The tiles: each row shares its width by the tiles' weights, the rows share the height;
                         // a tile turned off (or an Auto one with nothing to show) shrinks away and the others grow.
-                        val r1 = animatedWeight(if (row1) 1.2f else 0f)
+                        val r1 = animatedWeight(if (row1) 1.2f else 0f, instant = !settled)
                         if (r1 > 0.01f) {
                             Row(Modifier.weight(r1).fillMaxWidth().padding(bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                val wl = animatedWeight(if (showLive) 3f else 0f)
+                                val wl = animatedWeight(if (showLive) 3f else 0f, instant = !settled)
                                 if (wl > 0.01f) {
                                     Box(Modifier.weight(wl).fillMaxHeight()) {
                                         if (loaded && !hasLiveTv) {
@@ -315,28 +326,28 @@ fun HomeScreen(
                                         }
                                     }
                                 }
-                                val ww = animatedWeight(if (showWeather) 2f else 0f)
+                                val ww = animatedWeight(if (showWeather) 2f else 0f, instant = !settled)
                                 if (ww > 0.01f) {
                                     WeatherTile(w, prefs.weatherPlace?.name?.substringBefore(','), Modifier.weight(ww).fillMaxHeight(), homePanel(), homePanel2())
                                 }
-                                val wn = animatedWeight(if (showNow) 2f else 0f)
+                                val wn = animatedWeight(if (showNow) 2f else 0f, instant = !settled)
                                 if (wn > 0.01f) {
                                     ListTile("RECORDING NOW", nowLines, if (loaded) "Nothing is recording." else "Loading…", Modifier.weight(wn).fillMaxHeight(), homePanel(), homePanel2(), entryFor("now"), leftmost = !showLive && !showWeather)
                                 }
                             }
                         }
-                        val r2 = animatedWeight(if (row2) 1f else 0f)
+                        val r2 = animatedWeight(if (row2) 1f else 0f, instant = !settled)
                         if (r2 > 0.01f) {
                             Row(Modifier.weight(r2).fillMaxWidth().padding(bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                val wx = animatedWeight(if (showNext) 3f else 0f)
+                                val wx = animatedWeight(if (showNext) 3f else 0f, instant = !settled)
                                 if (wx > 0.01f) {
                                     ListTile("RECORDING NEXT", nextLines, if (loaded) "Nothing more scheduled." else "Loading…", Modifier.weight(wx).fillMaxHeight(), homePanel(), homePanel2(), entryFor("next"), leftmost = true)
                                 }
-                                val wa = animatedWeight(if (showAttention) 2f else 0f)
+                                val wa = animatedWeight(if (showAttention) 2f else 0f, instant = !settled)
                                 if (wa > 0.01f) {
                                     ListTile("NEEDS ATTENTION", attentionLines, if (loaded) "All recordings are fine." else "Loading…", Modifier.weight(wa).fillMaxHeight(), homePanel(), homePanel2(), entryFor("attention"), leftmost = !showNext)
                                 }
-                                val wt = animatedWeight(if (showTuners) 2f else 0f)
+                                val wt = animatedWeight(if (showTuners) 2f else 0f, instant = !settled)
                                 if (wt > 0.01f) {
                                     TunersTile(tuners, extras?.drive, Modifier.weight(wt).fillMaxHeight(), homePanel(), homePanel2(), loaded = loaded, bufferChannels = bufferChannels)
                                 }
@@ -359,6 +370,7 @@ fun HomeScreen(
                                 } else {
                                     0f
                                 },
+                                instant = !settled,
                             )
                         if (rf > 0.01f) {
                             Column(Modifier.weight(rf).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
