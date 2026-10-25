@@ -18,20 +18,13 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.ui.focus.focusProperties
-import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.input.key.Key
-import androidx.compose.ui.input.key.KeyEventType
-import androidx.compose.ui.input.key.key
-import androidx.compose.ui.input.key.onPreviewKeyEvent
-import androidx.compose.ui.input.key.type
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -43,7 +36,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -55,7 +55,11 @@ import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
 import coil3.compose.AsyncImage
 import com.mackandall.jdvr.PlayRecording
+import com.mackandall.jdvr.data.ItemDetails
 import com.mackandall.jdvr.data.Jdvr
+import com.mackandall.jdvr.data.LibItem
+import com.mackandall.jdvr.data.Library
+import com.mackandall.jdvr.data.attempt
 import com.mackandall.jdvr.data.letterOf
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -63,10 +67,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.util.UUID
-import com.mackandall.jdvr.data.ItemDetails
-import com.mackandall.jdvr.data.LibItem
-import com.mackandall.jdvr.data.Library
-import com.mackandall.jdvr.data.attempt
 
 private const val PAGE = 120
 
@@ -122,11 +122,13 @@ fun LibraryScreen(
                 RecordingActions(det.item.id, say, manage = det.location == LIVE_FOLDER, canDelete = det.canDelete, place = det.location) { movie = null }
             })
         }
+
         s != null -> {
             BackHandler { if (cameForItem) onLeave() else show = null }
             ShowPage(s, refresh, onPlay)
         }
-        else ->
+
+        else -> {
             LibraryGrid(
                 library,
                 entry,
@@ -143,6 +145,7 @@ fun LibraryScreen(
                 lastIndex = i
                 if (it.type == "Series") show = it else movie = it
             }
+        }
     }
     quick?.let { q ->
         QuickActions(
@@ -151,7 +154,12 @@ fun LibraryScreen(
             onDetails = { movie = q },
             onChanged = { changed++ },
             onDismiss = { quick = null },
-            onOpenShow = if (q.type == "Series") { { show = q } } else null,
+            onOpenShow =
+                if (q.type == "Series") {
+                    { show = q }
+                } else {
+                    null
+                },
             extra = { det, say, done ->
                 if (q.type != "Series") {
                     RecordingActions(det.item.id, say, tools = false, manage = det.location == LIVE_FOLDER, canDelete = det.canDelete, place = det.location, onDeleted = done)
@@ -223,6 +231,7 @@ private fun LibraryGrid(
     LaunchedEffect(items.isNotEmpty()) { if (items.isNotEmpty() && restore == null) first.tryFocus() }
 
     var jumpJob by remember { mutableStateOf<Job?>(null) }
+
     // Scrolls the grid to the letter's first item; with [focus], puts the cursor on it.
     fun jump(
         letter: String,
@@ -253,9 +262,15 @@ private fun LibraryGrid(
         }
         Spacer(12)
         when {
-            total < 0 -> Text("Loading…", color = Jc.Muted, fontSize = 16.sp)
-            items.isEmpty() -> Text("Nothing in this library.", color = Jc.Muted, fontSize = 16.sp)
-            else ->
+            total < 0 -> {
+                Text("Loading…", color = Jc.Muted, fontSize = 16.sp)
+            }
+
+            items.isEmpty() -> {
+                Text("Nothing in this library.", color = Jc.Muted, fontSize = 16.sp)
+            }
+
+            else -> {
                 Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                     val strip = !newest && letters.isNotEmpty()
                     if (strip) {
@@ -294,11 +309,17 @@ private fun LibraryGrid(
                                     .onFocusChanged { f -> if (f.isFocused) focusedIndex = i }
                                     // First column: Left goes to this item's letter on the strip.
                                     .then(if (strip && i % 7 == 0) Modifier.focusProperties { left = letterReqs[letter] ?: FocusRequester.Default } else Modifier),
-                                onHold = if (holdEnabled) { { onHold(it, i) } } else null,
+                                onHold =
+                                    if (holdEnabled) {
+                                        { onHold(it, i) }
+                                    } else {
+                                        null
+                                    },
                             ) { onOpen(it, i) }
                         }
                     }
                 }
+            }
         }
     }
 }
@@ -338,8 +359,13 @@ private fun LetterStrip(
                                 .fillMaxHeight()
                                 .aspectRatio(1f)
                                 .focusRequester(reqs.getValue(l))
-                                .onFocusChanged { if (it.isFocused) focused = l else if (focused == l) focused = null }
-                                .onPreviewKeyEvent { e ->
+                                .onFocusChanged {
+                                    if (it.isFocused) {
+                                        focused = l
+                                    } else if (focused == l) {
+                                        focused = null
+                                    }
+                                }.onPreviewKeyEvent { e ->
                                     if (e.type == KeyEventType.KeyDown && e.key == Key.DirectionRight) {
                                         onEnter(l)
                                         true
@@ -395,7 +421,13 @@ internal fun Poster(
                 }
                 if (item.resumeMs > 0 && !item.played && item.runtimeMin != null) {
                     val f = (item.resumeMs / 60_000f / item.runtimeMin).coerceIn(0f, 1f)
-                    Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().height(4.dp).background(Jc.Line)) {
+                    Box(
+                        Modifier
+                            .align(Alignment.BottomStart)
+                            .fillMaxWidth()
+                            .height(4.dp)
+                            .background(Jc.Line),
+                    ) {
                         Box(Modifier.fillMaxHeight().fillMaxWidth(f).background(Jc.Focus))
                     }
                 }
@@ -426,9 +458,10 @@ internal fun ShowPage(
     val scope = rememberCoroutineScope()
     LaunchedEffect(show.id, refresh, reload) {
         episodes =
-            attempt { Jdvr.backend.episodes(show.id, null) }?.map {
-                EpisodeEntry(it.id, it.name, it.season, it.episode, it.played, it.resumeMs, it.runtimeMin, it.overview)
-            }?.let { withCommercialBadges(it) } ?: emptyList()
+            attempt { Jdvr.backend.episodes(show.id, null) }
+                ?.map {
+                    EpisodeEntry(it.id, it.name, it.season, it.episode, it.played, it.resumeMs, it.runtimeMin, it.overview)
+                }?.let { withCommercialBadges(it) } ?: emptyList()
     }
 
     // An episode's own details page.

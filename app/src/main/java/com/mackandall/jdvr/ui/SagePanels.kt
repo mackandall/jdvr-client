@@ -40,17 +40,16 @@ import androidx.tv.material3.Text
 import coil3.compose.AsyncImage
 import com.mackandall.jdvr.data.Channel
 import com.mackandall.jdvr.data.Jdvr
-import java.time.Duration
-import java.time.Instant
-import java.time.LocalDateTime
-import java.time.ZoneId
-import java.util.UUID
 import com.mackandall.jdvr.data.LibItem
 import com.mackandall.jdvr.data.Library
 import com.mackandall.jdvr.data.MarkSymbols
 import com.mackandall.jdvr.data.RecordingCard
 import com.mackandall.jdvr.data.Upcoming
-
+import java.time.Duration
+import java.time.Instant
+import java.time.LocalDateTime
+import java.time.ZoneId
+import java.util.UUID
 
 /** The same menu drawn in Gemstone's look: fanart behind black glass, one gem colour. */
 internal val LocalGemLook = androidx.compose.runtime.compositionLocalOf { false }
@@ -71,6 +70,7 @@ internal fun panelFill() = if (LocalGemLook.current) GemBox else SageBox
 internal fun panelLabel() = if (LocalGemLook.current) Jc.Focus else SageLabel
 
 private fun localOf(iso: String?): LocalDateTime? = iso?.let { runCatching { LocalDateTime.ofInstant(Instant.parse(it), ZoneId.systemDefault()) }.getOrNull() }
+
 @Composable
 internal fun SagePanel(
     label: String,
@@ -131,7 +131,13 @@ internal fun LivePanel(
             if (p != null) {
                 val total = Duration.between(p.start, p.end).toMinutes().coerceAtLeast(1)
                 val done = Duration.between(p.start, now).toMinutes().coerceIn(0, total)
-                Box(Modifier.padding(top = 4.dp).fillMaxWidth().height(if (LocalGemLook.current) 3.dp else 5.dp).background(if (LocalGemLook.current) GemLine else Color(0xFF1B3566), RoundedCornerShape(3.dp))) {
+                Box(
+                    Modifier
+                        .padding(top = 4.dp)
+                        .fillMaxWidth()
+                        .height(if (LocalGemLook.current) 3.dp else 5.dp)
+                        .background(if (LocalGemLook.current) GemLine else Color(0xFF1B3566), RoundedCornerShape(3.dp)),
+                ) {
                     Box(Modifier.fillMaxWidth(done.toFloat() / total).height(if (LocalGemLook.current) 3.dp else 5.dp).background(if (LocalGemLook.current) Jc.Focus else Color(0xFF5FB0FF), RoundedCornerShape(3.dp)))
                 }
             }
@@ -148,10 +154,24 @@ internal fun NextPanel(
 ) {
     val next = upcoming.orEmpty().filter { !it.recordingNow }.take(count)
     SagePanel("RECORDING NEXT") {
-        if (upcoming == null) Text("Loading…", color = Jc.Muted, fontSize = 14.sp) else if (next.isEmpty()) Text("Nothing scheduled.", color = Jc.Muted, fontSize = 14.sp)
+        if (upcoming == null) {
+            Text("Loading…", color = Jc.Muted, fontSize = 14.sp)
+        } else if (next.isEmpty()) {
+            Text("Nothing scheduled.", color = Jc.Muted, fontSize = 14.sp)
+        }
         next.forEach { u ->
             val start = localOf(u.start)
-            val time = start?.let { if (it.toLocalDate() == now.toLocalDate()) it.time() else it.dayOfWeek.name.take(3).lowercase().replaceFirstChar { c -> c.uppercase() } + " " + it.time() } ?: ""
+            val time =
+                start?.let {
+                    if (it.toLocalDate() == now.toLocalDate()) {
+                        it.time()
+                    } else {
+                        it.dayOfWeek.name
+                            .take(3)
+                            .lowercase()
+                            .replaceFirstChar { c -> c.uppercase() } + " " + it.time()
+                    }
+                } ?: ""
             PanelLine("● " + u.name + (u.episodeTitle?.let { " · $it" } ?: ""), time)
         }
     }
@@ -168,7 +188,12 @@ internal fun NewRecordingsPanel(cards: List<RecordingCard>) {
                     model = Jdvr.backend.imageUrl(c.imageId ?: c.id, 240),
                     contentDescription = c.name,
                     contentScale = ContentScale.Crop,
-                    modifier = Modifier.width(90.dp).height(135.dp).clip(RoundedCornerShape(4.dp)).background(Color(0xFF14161B)),
+                    modifier =
+                        Modifier
+                            .width(90.dp)
+                            .height(135.dp)
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(Color(0xFF14161B)),
                 )
             }
         }
@@ -192,7 +217,12 @@ internal fun LibraryPanel(
                         model = Jdvr.backend.imageUrl(it.seriesId ?: it.id, 240),
                         contentDescription = it.seriesName ?: it.name,
                         contentScale = ContentScale.Crop,
-                        modifier = Modifier.width(90.dp).height(135.dp).clip(RoundedCornerShape(5.dp)).background(panelFill()),
+                        modifier =
+                            Modifier
+                                .width(90.dp)
+                                .height(135.dp)
+                                .clip(RoundedCornerShape(5.dp))
+                                .background(panelFill()),
                     )
                 }
             }
@@ -211,7 +241,9 @@ internal fun ChannelPicker(
     val first = remember { FocusRequester() }
     val gem = Jc.Style == UiStyle.Gem
     val start = channels.indexOfFirst { it.id == current }.coerceAtLeast(0)
-    val state = androidx.compose.foundation.lazy.rememberLazyListState((start - 3).coerceAtLeast(0))
+    val state =
+        androidx.compose.foundation.lazy
+            .rememberLazyListState((start - 3).coerceAtLeast(0))
     LaunchedEffect(channels.isNotEmpty()) {
         first.focusSoon(withinMs = 1500)
     }
@@ -238,7 +270,15 @@ internal fun ChannelPicker(
                         scale = ClickableSurfaceDefaults.scale(focusedScale = 1f),
                     ) {
                         Row(
-                            (if (focused && gem) Modifier.background(Jc.Focus.copy(alpha = 0.18f)) else if (focused) Modifier.sageGloss() else Modifier).fillMaxWidth().padding(horizontal = 12.dp, vertical = 7.dp),
+                            (
+                                if (focused && gem) {
+                                    Modifier.background(Jc.Focus.copy(alpha = 0.18f))
+                                } else if (focused) {
+                                    Modifier.sageGloss()
+                                } else {
+                                    Modifier
+                                }
+                            ).fillMaxWidth().padding(horizontal = 12.dp, vertical = 7.dp),
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {

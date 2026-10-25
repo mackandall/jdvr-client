@@ -1,8 +1,8 @@
 package com.mackandall.jdvr.ui
 
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -10,23 +10,22 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.foundation.border
-import androidx.compose.foundation.background
-import kotlinx.coroutines.launch
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -41,9 +40,10 @@ import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
 import com.mackandall.jdvr.BuildConfig
 import com.mackandall.jdvr.data.Jdvr
-import com.mackandall.jdvr.data.Prefs
 import com.mackandall.jdvr.data.Library
+import com.mackandall.jdvr.data.Prefs
 import com.mackandall.jdvr.data.attempt
+import kotlinx.coroutines.launch
 
 /**
  * Settings: things set once for the whole app. Actions that belong to what's on screen (Record,
@@ -305,12 +305,16 @@ private fun TownRow() {
     val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
     val field = remember { FocusRequester() }
     val box = remember { FocusRequester() }
+
     fun find() {
         val q = text.trim()
         if (q.isEmpty()) return
         scope.launch {
             note =
-                attempt { com.mackandall.jdvr.data.Weather.find(q) }?.let {
+                attempt {
+                    com.mackandall.jdvr.data.Weather
+                        .find(q)
+                }?.let {
                     prefs.changeWeatherPlace(it)
                     text = ""
                     "Weather for ${it.name}"
@@ -343,9 +347,15 @@ private fun TownRow() {
                     value = text,
                     onValueChange = { text = it },
                     singleLine = true,
-                    textStyle = androidx.compose.ui.text.TextStyle(color = Jc.Text, fontSize = 16.sp),
-                    cursorBrush = androidx.compose.ui.graphics.SolidColor(Jc.Focus),
-                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Search),
+                    textStyle =
+                        androidx.compose.ui.text
+                            .TextStyle(color = Jc.Text, fontSize = 16.sp),
+                    cursorBrush =
+                        androidx.compose.ui.graphics
+                            .SolidColor(Jc.Focus),
+                    keyboardOptions =
+                        androidx.compose.foundation.text
+                            .KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Search),
                     keyboardActions =
                         androidx.compose.foundation.text.KeyboardActions(onSearch = {
                             find()
@@ -356,8 +366,13 @@ private fun TownRow() {
                             .weight(1f)
                             .focusRequester(field)
                             // Leaving the box (Back, or ▲▼ out of it) ends typing.
-                            .onFocusChanged { if (it.isFocused) hadFocus = true else if (hadFocus && editing) editing = false }
-                            .onPreviewKeyEvent { e ->
+                            .onFocusChanged {
+                                if (it.isFocused) {
+                                    hadFocus = true
+                                } else if (hadFocus && editing) {
+                                    editing = false
+                                }
+                            }.onPreviewKeyEvent { e ->
                                 val dir =
                                     when (e.key) {
                                         Key.DirectionDown -> androidx.compose.ui.focus.FocusDirection.Down
@@ -370,8 +385,7 @@ private fun TownRow() {
                                 } else {
                                     false
                                 }
-                            }
-                            .then(boxLook)
+                            }.then(boxLook)
                             .padding(horizontal = 12.dp, vertical = 11.dp),
                     decorationBox = { inner ->
                         if (text.isEmpty()) Text("Town, e.g. Atlanta or Springfield, IL", color = Jc.Muted, fontSize = 16.sp)
@@ -397,6 +411,7 @@ private fun TownRow() {
 private fun MenuSettings(libraries: List<Library>) {
     val prefs = Jdvr.prefs
     val libs = libraries.inMenuOrder()
+
     data class MRow(
         val key: String,
         val label: String,
@@ -408,7 +423,15 @@ private fun MenuSettings(libraries: List<Library>) {
                 listOf(MRow(k, if (prefs.librariesGrouped) "Libraries" else "Libraries (each on its own line)", false)) +
                     libs.map { MRow("lib:${it.id}", it.name, true) }
             } else {
-                listOf(MRow(k, com.mackandall.jdvr.Screen.entries.first { s -> s.key == k }.label, false))
+                listOf(
+                    MRow(
+                        k,
+                        com.mackandall.jdvr.Screen.entries
+                            .first { s -> s.key == k }
+                            .label,
+                        false,
+                    ),
+                )
             }
         }
     var lifted by remember { mutableStateOf<String?>(null) }
@@ -494,12 +517,19 @@ private fun MenuSettings(libraries: List<Library>) {
                                             move(r.key, -1)
                                             true
                                         }
+
                                         Key.DirectionDown -> {
                                             move(r.key, 1)
                                             true
                                         }
-                                        Key.DirectionLeft, Key.DirectionRight -> true
-                                        else -> false
+
+                                        Key.DirectionLeft, Key.DirectionRight -> {
+                                            true
+                                        }
+
+                                        else -> {
+                                            false
+                                        }
                                     }
                                 },
                         shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(10.dp)),
@@ -591,7 +621,17 @@ private fun MenuSettings(libraries: List<Library>) {
                     preview = {
                         val k = menuIconGrowth(prefs.menuIconSize)
                         MenuGlyph(MenuIcon.Home, set, 22.dp, Jc.Muted, Jc.Focus)
-                        MenuGlyph(MenuIcon.Home, set, 22.dp, Jc.Focus, Jc.Focus, Modifier.graphicsLayer { scaleX = k; scaleY = k })
+                        MenuGlyph(
+                            MenuIcon.Home,
+                            set,
+                            22.dp,
+                            Jc.Focus,
+                            Jc.Focus,
+                            Modifier.graphicsLayer {
+                                scaleX = k
+                                scaleY = k
+                            },
+                        )
                     },
                 ) { prefs.changeMenuIconSize(it) }
             }
@@ -625,7 +665,11 @@ private fun MenuSettings(libraries: List<Library>) {
 @Composable
 private fun ServerFeaturesList() {
     var state by remember { mutableStateOf<Map<java.util.UUID, Boolean?>?>(null) }
-    LaunchedEffect(Unit) { state = com.mackandall.jdvr.data.ServerFeatures.check() }
+    LaunchedEffect(Unit) {
+        state =
+            com.mackandall.jdvr.data.ServerFeatures
+                .check()
+    }
     Text(
         "JDVR works with any Jellyfin server; these optional plugins on the server add more. Add one in Jellyfin's dashboard: Plugins › Repositories (the address below), then Plugins › Catalog.",
         color = Jc.Muted,
@@ -664,14 +708,21 @@ private fun ServerFeaturesList() {
                     Text(p.name, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
                     Text(p.adds, color = Jc.Muted, fontSize = 14.sp)
                     when (has) {
-                        true -> Text("Installed", color = Jc.Green, fontSize = 13.sp)
-                        null -> Text("Only an administrator's account can tell whether the server has it.", color = Jc.Muted, fontSize = 13.sp)
-                        false ->
+                        true -> {
+                            Text("Installed", color = Jc.Green, fontSize = 13.sp)
+                        }
+
+                        null -> {
+                            Text("Only an administrator's account can tell whether the server has it.", color = Jc.Muted, fontSize = 13.sp)
+                        }
+
+                        false -> {
                             Text(
                                 p.repository?.let { "Not installed. Repository: $it" } ?: "Not installed. Not published yet.",
                                 color = if (p.repository != null) Jc.Focus else Jc.Muted,
                                 fontSize = 13.sp,
                             )
+                        }
                     }
                 }
             }

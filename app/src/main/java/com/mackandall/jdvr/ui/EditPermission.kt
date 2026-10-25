@@ -5,8 +5,8 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import com.mackandall.jdvr.data.Jdvr
 import com.mackandall.jdvr.data.Editing
+import com.mackandall.jdvr.data.Jdvr
 import com.mackandall.jdvr.data.attempt
 
 /**

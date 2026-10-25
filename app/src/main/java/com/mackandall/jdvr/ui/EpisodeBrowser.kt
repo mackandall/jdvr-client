@@ -2,6 +2,7 @@ package com.mackandall.jdvr.ui
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,6 +23,7 @@ import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -31,10 +33,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
@@ -52,16 +52,16 @@ import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
 import coil3.compose.AsyncImage
-import com.mackandall.jdvr.data.Jdvr
-import com.mackandall.jdvr.data.plain
-import com.mackandall.jdvr.data.Prefs
-import java.time.LocalDateTime
-import java.util.UUID
-import kotlinx.coroutines.launch
 import com.mackandall.jdvr.data.ItemDetails
+import com.mackandall.jdvr.data.Jdvr
 import com.mackandall.jdvr.data.LibItem
 import com.mackandall.jdvr.data.Person
+import com.mackandall.jdvr.data.Prefs
 import com.mackandall.jdvr.data.attempt
+import com.mackandall.jdvr.data.plain
+import kotlinx.coroutines.launch
+import java.time.LocalDateTime
+import java.util.UUID
 
 /** One episode as both episode lists show it (a recording, or a library episode). */
 data class EpisodeEntry(
@@ -94,11 +94,12 @@ suspend fun withCommercialBadges(list: List<EpisodeEntry>): List<EpisodeEntry> {
     return if (badges.isEmpty()) list else list.map { e -> badges[e.id.plain()]?.let { e.copy(commercials = it.label, commercialState = it.state) } ?: e }
 }
 
-private fun seasonTitle(n: Int?) = when (n) {
-    null -> "Other recordings"
-    0 -> "Specials"
-    else -> "Season $n"
-}
+private fun seasonTitle(n: Int?) =
+    when (n) {
+        null -> "Other recordings"
+        0 -> "Specials"
+        else -> "Season $n"
+    }
 
 /**
  * A show's episodes in either view (View button, remembered): a list with the focused episode's
@@ -139,13 +140,23 @@ fun EpisodeBrowser(
             onShowPage = true,
         )
     }
-    val openShowMenu: (() -> Unit)? = if (seriesId != null) { { showMenu = true } } else null
+    val openShowMenu: (() -> Unit)? =
+        if (seriesId != null) {
+            { showMenu = true }
+        } else {
+            null
+        }
     val hold: ((EpisodeEntry) -> Unit)? = if (!holdEnabled) null else { e -> holdOk(menu = { onHold?.invoke(e) ?: onInfo(e) }, details = { onInfo(e) }) }
     val tiles = Jdvr.prefs.episodeView == Prefs.TILES
     var backdrop by remember { mutableStateOf<UUID?>(null) }
     var overview by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(seriesId) {
-        seriesId?.let { id -> attempt { Jdvr.backend.details(id) }?.let { backdrop = it.backdropOf; overview = it.item.overview } }
+        seriesId?.let { id ->
+            attempt { Jdvr.backend.details(id) }?.let {
+                backdrop = it.backdropOf
+                overview = it.item.overview
+            }
+        }
     }
 
     Box(Modifier.fillMaxSize()) {
@@ -154,17 +165,17 @@ fun EpisodeBrowser(
             backdrop?.let { Backdrop(Jdvr.backend.backdropUrl(it), null, strength = 0.6f) }
         }
         androidx.compose.runtime.CompositionLocalProvider(LocalShowActions provides openShowMenu) {
-        if (list == null || list.isEmpty()) {
-            Column(Modifier.padding(start = 28.dp, top = 22.dp)) {
-                Header(title, subtitle, null, tiles)
-                Spacer(12)
-                Text(if (list == null) "Loading…" else emptyText, color = Jc.Muted, fontSize = 16.sp)
+            if (list == null || list.isEmpty()) {
+                Column(Modifier.padding(start = 28.dp, top = 22.dp)) {
+                    Header(title, subtitle, null, tiles)
+                    Spacer(12)
+                    Text(if (list == null) "Loading…" else emptyText, color = Jc.Muted, fontSize = 16.sp)
+                }
+            } else if (tiles) {
+                TilesView(seriesId, backdrop, title, subtitle, list, entry, { e, fromStart -> if (fromStart) onPlayFromStart(e) else onPlay(e) }, onInfo, onToggleWatched, actions, hold)
+            } else {
+                ListView(seriesId?.toString() ?: title, title, subtitle, list, entry, onPlay, onInfo, onToggleWatched, hold)
             }
-        } else if (tiles) {
-            TilesView(seriesId, backdrop, title, subtitle, list, entry, { e, fromStart -> if (fromStart) onPlayFromStart(e) else onPlay(e) }, onInfo, onToggleWatched, actions, hold)
-        } else {
-            ListView(seriesId?.toString() ?: title, title, subtitle, list, entry, onPlay, onInfo, onToggleWatched, hold)
-        }
         }
     }
 }
@@ -223,12 +234,15 @@ private fun ListView(
     // which in a long list isn't on screen, so Android dropped it on a row nearby.)
     var returnTo by remember { mutableStateOf(remembered) }
     val back = remember { FocusRequester() }
-    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+    val listState =
+        androidx.compose.foundation.lazy
+            .rememberLazyListState()
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     // Focus coming back into the list (the player or a page over it closed): Android puts it on
     // whatever row is under the spot the closed screen's button was, so move it to the row that
     // was pressed.
     var listHasFocus by remember { mutableStateOf(false) }
+
     fun backToPressed() {
         val id = returnTo ?: return
         val index = list.indexOfFirst { it.id == id }
@@ -285,7 +299,9 @@ private fun ListView(
                         false
                     },
                 state = listState,
-                verticalArrangement = Arrangement.spacedBy(6.dp), contentPadding = PaddingValues(bottom = 40.dp)) {
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+                contentPadding = PaddingValues(bottom = 40.dp),
+            ) {
                 itemsIndexed(list, key = { _, e -> e.id }) { i, e ->
                     // A season heading where the season changes (when there's more than one).
                     if (list.any { it.season != list.first().season } && (i == 0 || list[i - 1].season != e.season)) {
@@ -353,7 +369,12 @@ private fun EpisodePane(
             model = Jdvr.backend.imageUrl(e.id, 300),
             contentDescription = null,
             contentScale = ContentScale.Crop,
-            modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f).clip(RoundedCornerShape(8.dp)).background(Jc.Panel2),
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(16f / 9f)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Jc.Panel2),
         )
         Text(e.shortName(), color = Jc.Text, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
         Text(
@@ -378,8 +399,7 @@ private fun EpisodeEntry.shortName(): String {
 
 /** An episode's badges, wrapping onto more lines when they don't fit (so any mix of them lays out). */
 @Composable
-private fun BadgeLine(e: EpisodeEntry) =
-    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) { Badges(e) }
+private fun BadgeLine(e: EpisodeEntry) = FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) { Badges(e) }
 
 @Composable
 private fun Badges(e: EpisodeEntry) {
@@ -500,7 +520,16 @@ private fun TilesView(
                     Text(focused.shortName(), color = Jc.Text, fontSize = 20.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    d?.premiere?.let { Text(it.format(java.time.format.DateTimeFormatter.ofPattern("MMM d, yyyy")), color = Jc.Text, fontSize = 13.sp) }
+                    d?.premiere?.let {
+                        Text(
+                            it.format(
+                                java.time.format.DateTimeFormatter
+                                    .ofPattern("MMM d, yyyy"),
+                            ),
+                            color = Jc.Text,
+                            fontSize = 13.sp,
+                        )
+                    }
                     (focused.runtimeMin ?: d?.item?.runtimeMin)?.let { Text("$it min", color = Jc.Text, fontSize = 13.sp) }
                     d?.item?.officialRating?.let { Text(it, color = Jc.Text, fontSize = 12.sp, modifier = Modifier.background(Jc.Panel2, RoundedCornerShape(4.dp)).padding(horizontal = 5.dp)) }
                     d?.communityRating?.let { Text("★ %.1f".format(it), color = Jc.Gold, fontSize = 13.sp) }
@@ -597,20 +626,70 @@ private fun EpisodeCard(
                 AsyncImage(model = Jdvr.backend.imageUrl(e.id, 300), contentDescription = e.name, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
                 movingFor(e.id.toString())?.let { MovingOverlay(it) } ?: cuttingFor(e.id.toString())?.let { CuttingOverlay(it) }
                 e.episode?.let {
-                    Text("E$it", color = Jc.Text, fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.align(Alignment.TopEnd).padding(6.dp).background(Jc.Ink.copy(alpha = 0.85f), RoundedCornerShape(5.dp)).padding(horizontal = 6.dp, vertical = 1.dp))
+                    Text(
+                        "E$it",
+                        color = Jc.Text,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier =
+                            Modifier
+                                .align(Alignment.TopEnd)
+                                .padding(6.dp)
+                                .background(Jc.Ink.copy(alpha = 0.85f), RoundedCornerShape(5.dp))
+                                .padding(horizontal = 6.dp, vertical = 1.dp),
+                    )
                 }
                 if (e.played) {
-                    Text("✓", color = Jc.Text, fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.align(Alignment.TopStart).padding(6.dp).background(Jc.Green, RoundedCornerShape(5.dp)).padding(horizontal = 6.dp, vertical = 1.dp))
+                    Text(
+                        "✓",
+                        color = Jc.Text,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier =
+                            Modifier
+                                .align(Alignment.TopStart)
+                                .padding(6.dp)
+                                .background(Jc.Green, RoundedCornerShape(5.dp))
+                                .padding(horizontal = 6.dp, vertical = 1.dp),
+                    )
                 }
                 if (e.recording) {
-                    Text("● Recording", color = badgeText(Jc.Recording), fontSize = 10.sp, fontWeight = FontWeight.Bold, modifier = Modifier.align(Alignment.BottomStart).padding(6.dp).background(Jc.Recording, RoundedCornerShape(5.dp)).padding(horizontal = 5.dp, vertical = 1.dp))
+                    Text(
+                        "● Recording",
+                        color = badgeText(Jc.Recording),
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier =
+                            Modifier
+                                .align(Alignment.BottomStart)
+                                .padding(6.dp)
+                                .background(Jc.Recording, RoundedCornerShape(5.dp))
+                                .padding(horizontal = 5.dp, vertical = 1.dp),
+                    )
                 }
                 if (e.partial) {
-                    Text("Partial", color = Jc.OnAmber, fontSize = 10.sp, fontWeight = FontWeight.Bold, modifier = Modifier.align(Alignment.BottomStart).padding(6.dp).background(Jc.Amber, RoundedCornerShape(5.dp)).padding(horizontal = 5.dp, vertical = 1.dp))
+                    Text(
+                        "Partial",
+                        color = Jc.OnAmber,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier =
+                            Modifier
+                                .align(Alignment.BottomStart)
+                                .padding(6.dp)
+                                .background(Jc.Amber, RoundedCornerShape(5.dp))
+                                .padding(horizontal = 5.dp, vertical = 1.dp),
+                    )
                 }
                 if (e.resumeMs > 0 && !e.played && e.runtimeMin != null) {
                     val f = (e.resumeMs / 60_000f / e.runtimeMin).coerceIn(0f, 1f)
-                    Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().height(4.dp).background(Jc.Line)) {
+                    Box(
+                        Modifier
+                            .align(Alignment.BottomStart)
+                            .fillMaxWidth()
+                            .height(4.dp)
+                            .background(Jc.Line),
+                    ) {
                         Box(Modifier.fillMaxHeight().fillMaxWidth(f).background(Jc.Focus))
                     }
                 }
@@ -638,11 +717,26 @@ private fun PeopleRow(
                     scale = ClickableSurfaceDefaults.scale(focusedScale = 1.04f),
                 ) {
                     Column(Modifier.padding(6.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                        Box(Modifier.width(70.dp).height(70.dp).clip(androidx.compose.foundation.shape.CircleShape).background(Jc.Panel2), contentAlignment = Alignment.Center) {
+                        Box(
+                            Modifier
+                                .width(70.dp)
+                                .height(70.dp)
+                                .clip(androidx.compose.foundation.shape.CircleShape)
+                                .background(Jc.Panel2),
+                            contentAlignment = Alignment.Center,
+                        ) {
                             if (p.hasImage) {
                                 AsyncImage(model = Jdvr.backend.personImageUrl(p.id), contentDescription = p.name, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
                             } else {
-                                Text(p.name.split(' ').mapNotNull { it.firstOrNull()?.toString() }.take(2).joinToString(""), color = Jc.Muted, fontSize = 18.sp)
+                                Text(
+                                    p.name
+                                        .split(' ')
+                                        .mapNotNull { it.firstOrNull()?.toString() }
+                                        .take(2)
+                                        .joinToString(""),
+                                    color = Jc.Muted,
+                                    fontSize = 18.sp,
+                                )
                             }
                         }
                         Text(p.name, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -653,5 +747,3 @@ private fun PeopleRow(
         }
     }
 }
-
-/** The remote's Menu key on a card opens its details (OK plays). */

@@ -13,7 +13,11 @@ fun playerLog(
     player: Player,
 ): Player.Listener =
     object : Player.Listener {
-        private fun at() = "at ${player.currentPosition / 1000}s of ${player.duration.takeIf { it > 0 }?.div(1000)?.let { "${it}s" } ?: "?"}, buffered to ${player.bufferedPosition / 1000}s"
+        private fun at() =
+            "at ${player.currentPosition / 1000}s of ${player.duration
+                .takeIf { it > 0 }
+                ?.div(1000)
+                ?.let { "${it}s" } ?: "?"}, buffered to ${player.bufferedPosition / 1000}s"
 
         private fun log(what: String) = Timber.tag("JDVRPlayer").i("%s: %s %s", label, what, at())
 

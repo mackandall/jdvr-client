@@ -1,8 +1,8 @@
 package com.mackandall.jdvr.data
 
+import org.jellyfin.sdk.model.api.PlayMethod
 import java.time.LocalDateTime
 import java.util.UUID
-import org.jellyfin.sdk.model.api.PlayMethod
 
 /** A live channel, with what's on now. */
 data class Channel(

@@ -1,6 +1,5 @@
 package com.mackandall.jdvr.player
 
-import android.view.KeyEvent as AndroidKeyEvent
 import androidx.activity.compose.BackHandler
 import androidx.annotation.OptIn
 import androidx.compose.foundation.background
@@ -55,16 +54,17 @@ import androidx.media3.extractor.DefaultExtractorsFactory
 import androidx.media3.ui.PlayerView
 import androidx.tv.material3.Text
 import com.mackandall.jdvr.PlayRecording
+import com.mackandall.jdvr.data.Buffer
 import com.mackandall.jdvr.data.Jdvr
 import com.mackandall.jdvr.data.Prefs
+import com.mackandall.jdvr.data.Segment
 import com.mackandall.jdvr.ui.Button
 import com.mackandall.jdvr.ui.Jc
+import com.mackandall.jdvr.ui.tryFocus
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import timber.log.Timber
-import com.mackandall.jdvr.data.Buffer
-import com.mackandall.jdvr.data.Segment
-import com.mackandall.jdvr.ui.tryFocus
+import android.view.KeyEvent as AndroidKeyEvent
 
 private fun isCommercial(s: Segment) = s.type.equals("Commercial", ignoreCase = true)
 
@@ -121,7 +121,9 @@ fun RecordingPlayerScreen(
     val editor =
         remember {
             RecordingEditor(
-                itemId, player, scope,
+                itemId,
+                player,
+                scope,
                 say = { note = it },
                 reloadSegments = { rec.reloadSegments() },
                 closeControls = { controlsOpen = false },
@@ -129,7 +131,9 @@ fun RecordingPlayerScreen(
             )
         }
     editor.Effects(player.isPlaying)
-    val edit = com.mackandall.jdvr.ui.editPermission()
+    val edit =
+        com.mackandall.jdvr.ui
+            .editPermission()
 
     fun flash(
         message: String,
@@ -233,51 +237,52 @@ fun RecordingPlayerScreen(
     val exit by rememberUpdatedState(onExit)
     val playNext by rememberUpdatedState(onPlayRecording)
     val toLive by rememberUpdatedState(onBackToLive)
-    val actions = remember {
-        object : RecordingActions {
-            override fun playPause() {
-                if (player.isPlaying) player.pause() else player.play()
-                osdUntil = System.currentTimeMillis() + 5000
-            }
-
-            override fun seek(forward: Boolean) {
-                if (forward) player.seekForward() else player.seekBack()
-                osdUntil = System.currentTimeMillis() + 4000
-            }
-
-            // Stop: from a live TV buffer, done with the channel too, so its tuner input is freed now.
-            override fun stop() {
-                live?.let { Jdvr.backend.stopBuffering(it) }
-                exit()
-            }
-
-            override fun previous() {
-                rec.previous?.let(playNext)
-            }
-
-            // Next: the next recording, or from a buffer's last programme, live.
-            override fun next() {
-                val n = rec.next
-                when {
-                    n != null -> playNext(n)
-                    live != null -> toLive(live)
+    val actions =
+        remember {
+            object : RecordingActions {
+                override fun playPause() {
+                    if (player.isPlaying) player.pause() else player.play()
+                    osdUntil = System.currentTimeMillis() + 5000
                 }
-            }
 
-            // ● on a live TV buffer keeps it as a recording (or lets it go again).
-            override fun toggleKeep() {
-                val b = rec.buffer ?: return
-                scope.launch {
-                    Jdvr.backend.keepBuffer(b.id, !b.kept)?.let { rec.buffer = it }
-                    flash(if (b.kept) "Won't keep this buffer" else "Recording kept")
+                override fun seek(forward: Boolean) {
+                    if (forward) player.seekForward() else player.seekBack()
+                    osdUntil = System.currentTimeMillis() + 4000
                 }
-            }
 
-            override fun showOsd() {
-                osdUntil = System.currentTimeMillis() + 5000
+                // Stop: from a live TV buffer, done with the channel too, so its tuner input is freed now.
+                override fun stop() {
+                    live?.let { Jdvr.backend.stopBuffering(it) }
+                    exit()
+                }
+
+                override fun previous() {
+                    rec.previous?.let(playNext)
+                }
+
+                // Next: the next recording, or from a buffer's last programme, live.
+                override fun next() {
+                    val n = rec.next
+                    when {
+                        n != null -> playNext(n)
+                        live != null -> toLive(live)
+                    }
+                }
+
+                // ● on a live TV buffer keeps it as a recording (or lets it go again).
+                override fun toggleKeep() {
+                    val b = rec.buffer ?: return
+                    scope.launch {
+                        Jdvr.backend.keepBuffer(b.id, !b.kept)?.let { rec.buffer = it }
+                        flash(if (b.kept) "Won't keep this buffer" else "Recording kept")
+                    }
+                }
+
+                override fun showOsd() {
+                    osdUntil = System.currentTimeMillis() + 5000
+                }
             }
         }
-    }
 
     Box(
         Modifier
@@ -288,12 +293,17 @@ fun RecordingPlayerScreen(
             .onPreviewKeyEvent { e ->
                 lastKeyAt = System.currentTimeMillis()
                 e.type == KeyEventType.KeyDown && rec.error == null && actions.onMediaKey(e.key.nativeKeyCode, player.isPlaying)
-            }
-            .onKeyEvent { e ->
+            }.onKeyEvent { e ->
                 if (e.type != KeyEventType.KeyDown || rec.error != null || controlsOpen || infoOpen) return@onKeyEvent false
                 when (e.key.nativeKeyCode) {
-                    AndroidKeyEvent.KEYCODE_DPAD_LEFT -> actions.seek(false)
-                    AndroidKeyEvent.KEYCODE_DPAD_RIGHT -> actions.seek(true)
+                    AndroidKeyEvent.KEYCODE_DPAD_LEFT -> {
+                        actions.seek(false)
+                    }
+
+                    AndroidKeyEvent.KEYCODE_DPAD_RIGHT -> {
+                        actions.seek(true)
+                    }
+
                     AndroidKeyEvent.KEYCODE_DPAD_CENTER, AndroidKeyEvent.KEYCODE_ENTER -> {
                         val p = prompt
                         if (p != null) {
@@ -304,18 +314,33 @@ fun RecordingPlayerScreen(
                             controlsOpen = true
                         }
                     }
-                    AndroidKeyEvent.KEYCODE_DPAD_DOWN, AndroidKeyEvent.KEYCODE_MENU -> controlsOpen = true
-                    AndroidKeyEvent.KEYCODE_DPAD_UP, AndroidKeyEvent.KEYCODE_CHANNEL_UP -> if (live != null) onBackToLive(live) else actions.showOsd()
+
+                    AndroidKeyEvent.KEYCODE_DPAD_DOWN, AndroidKeyEvent.KEYCODE_MENU -> {
+                        controlsOpen = true
+                    }
+
+                    AndroidKeyEvent.KEYCODE_DPAD_UP, AndroidKeyEvent.KEYCODE_CHANNEL_UP -> {
+                        if (live != null) onBackToLive(live) else actions.showOsd()
+                    }
+
                     AndroidKeyEvent.KEYCODE_INFO -> {
                         infoOpen = rec.details != null
                         if (!infoOpen) actions.showOsd()
                     }
-                    else -> return@onKeyEvent false
+
+                    else -> {
+                        return@onKeyEvent false
+                    }
                 }
                 true
             },
     ) {
-        AndroidView(factory = { ctx -> PlayerView(ctx).apply { useController = false; this.player = player } }, modifier = Modifier.fillMaxSize())
+        AndroidView(factory = { ctx ->
+            PlayerView(ctx).apply {
+                useController = false
+                this.player = player
+            }
+        }, modifier = Modifier.fillMaxSize())
 
         val osd = !infoOpen && (System.currentTimeMillis() < osdUntil || !player.isPlaying || controlsOpen)
         // The top box takes the top of the screen: the skip prompt and notes go just below it.
@@ -326,11 +351,26 @@ fun RecordingPlayerScreen(
                 color = Jc.OnFocus,
                 fontSize = 20.sp,
                 fontWeight = FontWeight.Bold,
-                modifier = Modifier.align(Alignment.TopEnd).padding(start = 32.dp, end = 32.dp, top = cornerTop).background(Jc.Focus, RoundedCornerShape(10.dp)).padding(horizontal = 18.dp, vertical = 10.dp),
+                modifier =
+                    Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(start = 32.dp, end = 32.dp, top = cornerTop)
+                        .background(Jc.Focus, RoundedCornerShape(10.dp))
+                        .padding(horizontal = 18.dp, vertical = 10.dp),
             )
         }
         note?.let {
-            Text(it, color = Jc.Text, fontSize = 16.sp, modifier = Modifier.align(Alignment.TopEnd).padding(start = 32.dp, end = 32.dp, top = cornerTop).background(Jc.Ink.copy(alpha = 0.8f), RoundedCornerShape(10.dp)).padding(14.dp))
+            Text(
+                it,
+                color = Jc.Text,
+                fontSize = 16.sp,
+                modifier =
+                    Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(start = 32.dp, end = 32.dp, top = cornerTop)
+                        .background(Jc.Ink.copy(alpha = 0.8f), RoundedCornerShape(10.dp))
+                        .padding(14.dp),
+            )
         }
 
         if (osd && prefs.infoBoxTop) rec.details?.let { RecordingTopBox(it, rec.nextTitle, Modifier.align(Alignment.TopCenter)) }
@@ -387,7 +427,9 @@ fun RecordingPlayerScreen(
                     if (live != null) Button("Back to live") { onBackToLive(live) }
                 }
                 // Editing (paused, users allowed to edit recordings), on its own line.
-                if (edit != null && !player.isPlaying && live == null && !rec.inProgress && com.mackandall.jdvr.ui.cuttingFor(itemId.toString()) == null) {
+                if (edit != null && !player.isPlaying && live == null && !rec.inProgress && com.mackandall.jdvr.ui
+                        .cuttingFor(itemId.toString()) == null
+                ) {
                     EditRow(editor, edit)
                 }
             }
@@ -515,7 +557,13 @@ private fun SegmentBar(
                 }
             }
             val f = (position.toFloat() / duration).coerceIn(0f, 1f)
-            Box(Modifier.fillMaxHeight().fillMaxWidth(f).padding(vertical = 3.dp).background(Jc.Focus.copy(alpha = 0.85f), RoundedCornerShape(3.dp)))
+            Box(
+                Modifier
+                    .fillMaxHeight()
+                    .fillMaxWidth(f)
+                    .padding(vertical = 3.dp)
+                    .background(Jc.Focus.copy(alpha = 0.85f), RoundedCornerShape(3.dp)),
+            )
         }
     }
 }

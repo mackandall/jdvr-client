@@ -32,15 +32,17 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -50,13 +52,13 @@ import androidx.tv.material3.Border
 import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.layout.ContentScale
 import coil3.compose.AsyncImage
 import com.mackandall.jdvr.data.Channel
 import com.mackandall.jdvr.data.Jdvr
-import com.mackandall.jdvr.data.plainId
+import com.mackandall.jdvr.data.MarkSymbols
 import com.mackandall.jdvr.data.Program
+import com.mackandall.jdvr.data.attempt
+import com.mackandall.jdvr.data.plainId
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -65,8 +67,6 @@ import java.time.Duration
 import java.time.LocalDateTime
 import java.time.temporal.ChronoUnit
 import java.util.UUID
-import com.mackandall.jdvr.data.MarkSymbols
-import com.mackandall.jdvr.data.attempt
 
 private const val WINDOW_MINUTES = 120L
 private const val STEP_MINUTES = 30L
@@ -79,6 +79,7 @@ private const val BLOCK_HOURS = 3L
 private const val FETCH_HOURS = 9L
 
 private fun blockStart(t: LocalDateTime): LocalDateTime = t.truncatedTo(ChronoUnit.HOURS).let { it.minusHours(it.hour % BLOCK_HOURS) }
+
 private val ChannelColumn = 150.dp
 private val RowHeight = 62.dp
 
@@ -100,10 +101,10 @@ private data class GuideExtras(
 
 private val LocalGuideExtras = androidx.compose.runtime.compositionLocalOf { GuideExtras() }
 
-/** Each programme cell's own focus handle, by programme id: to put focus back on exactly that cell. */
 /** The channel last focused in the guide (this run): where the guide opens next time. */
 private var lastGuideChannel: Pair<String, UUID>? = null
 
+/** Each programme cell's own focus handle, by programme id: to put focus back on exactly that cell. */
 private val LocalCellFocus = androidx.compose.runtime.staticCompositionLocalOf { mutableMapOf<UUID, FocusRequester>() }
 
 private fun floorToHalfHour(t: LocalDateTime): LocalDateTime = t.truncatedTo(ChronoUnit.HOURS).plusMinutes(if (t.minute >= 30) 30 else 0)
@@ -141,7 +142,9 @@ fun GuideScreen(
     // from `focused`, because as the panel and then the player go away, focus falls on whatever
     // cell is at that spot on screen (rows above), and the guide scrolls to it.
     var returnTo by remember { mutableStateOf<Program?>(null) }
-    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+    val listState =
+        androidx.compose.foundation.lazy
+            .rememberLazyListState()
     // After the window moves: which channel and moment should take focus.
     var pendingFocus by remember { mutableStateOf<Pair<UUID, LocalDateTime>?>(null) }
     val symbols = rememberMarkSymbols()
@@ -160,7 +163,12 @@ fun GuideScreen(
         while (true) {
             val favourites =
                 if (Jc.Style == UiStyle.Sage) {
-                    Jdvr.backend.upcoming().orEmpty().filter { it.kind == "favourite" }.mapNotNull { it.programId?.plainId() }.toSet()
+                    Jdvr.backend
+                        .upcoming()
+                        .orEmpty()
+                        .filter { it.kind == "favourite" }
+                        .mapNotNull { it.programId?.plainId() }
+                        .toSet()
                 } else {
                     emptySet()
                 }
@@ -300,6 +308,7 @@ fun GuideScreen(
     // The cell a ▲▼ is moving to: its focus mustn't reset the anchor.
     var verticalTo by remember { mutableStateOf<UUID?>(null) }
     var gridHasFocus by remember { mutableStateOf(false) }
+
     fun onCellFocused(p: Program) {
         focused = p
         lastGuideChannel = Jdvr.serverKey to p.channelId
@@ -357,9 +366,10 @@ fun GuideScreen(
 
     // Opening: the channel last focused in the guide, else the one last watched; its row scrolled
     // near the top so it's there to take focus.
-    val openingOn = remember {
-        startChannel ?: lastGuideChannel?.takeIf { it.first == Jdvr.serverKey }?.second ?: runCatching { UUID.fromString(Jdvr.session.lastChannelId) }.getOrNull()
-    }
+    val openingOn =
+        remember {
+            startChannel ?: lastGuideChannel?.takeIf { it.first == Jdvr.serverKey }?.second ?: runCatching { UUID.fromString(Jdvr.session.lastChannelId) }.getOrNull()
+        }
     // Where the opening programme is looked for: now, or the time asked for.
     val openingAt = remember { maxOf(startAt ?: LocalDateTime.now(), LocalDateTime.now()) }
     LaunchedEffect(channels) {
@@ -395,160 +405,170 @@ fun GuideScreen(
     }
 
     androidx.compose.runtime.CompositionLocalProvider(LocalGuideExtras provides extras, LocalCellFocus provides cellFocus) {
-    // A key pressed in the guide means focus is where the user put it: the way back in follows it again.
-    Box(Modifier.fillMaxSize().onPreviewKeyEvent { e ->
-        if (e.type == KeyEventType.KeyDown) returnTo = null
-        // ▲▼ in the grid (not in the actions panel over it).
-        if (e.type == KeyEventType.KeyDown && gridHasFocus && selected == null) {
-            when (e.key) {
-                Key.DirectionDown -> return@onPreviewKeyEvent moveVertical(1)
-                Key.DirectionUp -> return@onPreviewKeyEvent moveVertical(-1)
-            }
-        }
-        false
-    }) {
-    GuideArt(art)
-    Column(Modifier.fillMaxSize()) {
-    // "Above the guide" / "Below the guide" (Settings): the details on a band, the grid at full width.
-    @Composable
-    fun band() =
-        // Light: the picture sits behind the details.
-        Box(Modifier.fillMaxWidth().height(BandHeight).background(guidePanel(0.3f))) {
-            focused?.let { InfoBand(it, channels?.firstOrNull { c -> c.id == it.channelId }, symbols) }
-                ?: if (channels?.isEmpty() != true) Text("Move through the guide to see a programme here; OK for what you can do with it.", color = Jc.Muted, fontSize = 15.sp, modifier = Modifier.padding(22.dp)) else Unit
-        }
-    if (infoOnTop) band()
-    Row(Modifier.weight(1f).fillMaxWidth()) {
-        Column(Modifier.weight(if (infoBand) 1f else 0.74f).fillMaxHeight().padding(start = 20.dp, top = if (infoOnTop) 8.dp else 20.dp)) {
-            Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                Text("Guide", color = Jc.Title, fontSize = 28.sp, fontWeight = FontWeight.SemiBold)
-                Text(windowStart.day(), color = Jc.Muted, fontSize = 16.sp, modifier = Modifier.padding(bottom = 4.dp))
-                error?.let { Text(it, color = Jc.Amber, fontSize = 14.sp, modifier = Modifier.padding(bottom = 4.dp)) }
-                guideNote?.let { Text(it, color = Jc.Focus, fontSize = 15.sp, modifier = Modifier.padding(bottom = 4.dp)) }
-                if (groups.size > 1) {
-                    val shown = group.takeIf { it in groups } ?: groups.first()
-                    // OK steps to the next group.
-                    // The way in from the menu too, when the group has no channels to focus.
-                    val way = if (channels?.isEmpty() == true) Modifier.focusRequester(entry) else Modifier
-                    Button(
-                        "Channels: $shown",
-                        compact = true,
-                        // Up here, the top rows are shown (▲ came from the first channel).
-                        modifier = Modifier.padding(bottom = 2.dp).focusRequester(groupFocus).then(way).onFocusChanged { if (it.isFocused) guideScope.launch { listState.scrollToItem(0) } }
-                            // ▼: the first channel's programme on now (Compose's own search lands rows lower).
-                            .onPreviewKeyEvent { e ->
-                                if (e.type != KeyEventType.KeyDown || e.key != Key.DirectionDown) return@onPreviewKeyEvent false
-                                val first = channels?.firstOrNull() ?: return@onPreviewKeyEvent false
-                                val p = programs[first.id].orEmpty().firstOrNull { it.end.isAfter(windowStart) } ?: return@onPreviewKeyEvent false
-                                cellFocus[p.id]?.let { it.tryFocus() } == true
-                            },
-                    ) {
-                        Jdvr.prefs.changeChannelGroup(groups[(groups.indexOf(shown) + 1) % groups.size])
+        // A key pressed in the guide means focus is where the user put it: the way back in follows it again.
+        Box(
+            Modifier.fillMaxSize().onPreviewKeyEvent { e ->
+                if (e.type == KeyEventType.KeyDown) returnTo = null
+                // ▲▼ in the grid (not in the actions panel over it).
+                if (e.type == KeyEventType.KeyDown && gridHasFocus && selected == null) {
+                    when (e.key) {
+                        Key.DirectionDown -> return@onPreviewKeyEvent moveVertical(1)
+                        Key.DirectionUp -> return@onPreviewKeyEvent moveVertical(-1)
                     }
                 }
-            }
-            val list = channels
-            if (list == null) {
-                Spacer(12)
-                if (error == null) Text("Loading the guide…", color = Jc.Muted, fontSize = 16.sp)
-                return@Column
-            }
-            if (list.isEmpty() && groups.size > 1 && group in groups) {
-                Spacer(12)
-                Text(
-                    if (Jdvr.isNextPvr) "No channels in “$group”. Its channels are set in NextPVR's Channels settings."
-                    else "No channels in “$group”. Mark channels as favourites in Jellyfin's web client.",
-                    color = Jc.Muted,
-                    fontSize = 16.sp,
-                    modifier = Modifier.fillMaxWidth(0.8f),
-                )
-                return@Column
-            }
-            if (list.isEmpty()) {
-                Spacer(12)
-                Text(NO_LIVE_TV, color = Jc.Muted, fontSize = 16.sp, modifier = Modifier.fillMaxWidth(0.8f))
-                return@Column
-            }
-            androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize()) {
-                val gridWidth = maxWidth - ChannelColumn - 12.dp
-                val perMinute = gridWidth / WINDOW_MINUTES.toFloat()
-                Column {
-                    TimeRuler(windowStart, perMinute)
-                    Box {
-                        // Behind the cells: shows in the gaps between them, never over the titles.
-                        NowLine(windowStart, perMinute)
-                        // The way back in (after the rail or a player): the programme picked to watch, else the last one on;
-                        // opening the guide, what's on now on the channel last focused in it (else the one last watched).
-                        val home =
-                            (returnTo ?: focused ?: openingOn?.let { ch -> programs[ch].orEmpty().firstOrNull { it.end.isAfter(openingAt) } })
-                                ?.takeIf { p -> list.any { it.id == p.channelId } }
-                        LazyColumn(state = listState, contentPadding = PaddingValues(bottom = 40.dp), modifier = Modifier.onFocusChanged { gridHasFocus = it.hasFocus }) {
-                            items(list, key = { it.id }) { ch ->
-                                GuideRow(
-                                    channel = ch,
-                                    programs = programs[ch.id].orEmpty(),
-                                    windowStart = windowStart,
-                                    perMinute = perMinute,
-                                    gridWidth = gridWidth,
-                                    symbols = symbols,
-                                    pendingFocus = pendingFocus?.takeIf { it.first == ch.id }?.second,
-                                    onFocusTaken = { pendingFocus = null },
-                                    onSelect = { selected = it },
-                                    onFocused = { onCellFocused(it) },
-                                    entry = if (ch.id == (home?.channelId ?: list.first().id)) entry else null,
-                                    entryProgram = home?.id,
-                                    onShift = { minutes -> shift(minutes, ch.id) },
-                                )
+                false
+            },
+        ) {
+            GuideArt(art)
+            Column(Modifier.fillMaxSize()) {
+                // "Above the guide" / "Below the guide" (Settings): the details on a band, the grid at full width.
+                @Composable
+                fun band() =
+                    // Light: the picture sits behind the details.
+                    Box(Modifier.fillMaxWidth().height(BandHeight).background(guidePanel(0.3f))) {
+                        focused?.let { InfoBand(it, channels?.firstOrNull { c -> c.id == it.channelId }, symbols) }
+                            ?: if (channels?.isEmpty() != true) Text("Move through the guide to see a programme here; OK for what you can do with it.", color = Jc.Muted, fontSize = 15.sp, modifier = Modifier.padding(22.dp)) else Unit
+                    }
+                if (infoOnTop) band()
+                Row(Modifier.weight(1f).fillMaxWidth()) {
+                    Column(Modifier.weight(if (infoBand) 1f else 0.74f).fillMaxHeight().padding(start = 20.dp, top = if (infoOnTop) 8.dp else 20.dp)) {
+                        Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                            Text("Guide", color = Jc.Title, fontSize = 28.sp, fontWeight = FontWeight.SemiBold)
+                            Text(windowStart.day(), color = Jc.Muted, fontSize = 16.sp, modifier = Modifier.padding(bottom = 4.dp))
+                            error?.let { Text(it, color = Jc.Amber, fontSize = 14.sp, modifier = Modifier.padding(bottom = 4.dp)) }
+                            guideNote?.let { Text(it, color = Jc.Focus, fontSize = 15.sp, modifier = Modifier.padding(bottom = 4.dp)) }
+                            if (groups.size > 1) {
+                                val shown = group.takeIf { it in groups } ?: groups.first()
+                                // OK steps to the next group.
+                                // The way in from the menu too, when the group has no channels to focus.
+                                val way = if (channels?.isEmpty() == true) Modifier.focusRequester(entry) else Modifier
+                                Button(
+                                    "Channels: $shown",
+                                    compact = true,
+                                    // Up here, the top rows are shown (▲ came from the first channel).
+                                    modifier =
+                                        Modifier
+                                            .padding(bottom = 2.dp)
+                                            .focusRequester(groupFocus)
+                                            .then(way)
+                                            .onFocusChanged { if (it.isFocused) guideScope.launch { listState.scrollToItem(0) } }
+                                            // ▼: the first channel's programme on now (Compose's own search lands rows lower).
+                                            .onPreviewKeyEvent { e ->
+                                                if (e.type != KeyEventType.KeyDown || e.key != Key.DirectionDown) return@onPreviewKeyEvent false
+                                                val first = channels?.firstOrNull() ?: return@onPreviewKeyEvent false
+                                                val p = programs[first.id].orEmpty().firstOrNull { it.end.isAfter(windowStart) } ?: return@onPreviewKeyEvent false
+                                                cellFocus[p.id]?.let { it.tryFocus() } == true
+                                            },
+                                ) {
+                                    Jdvr.prefs.changeChannelGroup(groups[(groups.indexOf(shown) + 1) % groups.size])
+                                }
+                            }
+                        }
+                        val list = channels
+                        if (list == null) {
+                            Spacer(12)
+                            if (error == null) Text("Loading the guide…", color = Jc.Muted, fontSize = 16.sp)
+                            return@Column
+                        }
+                        if (list.isEmpty() && groups.size > 1 && group in groups) {
+                            Spacer(12)
+                            Text(
+                                if (Jdvr.isNextPvr) {
+                                    "No channels in “$group”. Its channels are set in NextPVR's Channels settings."
+                                } else {
+                                    "No channels in “$group”. Mark channels as favourites in Jellyfin's web client."
+                                },
+                                color = Jc.Muted,
+                                fontSize = 16.sp,
+                                modifier = Modifier.fillMaxWidth(0.8f),
+                            )
+                            return@Column
+                        }
+                        if (list.isEmpty()) {
+                            Spacer(12)
+                            Text(NO_LIVE_TV, color = Jc.Muted, fontSize = 16.sp, modifier = Modifier.fillMaxWidth(0.8f))
+                            return@Column
+                        }
+                        androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize()) {
+                            val gridWidth = maxWidth - ChannelColumn - 12.dp
+                            val perMinute = gridWidth / WINDOW_MINUTES.toFloat()
+                            Column {
+                                TimeRuler(windowStart, perMinute)
+                                Box {
+                                    // Behind the cells: shows in the gaps between them, never over the titles.
+                                    NowLine(windowStart, perMinute)
+                                    // The way back in (after the rail or a player): the programme picked to watch, else the last one on;
+                                    // opening the guide, what's on now on the channel last focused in it (else the one last watched).
+                                    val home =
+                                        (returnTo ?: focused ?: openingOn?.let { ch -> programs[ch].orEmpty().firstOrNull { it.end.isAfter(openingAt) } })
+                                            ?.takeIf { p -> list.any { it.id == p.channelId } }
+                                    LazyColumn(state = listState, contentPadding = PaddingValues(bottom = 40.dp), modifier = Modifier.onFocusChanged { gridHasFocus = it.hasFocus }) {
+                                        items(list, key = { it.id }) { ch ->
+                                            GuideRow(
+                                                channel = ch,
+                                                programs = programs[ch.id].orEmpty(),
+                                                windowStart = windowStart,
+                                                perMinute = perMinute,
+                                                gridWidth = gridWidth,
+                                                symbols = symbols,
+                                                pendingFocus = pendingFocus?.takeIf { it.first == ch.id }?.second,
+                                                onFocusTaken = { pendingFocus = null },
+                                                onSelect = { selected = it },
+                                                onFocused = { onCellFocused(it) },
+                                                entry = if (ch.id == (home?.channelId ?: list.first().id)) entry else null,
+                                                entryProgram = home?.id,
+                                                onShift = { minutes -> shift(minutes, ch.id) },
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    // Side layout: the right quarter shows the programme the cursor is on, or its actions after OK.
+                    if (!infoBand) {
+                        Box(Modifier.weight(0.26f).fillMaxHeight().background(guidePanel(0.6f))) {
+                            val p = selected
+                            if (p == null) {
+                                focused?.let { InfoPanel(it, channels?.firstOrNull { c -> c.id == it.channelId }, symbols) }
+                                    ?: if (channels?.isEmpty() != true) Text("Move through the guide to see a programme here; OK for what you can do with it.", color = Jc.Muted, fontSize = 15.sp, modifier = Modifier.padding(22.dp)) else Unit
+                            } else {
+                                // Its actions open over the guide (below), docked or floating.
+                                InfoPanel(p, channels?.firstOrNull { c -> c.id == p.channelId }, symbols)
                             }
                         }
                     }
                 }
+                if (infoBelow) band()
+            }
+            // A programme's actions: a panel over the right of the grid, its buttons in two columns.
+            selected?.let { p ->
+                ProgramActionsHost(onDismiss = { closePanel() }) { Actions(p) }
+            }
+            airingsFor?.let { p ->
+                AiringsDialog(
+                    programId = p.id,
+                    onNote = { msg ->
+                        guideNote = msg
+                        guideScope.launch {
+                            delay(1500) // the server schedules in the background
+                            reload++
+                        }
+                    },
+                    onDismiss = {
+                        airingsFor = null
+                        // Back to the programme it was opened from.
+                        guideScope.launch {
+                            repeat(10) {
+                                delay(60)
+                                val r = cellFocus[p.id] ?: return@repeat
+                                if (r.tryFocus()) return@launch
+                            }
+                        }
+                    },
+                )
             }
         }
-        // Side layout: the right quarter shows the programme the cursor is on, or its actions after OK.
-        if (!infoBand) {
-            Box(Modifier.weight(0.26f).fillMaxHeight().background(guidePanel(0.6f))) {
-                val p = selected
-                if (p == null) {
-                    focused?.let { InfoPanel(it, channels?.firstOrNull { c -> c.id == it.channelId }, symbols) }
-                        ?: if (channels?.isEmpty() != true) Text("Move through the guide to see a programme here; OK for what you can do with it.", color = Jc.Muted, fontSize = 15.sp, modifier = Modifier.padding(22.dp)) else Unit
-                } else {
-                    // Its actions open over the guide (below), docked or floating.
-                    InfoPanel(p, channels?.firstOrNull { c -> c.id == p.channelId }, symbols)
-                }
-            }
-        }
-    }
-    if (infoBelow) band()
-    }
-    // A programme's actions: a panel over the right of the grid, its buttons in two columns.
-    selected?.let { p ->
-        ProgramActionsHost(onDismiss = { closePanel() }) { Actions(p) }
-    }
-    airingsFor?.let { p ->
-        AiringsDialog(
-            programId = p.id,
-            onNote = { msg ->
-                guideNote = msg
-                guideScope.launch {
-                    delay(1500) // the server schedules in the background
-                    reload++
-                }
-            },
-            onDismiss = {
-                airingsFor = null
-                // Back to the programme it was opened from.
-                guideScope.launch {
-                    repeat(10) {
-                        delay(60)
-                        val r = cellFocus[p.id] ?: return@repeat
-                        if (r.tryFocus()) return@launch
-                    }
-                }
-            },
-        )
-    }
-    }
     }
 }
 
@@ -567,7 +587,6 @@ private fun GuideArt(program: Program?) {
     FadingBackdrop(program?.id, url, null)
 }
 
-/** The details band above the guide ("Above the guide" in Settings). */
 /** Recording / buffer / live-scan chips for the programme in the info area. */
 @Composable
 private fun GuideChips(p: Program) {
@@ -582,7 +601,10 @@ private val PictureWidth = 240.dp
 
 /** Nothing for today (the band's times are today's unless it says), "Tomorrow", else the date. */
 private fun relativeDay(t: LocalDateTime): String? =
-    when (java.time.temporal.ChronoUnit.DAYS.between(java.time.LocalDate.now(), t.toLocalDate())) {
+    when (
+        java.time.temporal.ChronoUnit.DAYS
+            .between(java.time.LocalDate.now(), t.toLocalDate())
+    ) {
         0L -> null
         1L -> "Tomorrow"
         -1L -> "Yesterday"
@@ -664,7 +686,14 @@ private fun InfoBand(
 @Composable
 private fun ChannelLogoTile(c: Channel) {
     Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Box(Modifier.width(76.dp).height(40.dp).background(Jc.Panel2, RoundedCornerShape(7.dp)).padding(horizontal = 6.dp, vertical = 4.dp), contentAlignment = Alignment.Center) {
+        Box(
+            Modifier
+                .width(76.dp)
+                .height(40.dp)
+                .background(Jc.Panel2, RoundedCornerShape(7.dp))
+                .padding(horizontal = 6.dp, vertical = 4.dp),
+            contentAlignment = Alignment.Center,
+        ) {
             if (c.logoUrl != null) {
                 AsyncImage(model = c.logoUrl, contentDescription = c.name, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize())
             } else {
@@ -696,7 +725,8 @@ private fun InfoPanel(
         }
         MarkChips(marks)
         p.overview?.let { Text(it, color = Jc.Muted, fontSize = 15.sp, maxLines = 10, overflow = TextOverflow.Ellipsis) }
-        androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
+        androidx.compose.foundation.layout
+            .Spacer(Modifier.weight(1f))
         Text("OK: watch, record, favourites", color = Jc.Muted, fontSize = 13.sp)
     }
 }
@@ -771,24 +801,25 @@ private fun GuideRow(
             val width = perMinute * Duration.between(from, to).toMinutes().toFloat()
             // A gap before the first programme (missing guide data).
             if (i == 0 && from.isAfter(windowStart)) {
-                androidx.compose.foundation.layout.Spacer(Modifier.width(perMinute * Duration.between(windowStart, from).toMinutes().toFloat()))
+                androidx.compose.foundation.layout
+                    .Spacer(Modifier.width(perMinute * Duration.between(windowStart, from).toMinutes().toFloat()))
             }
             val wantFocus = pendingFocus != null && !p.start.isAfter(pendingFocus) && p.end.isAfter(pendingFocus)
             // Keyed by programme: without it, moving the window reused the focused cell for another
             // programme, so focus never moved and the info panel kept showing the old one.
             androidx.compose.runtime.key(p.id) {
-            ProgramCell(
-                program = p,
-                width = width,
-                symbols = symbols,
-                requestFocus = wantFocus,
-                onFocusTaken = onFocusTaken,
-                onClick = { onSelect(p) },
-                onFocused = { onFocused(p) },
-                entry = if (p.id == entryProgram || (i == 0 && visible.none { it.id == entryProgram })) entry else null,
-                onEdgeRight = if (i == visible.lastIndex) ({ onShift(STEP_MINUTES) }) else null,
-                onEdgeLeft = if (i == 0) ({ onShift(-STEP_MINUTES) }) else null,
-            )
+                ProgramCell(
+                    program = p,
+                    width = width,
+                    symbols = symbols,
+                    requestFocus = wantFocus,
+                    onFocusTaken = onFocusTaken,
+                    onClick = { onSelect(p) },
+                    onFocused = { onFocused(p) },
+                    entry = if (p.id == entryProgram || (i == 0 && visible.none { it.id == entryProgram })) entry else null,
+                    onEdgeRight = if (i == visible.lastIndex) ({ onShift(STEP_MINUTES) }) else null,
+                    onEdgeLeft = if (i == 0) ({ onShift(-STEP_MINUTES) }) else null,
+                )
             }
         }
     }
@@ -840,7 +871,14 @@ private fun ProgramCell(
     // Dark type on the green, white on red and everywhere else.
     val darkType = npvr && cellFocused && !extras.realRecording(program)
     val titleColor = if (darkType) NextPvrInk else Jc.Text
-    val subColor = if (darkType) NextPvrInk.copy(alpha = 0.75f) else if (npvr && cellFocused) Color.White.copy(alpha = 0.8f) else Jc.Muted
+    val subColor =
+        if (darkType) {
+            NextPvrInk.copy(alpha = 0.75f)
+        } else if (npvr && cellFocused) {
+            Color.White.copy(alpha = 0.8f)
+        } else {
+            Jc.Muted
+        }
     Surface(
         onClick = onClick,
         modifier =
@@ -853,13 +891,14 @@ private fun ProgramCell(
                 .onFocusChangedCompat {
                     cellFocused = it
                     if (it) onFocused()
-                }
-                .onPreviewKeyEvent { e ->
+                }.onPreviewKeyEvent { e ->
                     if (e.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                     when {
                         e.key == Key.DirectionRight && onEdgeRight != null -> onEdgeRight()
+
                         // At now already: not used, so it reaches the screen and opens the rail.
                         e.key == Key.DirectionLeft && onEdgeLeft != null -> onEdgeLeft()
+
                         else -> false
                     }
                 },
@@ -879,8 +918,11 @@ private fun ProgramCell(
                 // Red for a recording, two dots when a series records it; faint for a live TV buffer
                 // (only kept if someone presses Record).
                 if (program.isRecording) {
-                    if (program.seriesTimerId != null && !extras.isBuffer(program)) SeriesDots(height = 8.dp)
-                    else Box(Modifier.size(8.dp).background(Jc.Recording.copy(alpha = if (extras.isBuffer(program)) 0.35f else 1f), CircleShape))
+                    if (program.seriesTimerId != null && !extras.isBuffer(program)) {
+                        SeriesDots(height = 8.dp)
+                    } else {
+                        Box(Modifier.size(8.dp).background(Jc.Recording.copy(alpha = if (extras.isBuffer(program)) 0.35f else 1f), CircleShape))
+                    }
                 }
                 Text(program.name, color = titleColor, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
                 if (extras.scanning(program)) Text("CS", color = Jc.OnAmber, fontSize = 10.sp, fontWeight = FontWeight.Bold, modifier = Modifier.background(Jc.Amber, RoundedCornerShape(4.dp)).padding(horizontal = 4.dp))

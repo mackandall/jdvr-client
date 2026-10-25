@@ -19,8 +19,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -55,51 +55,55 @@ private fun gb(bytes: Long): String = (bytes / GB).let { if (it >= 100) "%.0f GB
  * the show's folder there. Back closes it.
  */
 @Composable
-fun ArchivePicker(choices: ArchiveChoices, onPick: (ArchiveChoice) -> Unit, onDismiss: () -> Unit) {
+fun ArchivePicker(
+    choices: ArchiveChoices,
+    onPick: (ArchiveChoice) -> Unit,
+    onDismiss: () -> Unit,
+) {
     val first = remember { FocusRequester() }
     var hasFocus by remember { mutableStateOf(false) }
     val usable = choices.targets.map { it.problem == null && choices.blocked == null }
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         androidx.compose.runtime.CompositionLocalProvider(LocalWideButtons provides false) {
-        Column(
-            Modifier
-                .width(720.dp)
-                .clip(RoundedCornerShape(16.dp))
-                .background(Jc.Sheet)
-                .onFocusChanged { hasFocus = it.hasFocus }
-                .padding(28.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            val many = choices.count > 1
-            Text(if (many) "Move all to archive" else "Move to archive", fontSize = 26.sp, color = Jc.Text)
-            Text(
-                "${choices.name}${if (many) " · ${choices.count} recordings" else ""} · ${KindLabels[choices.kind] ?: choices.kind} · ${gb(choices.bytes)}",
-                fontSize = 16.sp,
-                color = Jc.Muted,
-            )
-            choices.note?.let { Text(it, fontSize = 16.sp, color = Jc.Amber) }
-            if (choices.targets.any { it.totalBytes != null }) Legend(if (many) "these ${choices.count} recordings" else "this recording")
-            choices.blocked?.let { Text("It can't be moved while it's $it.", fontSize = 16.sp, color = Jc.Amber) }
-            if (choices.targets.isEmpty()) {
+            Column(
+                Modifier
+                    .width(720.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(Jc.Sheet)
+                    .onFocusChanged { hasFocus = it.hasFocus }
+                    .padding(28.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                val many = choices.count > 1
+                Text(if (many) "Move all to archive" else "Move to archive", fontSize = 26.sp, color = Jc.Text)
                 Text(
-                    "No archive location takes ${(KindLabels[choices.kind] ?: choices.kind).lowercase()} recordings yet. " +
-                        "Add one in the web dashboard: Plugins › JellyDVR Space › Archive storage.",
+                    "${choices.name}${if (many) " · ${choices.count} recordings" else ""} · ${KindLabels[choices.kind] ?: choices.kind} · ${gb(choices.bytes)}",
                     fontSize = 16.sp,
-                    color = Jc.Text,
+                    color = Jc.Muted,
                 )
-            }
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                items(choices.targets.indices.toList()) { i ->
-                    val t = choices.targets[i]
-                    val focus = if (i == usable.indexOf(true)) Modifier.focusRequester(first) else Modifier
-                    Destination(t, choices.bytes, usable[i], focus) { onPick(t) }
+                choices.note?.let { Text(it, fontSize = 16.sp, color = Jc.Amber) }
+                if (choices.targets.any { it.totalBytes != null }) Legend(if (many) "these ${choices.count} recordings" else "this recording")
+                choices.blocked?.let { Text("It can't be moved while it's $it.", fontSize = 16.sp, color = Jc.Amber) }
+                if (choices.targets.isEmpty()) {
+                    Text(
+                        "No archive location takes ${(KindLabels[choices.kind] ?: choices.kind).lowercase()} recordings yet. " +
+                            "Add one in the web dashboard: Plugins › JellyDVR Space › Archive storage.",
+                        fontSize = 16.sp,
+                        color = Jc.Text,
+                    )
                 }
-                item {
-                    val cancelFocus = if (usable.none { it }) Modifier.focusRequester(first) else Modifier
-                    Button("Cancel", modifier = cancelFocus.padding(top = 4.dp), onClick = onDismiss)
+                LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    items(choices.targets.indices.toList()) { i ->
+                        val t = choices.targets[i]
+                        val focus = if (i == usable.indexOf(true)) Modifier.focusRequester(first) else Modifier
+                        Destination(t, choices.bytes, usable[i], focus) { onPick(t) }
+                    }
+                    item {
+                        val cancelFocus = if (usable.none { it }) Modifier.focusRequester(first) else Modifier
+                        Button("Cancel", modifier = cancelFocus.padding(top = 4.dp), onClick = onDismiss)
+                    }
                 }
             }
-        }
         }
     }
     LaunchedEffect(Unit) {
@@ -114,7 +118,13 @@ fun ArchivePicker(choices: ArchiveChoices, onPick: (ArchiveChoice) -> Unit, onDi
 }
 
 @Composable
-private fun Destination(t: ArchiveChoice, bytes: Long, usable: Boolean, modifier: Modifier, onClick: () -> Unit) {
+private fun Destination(
+    t: ArchiveChoice,
+    bytes: Long,
+    usable: Boolean,
+    modifier: Modifier,
+    onClick: () -> Unit,
+) {
     Surface(
         onClick = { if (usable) onClick() },
         modifier = modifier.fillMaxWidth(),
@@ -142,7 +152,10 @@ private fun Destination(t: ArchiveChoice, bytes: Long, usable: Boolean, modifier
             )
             if (free != null && t.totalBytes != null && t.totalBytes > 0) SpaceBar(t, free, t.totalBytes, bytes)
             when {
-                t.problem != null -> Text(t.problem, fontSize = 14.sp, color = Jc.Recording)
+                t.problem != null -> {
+                    Text(t.problem, fontSize = 14.sp, color = Jc.Recording)
+                }
+
                 else -> {
                     Text("→ ${t.destination}", fontSize = 13.sp, color = Jc.Muted, maxLines = 1)
                     t.note?.let { Text(it, fontSize = 14.sp, color = Jc.Amber) }
@@ -153,12 +166,30 @@ private fun Destination(t: ArchiveChoice, bytes: Long, usable: Boolean, modifier
 }
 
 @Composable
-private fun SpaceBar(t: ArchiveChoice, free: Long, total: Long, bytes: Long) {
+private fun SpaceBar(
+    t: ArchiveChoice,
+    free: Long,
+    total: Long,
+    bytes: Long,
+) {
     val fits = free >= bytes
     val belowFloor = fits && free - bytes < t.keepFreeGb * GB
-    val mineColour = if (!fits) Jc.Recording else if (belowFloor) Jc.Amber else MineColour
+    val mineColour =
+        if (!fits) {
+            Jc.Recording
+        } else if (belowFloor) {
+            Jc.Amber
+        } else {
+            MineColour
+        }
     val track = Jc.Text.copy(alpha = 0.12f)
-    Canvas(Modifier.fillMaxWidth().padding(top = 4.dp).height(10.dp).clip(RoundedCornerShape(5.dp))) {
+    Canvas(
+        Modifier
+            .fillMaxWidth()
+            .padding(top = 4.dp)
+            .height(10.dp)
+            .clip(RoundedCornerShape(5.dp)),
+    ) {
         fun x(b: Double) = (b / total).coerceIn(0.0, 1.0).toFloat() * size.width
         val used = (total - free).toDouble()
         val mine = (if (fits) bytes else free).toDouble()

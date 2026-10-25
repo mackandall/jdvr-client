@@ -190,7 +190,17 @@ fun NextPvrSeriesOptions(
                     }
                 }
                 Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Button(if (saving) "Saving…" else if (r.id == null) "Record series" else "Save", primary = true, leading = if (r.id == null) ({ SeriesDots() }) else null) {
+                    Button(
+                        if (saving) {
+                            "Saving…"
+                        } else if (r.id == null) {
+                            "Record series"
+                        } else {
+                            "Save"
+                        },
+                        primary = true,
+                        leading = if (r.id == null) ({ SeriesDots() }) else null,
+                    ) {
                         if (saving) return@Button
                         saving = true
                         scope.launch {

@@ -6,8 +6,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
@@ -25,8 +25,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -43,17 +41,19 @@ import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
 import coil3.compose.AsyncImage
+import com.mackandall.jdvr.data.CommercialBadge
 import com.mackandall.jdvr.data.Jdvr
 import com.mackandall.jdvr.data.Prefs
+import com.mackandall.jdvr.data.RecordingCard
+import com.mackandall.jdvr.data.attempt
 import com.mackandall.jdvr.data.plainId
 import com.mackandall.jdvr.data.toUuid
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneId
 import java.util.UUID
-import com.mackandall.jdvr.data.CommercialBadge
-import com.mackandall.jdvr.data.RecordingCard
-import com.mackandall.jdvr.data.attempt
 
 private fun local(iso: String?): LocalDateTime? = iso?.let { runCatching { LocalDateTime.ofInstant(Instant.parse(it), ZoneId.systemDefault()) }.getOrNull() }
 
@@ -115,7 +115,11 @@ fun RecordedShowsScreen(
         cards = shows ?: Jdvr.backend.jellyfinRecordings()
         // Comskip's badges for the cards (a show's: how many of its recordings are scanned).
         badges = cards?.mapNotNull { it.id.toUuid() }?.let { ids -> attempt { Jdvr.backend.commercialBadges(ids) } }.orEmpty() +
-            cards?.filter { it.id.toUuid() == null }?.map { it.id }?.let { ids -> attempt { Jdvr.backend.showCommercialBadges(ids) } }.orEmpty()
+            cards
+                ?.filter { it.id.toUuid() == null }
+                ?.map { it.id }
+                ?.let { ids -> attempt { Jdvr.backend.showCommercialBadges(ids) } }
+                .orEmpty()
         loaded = true
         // Asked to open a show (from Home): straight to its episodes.
         openShowId?.let { id -> cards?.firstOrNull { it.id == id }?.let { openShow = it } }
@@ -133,7 +137,10 @@ fun RecordedShowsScreen(
 
     details?.let { id ->
         // The list behind is loaded again: what was done on the page (a stop, a scan) shows.
-        BackHandler { details = null; reloadCards++ }
+        BackHandler {
+            details = null
+            reloadCards++
+        }
         DetailsPage(id, refresh, onPlay = onPlayItem, actions = { det, say ->
             RecordingActions(det.item.id, say, manage = det.location == LIVE_FOLDER, canDelete = det.canDelete, place = det.location) {
                 details = null
@@ -145,7 +152,14 @@ fun RecordedShowsScreen(
     val show = openShow
     if (show != null) {
         // Back to the cards: loaded again, so a show emptied on its page (all deleted) goes.
-        BackHandler { if (cameForShow) onLeave() else { openShow = null; reloadCards++ } }
+        BackHandler {
+            if (cameForShow) {
+                onLeave()
+            } else {
+                openShow = null
+                reloadCards++
+            }
+        }
         ShowEpisodes(show, entry, filter, refresh, onPlay, onPlayItem)
         return
     }
@@ -153,10 +167,21 @@ fun RecordedShowsScreen(
     // Gemstone: the focused show's fanart behind the wall, under black glass.
     var focusedCard by remember { mutableStateOf<String?>(null) }
     if (Jc.Style == UiStyle.Gem) {
-        androidx.compose.animation.Crossfade(targetState = focusedCard?.toUuid(), animationSpec = androidx.compose.animation.core.tween(600), label = "gem fanart") { id ->
+        androidx.compose.animation.Crossfade(
+            targetState = focusedCard?.toUuid(),
+            animationSpec =
+                androidx.compose.animation.core
+                    .tween(600),
+            label = "gem fanart",
+        ) { id ->
             if (id != null) AsyncImage(model = Jdvr.backend.backdropUrl(id), contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
         }
-        Box(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color(0xC708090C)))
+        Box(
+            Modifier.fillMaxSize().background(
+                androidx.compose.ui.graphics
+                    .Color(0xC708090C),
+            ),
+        )
     } else {
         // The other themes: the focused show's picture at the top right (a NextPVR show's from its
         // newest recording), once focus rests on a card.
@@ -173,55 +198,89 @@ fun RecordedShowsScreen(
             Column(Modifier.weight(1f)) {
                 Text("Recorded Shows", color = Jc.Title, fontSize = 28.sp, fontWeight = FontWeight.SemiBold)
                 Text(
-                    (if (plain) "Jellyfin's recordings · newest first" else if (Jdvr.isNextPvr) "NextPVR's recordings · newest first" else when (filter) {
-                        Prefs.ARCHIVED -> "Moved to the archive · newest first"
-                        Prefs.ALL -> "Recordings folder and archive · newest first"
-                        else -> "Recordings folder · newest first"
-                    }) + if (unwatchedOnly && !byDate) " · unwatched only" else "",
+                    (
+                        if (plain) {
+                            "Jellyfin's recordings · newest first"
+                        } else if (Jdvr.isNextPvr) {
+                            "NextPVR's recordings · newest first"
+                        } else {
+                            when (filter) {
+                                Prefs.ARCHIVED -> "Moved to the archive · newest first"
+                                Prefs.ALL -> "Recordings folder and archive · newest first"
+                                else -> "Recordings folder · newest first"
+                            }
+                        }
+                    ) + if (unwatchedOnly && !byDate) " · unwatched only" else "",
                     color = Jc.Muted,
                     fontSize = 15.sp,
                 )
             }
             // Cards per show, or one line per recording by date with its channel.
-            if (!plain) Button(if (byDate) "View: By date" else "View: By show") {
-                Jdvr.prefs.changeRecordingsView(if (byDate) Prefs.SHOWS else Prefs.BY_DATE)
-                // Only the view: what's shown (Archive, Unwatched) stays.
-                visit = visit?.copy(view = null)
+            if (!plain) {
+                Button(if (byDate) "View: By date" else "View: By show") {
+                    Jdvr.prefs.changeRecordingsView(if (byDate) Prefs.SHOWS else Prefs.BY_DATE)
+                    // Only the view: what's shown (Archive, Unwatched) stays.
+                    visit = visit?.copy(view = null)
+                }
             }
             // Live folder → Archive → Both (Episode History's; not on a plain server).
-            if (!plain && !Jdvr.isNextPvr) Button(
-                when (filter) {
-                    Prefs.ARCHIVED -> "Showing: Archive"
-                    Prefs.ALL -> "Showing: Both"
-                    else -> "Showing: Live folder"
-                },
-            ) {
-                Jdvr.prefs.changeRecordingsFilter(
+            if (!plain && !Jdvr.isNextPvr) {
+                Button(
                     when (filter) {
-                        Prefs.CURRENT -> Prefs.ARCHIVED
-                        Prefs.ARCHIVED -> Prefs.ALL
-                        else -> Prefs.CURRENT
+                        Prefs.ARCHIVED -> "Showing: Archive"
+                        Prefs.ALL -> "Showing: Both"
+                        else -> "Showing: Live folder"
                     },
-                )
-                visit = null
+                ) {
+                    Jdvr.prefs.changeRecordingsFilter(
+                        when (filter) {
+                            Prefs.CURRENT -> Prefs.ARCHIVED
+                            Prefs.ARCHIVED -> Prefs.ALL
+                            else -> Prefs.CURRENT
+                        },
+                    )
+                    visit = null
+                }
             }
         }
         Spacer(14)
         // Unwatched (SageTV's submenu): shows with something new in them.
         val list = cards?.let { all -> if (unwatchedOnly) all.filter { it.unplayedCount > 0 } else all }
         when {
-            byDate && !plain && loaded -> RecordingsByDate(
-                filter = filter,
-                reload = reloadCards,
-                entry = entry,
-                onPlay = onPlay,
-                onHold = { quickLine = it },
-                onDetails = { details = it },
-                onUnavailable = { noDateList = true },
-            )
-            !loaded -> Text("Loading…", color = Jc.Muted, fontSize = 16.sp)
-            list == null -> Text("Couldn't load the recordings from the server.", color = Jc.Amber, fontSize = 16.sp)
-            list.isEmpty() -> Text(if (unwatchedOnly) "Everything here has been watched." else if (filter == Prefs.ARCHIVED) "Nothing has been moved to the archive." else "Nothing recorded yet.", color = Jc.Muted, fontSize = 16.sp)
+            byDate && !plain && loaded -> {
+                RecordingsByDate(
+                    filter = filter,
+                    reload = reloadCards,
+                    entry = entry,
+                    onPlay = onPlay,
+                    onHold = { quickLine = it },
+                    onDetails = { details = it },
+                    onUnavailable = { noDateList = true },
+                )
+            }
+
+            !loaded -> {
+                Text("Loading…", color = Jc.Muted, fontSize = 16.sp)
+            }
+
+            list == null -> {
+                Text("Couldn't load the recordings from the server.", color = Jc.Amber, fontSize = 16.sp)
+            }
+
+            list.isEmpty() -> {
+                Text(
+                    if (unwatchedOnly) {
+                        "Everything here has been watched."
+                    } else if (filter == Prefs.ARCHIVED) {
+                        "Nothing has been moved to the archive."
+                    } else {
+                        "Nothing recorded yet."
+                    },
+                    color = Jc.Muted,
+                    fontSize = 16.sp,
+                )
+            }
+
             else -> {
                 LaunchedEffect(Unit) {
                     returnTo?.let { id ->
@@ -260,10 +319,15 @@ fun RecordedShowsScreen(
                             c,
                             badges[c.id.plainId()],
                             m.onFocusChangedCompat { if (it) focusedCard = c.id },
-                            onHold = if (!holdEnabled) null else { {
-                                returnTo = c.id
-                                holdOk(menu = { quick = c }, details = { if (c.type == "Series") openShow = c else details = c.id.toUuid() })
-                            } },
+                            onHold =
+                                if (!holdEnabled) {
+                                    null
+                                } else {
+                                    {
+                                        returnTo = c.id
+                                        holdOk(menu = { quick = c }, details = { if (c.type == "Series") openShow = c else details = c.id.toUuid() })
+                                    }
+                                },
                         ) {
                             returnTo = c.id
                             if (c.type == "Series") openShow = c else details = c.id.toUuid()
@@ -279,7 +343,10 @@ fun RecordedShowsScreen(
             onPlay = { fromStart -> onPlayItem(com.mackandall.jdvr.PlayRecording(id, startMs = if (fromStart) 0L else null)) },
             onDetails = { details = id },
             onChanged = { reloadCards++ },
-            onDismiss = { quickLine = null; reloadCards++ },
+            onDismiss = {
+                quickLine = null
+                reloadCards++
+            },
             extra = { det, say, done ->
                 RecordingActions(det.item.id, say, tools = false, manage = det.location == LIVE_FOLDER, canDelete = det.canDelete, place = det.location, onDeleted = done)
             },
@@ -293,8 +360,16 @@ fun RecordedShowsScreen(
             onPlay = { fromStart -> onPlayItem(com.mackandall.jdvr.PlayRecording(qid, startMs = if (fromStart) 0L else null)) },
             onDetails = { details = qid },
             onChanged = { reloadCards++ },
-            onDismiss = { quick = null; reloadCards++ },
-            onOpenShow = if (q.type == "Series") { { openShow = q } } else null,
+            onDismiss = {
+                quick = null
+                reloadCards++
+            },
+            onOpenShow =
+                if (q.type == "Series") {
+                    { openShow = q }
+                } else {
+                    null
+                },
             extra = { det, say, done ->
                 if (q.type != "Series") {
                     RecordingActions(det.item.id, say, tools = false, manage = det.location == LIVE_FOLDER, canDelete = det.canDelete, place = det.location, onDeleted = done)
@@ -402,26 +477,32 @@ private fun ShowEpisodes(
     val scope = rememberCoroutineScope()
     LaunchedEffect(show.id, refresh, reload) {
         episodes =
-            Jdvr.backend.showRecordings(show.id, filter)?.mapNotNull { e ->
-                e.id.toUuid()?.let { id ->
-                    EpisodeEntry(
-                        id = id,
-                        name = e.name,
-                        season = e.season,
-                        episode = e.episode,
-                        played = e.played,
-                        recordedAt = local(e.recordedUtc),
-                        archived = e.archived && filter == Prefs.ALL,
-                        inArchive = e.archived,
-                        partial = e.partial,
-                        partialMinutes = e.minutes,
-                        recording = e.recording,
-                    )
-                }
-            }?.sortedWith(compareBy<EpisodeEntry>({ it.season ?: Int.MAX_VALUE }, { it.episode ?: Int.MAX_VALUE }, { it.recordedAt }))?.let { withCommercialBadges(it) } ?: emptyList()
+            Jdvr.backend
+                .showRecordings(show.id, filter)
+                ?.mapNotNull { e ->
+                    e.id.toUuid()?.let { id ->
+                        EpisodeEntry(
+                            id = id,
+                            name = e.name,
+                            season = e.season,
+                            episode = e.episode,
+                            played = e.played,
+                            recordedAt = local(e.recordedUtc),
+                            archived = e.archived && filter == Prefs.ALL,
+                            inArchive = e.archived,
+                            partial = e.partial,
+                            partialMinutes = e.minutes,
+                            recording = e.recording,
+                        )
+                    }
+                }?.sortedWith(compareBy<EpisodeEntry>({ it.season ?: Int.MAX_VALUE }, { it.episode ?: Int.MAX_VALUE }, { it.recordedAt }))
+                ?.let { withCommercialBadges(it) } ?: emptyList()
     }
     info?.let { id ->
-        BackHandler { info = null; reload++ }
+        BackHandler {
+            info = null
+            reload++
+        }
         DetailsPage(id, refresh, onPlay = onPlayItem, actions = { det, say ->
             RecordingActions(det.item.id, say, manage = det.location == LIVE_FOLDER, canDelete = det.canDelete, place = det.location) {
                 info = null
@@ -456,7 +537,10 @@ private fun ShowEpisodes(
             onPlay = { fromStart -> if (fromStart) onPlayItem(com.mackandall.jdvr.PlayRecording(q.id, startMs = 0L)) else onPlay(q.id) },
             onDetails = { info = q.id },
             onChanged = { reload++ },
-            onDismiss = { quick = null; reload++ },
+            onDismiss = {
+                quick = null
+                reload++
+            },
             // Only a recording in the live folder can be deleted or moved from here (never an archive copy).
             extra = { det, say, done -> RecordingActions(det.item.id, say, tools = false, manage = det.location == LIVE_FOLDER, canDelete = det.canDelete, place = det.location, onDeleted = done) },
         )

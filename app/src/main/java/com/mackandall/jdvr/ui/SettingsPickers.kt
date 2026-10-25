@@ -81,6 +81,7 @@ internal fun <T> Options(
     var focused by remember { mutableStateOf(false) }
     var picking by remember { mutableStateOf(false) }
     val many = options.size > 2
+
     fun step(by: Int) {
         if (options.isEmpty()) return
         val i = if (index < 0) (if (by > 0) 0 else options.lastIndex) else (index + by + options.size) % options.size
@@ -105,11 +106,15 @@ internal fun <T> Options(
                             step(-1)
                             true
                         }
+
                         Key.DirectionRight -> {
                             step(1)
                             true
                         }
-                        else -> false
+
+                        else -> {
+                            false
+                        }
                     }
                 },
         shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(10.dp)),
@@ -208,15 +213,24 @@ internal fun ThemeGallery(onDismiss: () -> Unit) {
     val prefs = Jdvr.prefs
     val startTheme = remember { prefs.theme }
     val startGem = remember { prefs.gem }
+
     // The cursor's theme (and for Gemstone perhaps one of its colours), shown at once.
-    fun preview(theme: String, gem: String) {
+    fun preview(
+        theme: String,
+        gem: String,
+    ) {
         Jc.palette = paletteFor(theme, gem)
     }
+
     fun cancel() {
         Jc.palette = paletteFor(startTheme, startGem)
         onDismiss()
     }
-    fun keep(theme: String, gem: String?) {
+
+    fun keep(
+        theme: String,
+        gem: String?,
+    ) {
         if (gem != null) prefs.changeGem(gem)
         prefs.changeTheme(theme)
         onDismiss()
@@ -325,10 +339,11 @@ private fun ThemeCard(
                     var on by remember { mutableStateOf(false) }
                     Surface(
                         onClick = { onGemPicked(g.key) },
-                        modifier = Modifier.size(18.dp).onFocusChangedCompat {
-                            on = it
-                            if (it) gemSwatches(g.key)
-                        },
+                        modifier =
+                            Modifier.size(18.dp).onFocusChangedCompat {
+                                on = it
+                                if (it) gemSwatches(g.key)
+                            },
                         shape = ClickableSurfaceDefaults.shape(CircleShape),
                         colors = ClickableSurfaceDefaults.colors(containerColor = g.color, focusedContainerColor = g.color),
                         border =
@@ -361,13 +376,49 @@ private fun ThemeSample(p: Palette) {
     ) {
         Box(Modifier.width(16.dp).fillMaxHeight().background(p.rail))
         Column(Modifier.padding(start = 24.dp, top = 9.dp, end = 8.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-            Box(Modifier.fillMaxWidth(0.6f).height(5.dp).clip(RoundedCornerShape(3.dp)).background(p.text))
-            Box(Modifier.fillMaxWidth(0.42f).height(4.dp).clip(RoundedCornerShape(2.dp)).background(p.muted))
-            Box(Modifier.fillMaxWidth().height(14.dp).clip(RoundedCornerShape(3.dp)).background(p.panel2))
+            Box(
+                Modifier
+                    .fillMaxWidth(0.6f)
+                    .height(5.dp)
+                    .clip(RoundedCornerShape(3.dp))
+                    .background(p.text),
+            )
+            Box(
+                Modifier
+                    .fillMaxWidth(0.42f)
+                    .height(4.dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(p.muted),
+            )
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(14.dp)
+                    .clip(RoundedCornerShape(3.dp))
+                    .background(p.panel2),
+            )
             when (p.style) {
-                UiStyle.Sage -> Box(Modifier.width(46.dp).height(11.dp).clip(RoundedCornerShape(3.dp)).sageGloss())
-                UiStyle.NextPvr -> Box(Modifier.width(46.dp).height(11.dp).clip(RoundedCornerShape(3.dp)).nextPvrGloss())
-                UiStyle.Gem ->
+                UiStyle.Sage -> {
+                    Box(
+                        Modifier
+                            .width(46.dp)
+                            .height(11.dp)
+                            .clip(RoundedCornerShape(3.dp))
+                            .sageGloss(),
+                    )
+                }
+
+                UiStyle.NextPvr -> {
+                    Box(
+                        Modifier
+                            .width(46.dp)
+                            .height(11.dp)
+                            .clip(RoundedCornerShape(3.dp))
+                            .nextPvrGloss(),
+                    )
+                }
+
+                UiStyle.Gem -> {
                     Box(
                         Modifier
                             .width(46.dp)
@@ -375,7 +426,17 @@ private fun ThemeSample(p: Palette) {
                             .background(Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.13f), Color.White.copy(alpha = 0.03f))), RoundedCornerShape(2.dp))
                             .border(1.dp, if (Jc.Style == UiStyle.Gem) Jc.Focus else p.focus, RoundedCornerShape(2.dp)),
                     )
-                else -> Box(Modifier.width(46.dp).height(11.dp).clip(RoundedCornerShape(3.dp)).background(p.focus))
+                }
+
+                else -> {
+                    Box(
+                        Modifier
+                            .width(46.dp)
+                            .height(11.dp)
+                            .clip(RoundedCornerShape(3.dp))
+                            .background(p.focus),
+                    )
+                }
             }
         }
     }

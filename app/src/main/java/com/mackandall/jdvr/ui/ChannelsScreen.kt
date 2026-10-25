@@ -39,13 +39,13 @@ import androidx.tv.material3.Text
 import coil3.compose.AsyncImage
 import com.mackandall.jdvr.data.Channel
 import com.mackandall.jdvr.data.Jdvr
+import com.mackandall.jdvr.data.MarkSymbols
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import timber.log.Timber
 import java.time.Duration
 import java.time.LocalDateTime
 import java.util.UUID
-import com.mackandall.jdvr.data.MarkSymbols
 
 /** Episode History's mark symbols, fetched once (null without the plugin). */
 @Composable
@@ -191,4 +191,6 @@ fun Chip(
 }
 
 @Composable
-fun Spacer(dp: Int) = androidx.compose.foundation.layout.Spacer(Modifier.height(dp.dp))
+fun Spacer(dp: Int) =
+    androidx.compose.foundation.layout
+        .Spacer(Modifier.height(dp.dp))

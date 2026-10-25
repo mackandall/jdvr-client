@@ -33,12 +33,12 @@ import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -53,13 +53,13 @@ import androidx.tv.material3.Text
 import com.mackandall.jdvr.PlayRecording
 import com.mackandall.jdvr.data.Channel
 import com.mackandall.jdvr.data.Jdvr
+import com.mackandall.jdvr.data.LibItem
+import com.mackandall.jdvr.data.MarkSymbols
 import com.mackandall.jdvr.data.Program
+import com.mackandall.jdvr.data.attempt
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.UUID
-import com.mackandall.jdvr.data.LibItem
-import com.mackandall.jdvr.data.MarkSymbols
-import com.mackandall.jdvr.data.attempt
 
 /** What was last searched for, so Search opens with it again. */
 private object LastSearch {
@@ -179,10 +179,19 @@ fun SearchScreen(
             val lib = library
             val progs = guide
             when {
-                text.trim().length < 2 -> Text("Type at least two letters. Results come from every library and from the guide.", color = Jc.Muted, fontSize = 15.sp)
-                lib == null || progs == null -> Text("Searching…", color = Jc.Muted, fontSize = 15.sp)
-                lib.isEmpty() && progs.isEmpty() -> Text("Nothing found for \"${text.trim()}\".", color = Jc.Muted, fontSize = 15.sp)
-                else ->
+                text.trim().length < 2 -> {
+                    Text("Type at least two letters. Results come from every library and from the guide.", color = Jc.Muted, fontSize = 15.sp)
+                }
+
+                lib == null || progs == null -> {
+                    Text("Searching…", color = Jc.Muted, fontSize = 15.sp)
+                }
+
+                lib.isEmpty() && progs.isEmpty() -> {
+                    Text("Nothing found for \"${text.trim()}\".", color = Jc.Muted, fontSize = 15.sp)
+                }
+
+                else -> {
                     LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(bottom = 40.dp)) {
                         if (lib.isNotEmpty()) {
                             item { Heading("In your libraries", lib.size) }
@@ -208,6 +217,7 @@ fun SearchScreen(
                             }
                         }
                     }
+                }
             }
         }
         // A programme's actions, over the right of the results.
@@ -292,6 +302,11 @@ private fun ProgramRow(
 private fun dayWord(t: java.time.LocalDateTime): String =
     when (t.toLocalDate()) {
         java.time.LocalDate.now() -> "Today"
-        java.time.LocalDate.now().plusDays(1) -> "Tomorrow"
+
+        java.time.LocalDate
+            .now()
+            .plusDays(1),
+        -> "Tomorrow"
+
         else -> t.day()
     }

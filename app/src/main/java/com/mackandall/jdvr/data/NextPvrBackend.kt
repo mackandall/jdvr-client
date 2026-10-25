@@ -17,9 +17,9 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonArray
-import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
@@ -50,6 +50,7 @@ class NextPvrBackend(
     private val json = Json { ignoreUnknownKeys = true }
     private val zone = ZoneId.systemDefault()
     private val signIn = Mutex()
+
     @Volatile private var sid: String? = null
 
     // Guide entries seen, by NextPVR id: a single entry's own lookup doesn't say its channel.
@@ -58,18 +59,34 @@ class NextPvrBackend(
     // ---- the API ----------------------------------------------------------------------------
 
     private fun get(url: String): JsonElement =
-        Jdvr.http.newCall(okhttp3.Request.Builder().url(url).build()).execute().use { r ->
-            if (!r.isSuccessful) error("NextPVR answered ${r.code}")
-            json.parseToJsonElement(r.body.string())
-        }
+        Jdvr.http
+            .newCall(
+                okhttp3.Request
+                    .Builder()
+                    .url(url)
+                    .build(),
+            ).execute()
+            .use { r ->
+                if (!r.isSuccessful) error("NextPVR answered ${r.code}")
+                json.parseToJsonElement(r.body.string())
+            }
 
-    private fun serviceUrl(method: String, params: Map<String, Any?>, session: String?): String =
-        baseUrl.toHttpUrl().newBuilder().addPathSegment("service").apply {
-            addQueryParameter("method", method)
-            addQueryParameter("format", "json")
-            session?.let { addQueryParameter("sid", it) }
-            params.forEach { (k, v) -> if (v != null) addQueryParameter(k, v.toString()) }
-        }.build().toString()
+    private fun serviceUrl(
+        method: String,
+        params: Map<String, Any?>,
+        session: String?,
+    ): String =
+        baseUrl
+            .toHttpUrl()
+            .newBuilder()
+            .addPathSegment("service")
+            .apply {
+                addQueryParameter("method", method)
+                addQueryParameter("format", "json")
+                session?.let { addQueryParameter("sid", it) }
+                params.forEach { (k, v) -> if (v != null) addQueryParameter(k, v.toString()) }
+            }.build()
+            .toString()
 
     private suspend fun session(): String =
         sid ?: signIn.withLock {
@@ -82,7 +99,10 @@ class NextPvrBackend(
     }
 
     /** Calls a method; signs in again once when the session has expired. */
-    private suspend fun call(method: String, params: Map<String, Any?> = emptyMap()): JsonElement =
+    private suspend fun call(
+        method: String,
+        params: Map<String, Any?> = emptyMap(),
+    ): JsonElement =
         withContext(Dispatchers.IO) {
             var reply = get(serviceUrl(method, params, session()))
             if (failed(reply)) {
@@ -93,19 +113,31 @@ class NextPvrBackend(
             reply
         }
 
-    private fun failed(reply: JsonElement) = (reply as? JsonObject)?.get("stat")?.jsonPrimitive?.contentOrNull.equals("Failed", ignoreCase = true)
+    private fun failed(reply: JsonElement) =
+        (reply as? JsonObject)
+            ?.get("stat")
+            ?.jsonPrimitive
+            ?.contentOrNull
+            .equals("Failed", ignoreCase = true)
 
     // ---- ids and fields ---------------------------------------------------------------------
 
     private fun JsonObject.str(k: String) = this[k]?.jsonPrimitive?.contentOrNull
+
     private fun JsonObject.int(k: String) = this[k]?.jsonPrimitive?.intOrNull
+
     private fun JsonObject.long(k: String) = this[k]?.jsonPrimitive?.longOrNull
+
     private fun JsonObject.bool(k: String) = this[k]?.jsonPrimitive?.booleanOrNull
 
     private fun time(epochSeconds: Long): LocalDateTime = LocalDateTime.ofInstant(Instant.ofEpochSecond(epochSeconds), zone)
+
     private fun epoch(t: LocalDateTime): Long = t.atZone(zone).toEpochSecond()
 
-    private fun toProgram(o: JsonObject, channel: UUID?): Program {
+    private fun toProgram(
+        o: JsonObject,
+        channel: UUID?,
+    ): Program {
         val id = o.int("id") ?: 0
         val genres = (o["genres"] as? JsonArray)?.mapNotNull { it.jsonPrimitive.contentOrNull } ?: emptyList()
         val season = o.int("season")
@@ -135,7 +167,11 @@ class NextPvrBackend(
     // ---- channels and guide -----------------------------------------------------------------
 
     override suspend fun channelGroups(): List<String> =
-        call("channel.groups").jsonObject["groups"]?.jsonArray.orEmpty().map { it.jsonPrimitive.content }
+        call("channel.groups")
+            .jsonObject["groups"]
+            ?.jsonArray
+            .orEmpty()
+            .map { it.jsonPrimitive.content }
 
     // The group picked in the guide, when this server has it (else every channel).
     override suspend fun channels(): List<Channel> {
@@ -146,27 +182,38 @@ class NextPvrBackend(
     override suspend fun allChannels(): List<Channel> = channelList(emptyMap())
 
     private suspend fun channelList(params: Map<String, Any>): List<Channel> {
-        val list = call("channel.list", params).jsonObject["channels"]?.jsonArray.orEmpty().map { it.jsonObject }
+        val list =
+            call("channel.list", params)
+                .jsonObject["channels"]
+                ?.jsonArray
+                .orEmpty()
+                .map { it.jsonObject }
         val now =
             runCatching {
                 call("channel.listings.current").jsonArray.associate { e ->
                     val c = e.jsonObject["channel"]!!.jsonObject
                     val id = c.int("channel_id") ?: 0
                     val at = System.currentTimeMillis() / 1000
-                    id to c["listings"]?.jsonArray?.map { it.jsonObject }?.firstOrNull { (it.long("start") ?: 0) <= at && (it.long("end") ?: 0) > at }?.let { toProgram(it, channelUuid(id)) }
+                    id to
+                        c["listings"]
+                            ?.jsonArray
+                            ?.map { it.jsonObject }
+                            ?.firstOrNull { (it.long("start") ?: 0) <= at && (it.long("end") ?: 0) > at }
+                            ?.let { toProgram(it, channelUuid(id)) }
                 }
             }.getOrDefault(emptyMap())
         val sid = session()
-        return list.map { c ->
-            val id = c.int("channelId") ?: 0
-            Channel(
-                id = channelUuid(id),
-                number = c.str("channelNumberFormated") ?: c.int("channelNumber")?.toString() ?: "",
-                name = c.str("channelName") ?: "",
-                logoUrl = if (c.bool("channelIcon") == true) serviceUrl("channel.icon", mapOf("channel_id" to id), sid) else null,
-                now = now[id],
-            )
-        }.sortedWith(compareBy({ it.number.toDoubleOrNull() ?: Double.MAX_VALUE }, { it.name }))
+        return list
+            .map { c ->
+                val id = c.int("channelId") ?: 0
+                Channel(
+                    id = channelUuid(id),
+                    number = c.str("channelNumberFormated") ?: c.int("channelNumber")?.toString() ?: "",
+                    name = c.str("channelName") ?: "",
+                    logoUrl = if (c.bool("channelIcon") == true) serviceUrl("channel.icon", mapOf("channel_id" to id), sid) else null,
+                    now = now[id],
+                )
+            }.sortedWith(compareBy({ it.number.toDoubleOrNull() ?: Double.MAX_VALUE }, { it.name }))
     }
 
     override suspend fun programs(
@@ -175,21 +222,30 @@ class NextPvrBackend(
         to: LocalDateTime,
     ): List<Program> =
         coroutineScope {
-            channelIds.map { ch ->
-                async {
-                    runCatching {
-                        call("channel.listings", mapOf("channel_id" to nextPvrId(ch), "start" to epoch(from), "end" to epoch(to)))
-                            .jsonObject["listings"]?.jsonArray.orEmpty().map { toProgram(it.jsonObject, ch) }
-                    }.getOrDefault(emptyList())
-                }
-            }.awaitAll().flatten().sortedBy { it.start }
+            channelIds
+                .map { ch ->
+                    async {
+                        runCatching {
+                            call("channel.listings", mapOf("channel_id" to nextPvrId(ch), "start" to epoch(from), "end" to epoch(to)))
+                                .jsonObject["listings"]
+                                ?.jsonArray
+                                .orEmpty()
+                                .map { toProgram(it.jsonObject, ch) }
+                        }.getOrDefault(emptyList())
+                    }
+                }.awaitAll()
+                .flatten()
+                .sortedBy { it.start }
         }
 
-    override suspend fun program(id: UUID): Program? =
-        runCatching { toProgram(call("channel.listing", mapOf("event_id" to nextPvrId(id))).jsonObject, null) }.getOrElse { seen[nextPvrId(id)] }
+    override suspend fun program(id: UUID): Program? = runCatching { toProgram(call("channel.listing", mapOf("event_id" to nextPvrId(id))).jsonObject, null) }.getOrElse { seen[nextPvrId(id)] }
 
     override suspend fun searchGuide(term: String): List<Program> =
-        call("channel.listings.search", mapOf("title" to term)).jsonObject["listings"]?.jsonArray.orEmpty().map { toProgram(it.jsonObject, null) }
+        call("channel.listings.search", mapOf("title" to term))
+            .jsonObject["listings"]
+            ?.jsonArray
+            .orEmpty()
+            .map { toProgram(it.jsonObject, null) }
 
     // A channel's logo, or a guide entry's art as NextPVR's web page shows it (landscape: fanart).
     override fun imageUrl(
@@ -199,9 +255,12 @@ class NextPvrBackend(
         val session = sid ?: return ""
         return when (itemId.mostSignificantBits) {
             CHANNEL -> serviceUrl("channel.icon", mapOf("channel_id" to nextPvrId(itemId)), session)
+
             PROGRAM -> serviceUrl("channel.show.artwork", mapOf("event_id" to nextPvrId(itemId), "fanart" to true), session)
+
             // A recording's poster (Recorded Shows' cards are portrait).
             RECORDING -> serviceUrl("recording.artwork", mapOf("recording_id" to nextPvrId(itemId), "with_placeholder" to true), session)
+
             else -> ""
         }
     }
@@ -248,11 +307,15 @@ class NextPvrBackend(
     override suspend fun startLive(channelId: UUID): LivePlayback {
         val sid = session()
         val url =
-            baseUrl.toHttpUrl().newBuilder().addPathSegment("live")
+            baseUrl
+                .toHttpUrl()
+                .newBuilder()
+                .addPathSegment("live")
                 .addQueryParameter("channeloid", nextPvrId(channelId).toString())
                 .addQueryParameter("client", "jdvr-$sid")
                 .addQueryParameter("sid", sid)
-                .build().toString()
+                .build()
+                .toString()
         return LivePlayback(channelId, url, mediaSourceId = null, liveStreamId = null, playSessionId = null, playMethod = PlayMethod.DIRECT_PLAY)
     }
 
@@ -282,23 +345,41 @@ class NextPvrBackend(
     ): String? {
         val old = notThis?.toHttpUrl()?.queryParameter("f")
         val name = runCatching { channelInfo()[nextPvrId(p.channelId)]?.str("channelName") }.getOrNull() ?: return null
+
         fun plain(s: String) = s.filter { it.isLetterOrDigit() }.lowercase()
         repeat(20) {
             val file =
                 runCatching {
-                    call("system.status").jsonObject["status"]?.jsonArray.orEmpty()
-                        .flatMap { d -> d.jsonObject["streams"]?.jsonArray.orEmpty().map { it.jsonPrimitive.content } }
-                        .filter { it.startsWith("LIVE&") }
+                    call("system.status")
+                        .jsonObject["status"]
+                        ?.jsonArray
+                        .orEmpty()
+                        .flatMap { d ->
+                            d.jsonObject["streams"]
+                                ?.jsonArray
+                                .orEmpty()
+                                .map { it.jsonPrimitive.content }
+                        }.filter { it.startsWith("LIVE&") }
                         .map { it.substringAfter('&') }
                         .filter { it != old }
-                        .lastOrNull { f -> Regex("""live-(.+)-\d+-\d+\.ts$""").find(f.substringAfterLast('/'))?.groupValues?.get(1)?.let { plain(it) == plain(name) } == true }
+                        .lastOrNull { f ->
+                            Regex("""live-(.+)-\d+-\d+\.ts$""")
+                                .find(f.substringAfterLast('/'))
+                                ?.groupValues
+                                ?.get(1)
+                                ?.let { plain(it) == plain(name) } == true
+                        }
                 }.getOrNull()
             if (file != null) {
-                return baseUrl.toHttpUrl().newBuilder().addPathSegment("stream")
+                return baseUrl
+                    .toHttpUrl()
+                    .newBuilder()
+                    .addPathSegment("stream")
                     .addQueryParameter("f", file)
                     .addQueryParameter("mode", "http")
                     .addQueryParameter("sid", session())
-                    .build().toString()
+                    .build()
+                    .toString()
             }
             delay(500)
         }
@@ -314,10 +395,13 @@ class NextPvrBackend(
     // ---- recordings -------------------------------------------------------------------------
 
     /** A NextPVR recording, from recording.list. */
-    private inner class Rec(val o: JsonObject) {
+    private inner class Rec(
+        val o: JsonObject,
+    ) {
         val id = o.int("id") ?: 0
         val uuid get() = recordingUuid(id)
         val name = o.str("name") ?: ""
+
         // "S07E22 - The Bottle Deposit, Part 2": the episode title alone.
         val episodeTitle = o.str("subtitle")?.replace(Regex("^S\\d+E\\d+( - )?"), "")?.takeIf { it.isNotBlank() }
         val season = o.int("season")
@@ -330,6 +414,7 @@ class NextPvrBackend(
         val done get() = status == "ready" || status == "recording"
         val channelId = o.int("channelId")
         val positionS = o.long("playbackPosition") ?: 0
+
         // NextPVR keeps only where playback stopped: near the end counts as watched.
         val watched get() = seconds > 0 && positionS >= seconds * 9 / 10
         val startUtc get() = Instant.ofEpochSecond(start).toString()
@@ -337,27 +422,49 @@ class NextPvrBackend(
 
         fun libItem() =
             LibItem(
-                id = uuid, name = episodeTitle ?: name, type = if (isSeries) "Episode" else "Movie", year = null,
+                id = uuid,
+                name = episodeTitle ?: name,
+                type = if (isSeries) "Episode" else "Movie",
+                year = null,
                 overview = o.str("desc")?.let { d -> episodeTitle?.let { d.removePrefix("$it: ") } ?: d }?.takeIf { it.isNotBlank() },
-                runtimeMin = seconds / 60, played = watched, resumeMs = positionS * 1000, unplayed = null,
-                season = season, episode = episode, seriesId = null, seriesName = name.takeIf { isSeries },
+                runtimeMin = seconds / 60,
+                played = watched,
+                resumeMs = positionS * 1000,
+                unplayed = null,
+                season = season,
+                episode = episode,
+                seriesId = null,
+                seriesName = name.takeIf { isSeries },
                 officialRating = o.str("rating"),
             )
     }
 
     private suspend fun recordings(): List<Rec> =
-        call("recording.list", mapOf("filter" to "all")).jsonObject["recordings"]?.jsonArray.orEmpty().map { Rec(it.jsonObject) }
+        call("recording.list", mapOf("filter" to "all"))
+            .jsonObject["recordings"]
+            ?.jsonArray
+            .orEmpty()
+            .map { Rec(it.jsonObject) }
 
     private suspend fun recording(id: UUID): Rec =
-        call("recording.list", mapOf("recording_id" to nextPvrId(id))).jsonObject["recordings"]?.jsonArray?.firstOrNull()?.let { Rec(it.jsonObject) }
+        call("recording.list", mapOf("recording_id" to nextPvrId(id)))
+            .jsonObject["recordings"]
+            ?.jsonArray
+            ?.firstOrNull()
+            ?.let { Rec(it.jsonObject) }
             ?: recordings().firstOrNull { it.uuid == id } ?: error("That recording is gone")
 
     // Channels by NextPVR id (number, name, logo), for the lists that show a recording's channel.
     @Volatile private var channelInfo: Map<Int, JsonObject>? = null
 
     private suspend fun channelInfo(): Map<Int, JsonObject> =
-        channelInfo ?: call("channel.list").jsonObject["channels"]?.jsonArray.orEmpty().map { it.jsonObject }
-            .associateBy { it.int("channelId") ?: 0 }.also { channelInfo = it }
+        channelInfo ?: call("channel.list")
+            .jsonObject["channels"]
+            ?.jsonArray
+            .orEmpty()
+            .map { it.jsonObject }
+            .associateBy { it.int("channelId") ?: 0 }
+            .also { channelInfo = it }
 
     // A show is the recordings with its name.
     private fun showId(name: String) = "show:$name"
@@ -369,14 +476,24 @@ class NextPvrBackend(
             val newest = recs.first()
             if (newest.isSeries) {
                 RecordingCard(
-                    type = "Series", id = key, imageId = newest.uuid.toString(), name = newest.name,
-                    count = recs.size, unplayedCount = recs.count { !it.watched }, recordedUtc = newest.startUtc,
+                    type = "Series",
+                    id = key,
+                    imageId = newest.uuid.toString(),
+                    name = newest.name,
+                    count = recs.size,
+                    unplayedCount = recs.count { !it.watched },
+                    recordedUtc = newest.startUtc,
                     recordingCount = recs.count { it.recordingNow },
                 )
             } else {
                 RecordingCard(
-                    type = "Movie", id = key, name = newest.name, count = 1, unplayedCount = if (newest.watched) 0 else 1,
-                    recordedUtc = newest.startUtc, recordingCount = if (newest.recordingNow) 1 else 0,
+                    type = "Movie",
+                    id = key,
+                    name = newest.name,
+                    count = 1,
+                    unplayedCount = if (newest.watched) 0 else 1,
+                    recordedUtc = newest.startUtc,
+                    recordingCount = if (newest.recordingNow) 1 else 0,
                 )
             }
         }
@@ -389,8 +506,14 @@ class NextPvrBackend(
         if (filter == "archived") return emptyList()
         return recordings().filter { it.done && showId(it.name) == seriesId }.sortedByDescending { it.start }.map { r ->
             EpisodeRecording(
-                id = r.uuid.toString(), name = r.episodeTitle ?: r.name, season = r.season, episode = r.episode, played = r.watched,
-                recordedUtc = r.startUtc, minutes = (r.seconds / 60).toInt(), recording = r.recordingNow,
+                id = r.uuid.toString(),
+                name = r.episodeTitle ?: r.name,
+                season = r.season,
+                episode = r.episode,
+                played = r.watched,
+                recordedUtc = r.startUtc,
+                minutes = (r.seconds / 60).toInt(),
+                recording = r.recordingNow,
             )
         }
     }
@@ -402,10 +525,19 @@ class NextPvrBackend(
             recordings =
                 recordings().filter { it.done }.sortedByDescending { it.start }.map { r ->
                     DateRecording(
-                        id = r.uuid.toString(), type = if (r.isSeries) "Episode" else "Movie", imageId = r.uuid.toString(), title = r.name,
-                        episodeTitle = r.episodeTitle, season = r.season, episode = r.episode, recordedUtc = r.startUtc,
-                        minutes = (r.seconds / 60).toInt(), played = r.watched, playedPercent = if (r.seconds > 0) (r.positionS * 100 / r.seconds).toInt() else 0,
-                        recording = r.recordingNow, overview = r.libItem().overview,
+                        id = r.uuid.toString(),
+                        type = if (r.isSeries) "Episode" else "Movie",
+                        imageId = r.uuid.toString(),
+                        title = r.name,
+                        episodeTitle = r.episodeTitle,
+                        season = r.season,
+                        episode = r.episode,
+                        recordedUtc = r.startUtc,
+                        minutes = (r.seconds / 60).toInt(),
+                        played = r.watched,
+                        playedPercent = if (r.seconds > 0) (r.positionS * 100 / r.seconds).toInt() else 0,
+                        recording = r.recordingNow,
+                        overview = r.libItem().overview,
                         channel =
                             r.channelId?.let { id ->
                                 val c = channels[id]
@@ -456,12 +588,16 @@ class NextPvrBackend(
         // end the player opens it again.
         val info = if (r.recordingNow) runCatching { call("recording.info", mapOf("recording_id" to r.id)).jsonArray.associate { e -> e.jsonObject.str("key").orEmpty() to e.jsonObject.str("value").orEmpty() } }.getOrNull() else null
         val url =
-            baseUrl.toHttpUrl().newBuilder().addPathSegment("live")
+            baseUrl
+                .toHttpUrl()
+                .newBuilder()
+                .addPathSegment("live")
                 .addQueryParameter("recording", r.id.toString())
                 .addQueryParameter("client", "jdvr-$sid")
                 .addQueryParameter("sid", sid)
                 .apply { info?.get("Bytes")?.toLongOrNull()?.let { addQueryParameter(SNAPSHOT, it.toString()) } }
-                .build().toString()
+                .build()
+                .toString()
         return ItemPlayback(
             itemId = itemId,
             name = listOfNotNull(r.name, r.episodeTitle).joinToString(" - "),
@@ -520,11 +656,9 @@ class NextPvrBackend(
     }
 
     // No commercials from NextPVR yet; whether it's still recording (the player says so, and goes on).
-    override suspend fun liveSegments(itemId: UUID): Pair<Boolean, List<Segment>> =
-        (itemId.mostSignificantBits == RECORDING && runCatching { recording(itemId).recordingNow }.getOrDefault(false)) to emptyList()
+    override suspend fun liveSegments(itemId: UUID): Pair<Boolean, List<Segment>> = (itemId.mostSignificantBits == RECORDING && runCatching { recording(itemId).recordingNow }.getOrDefault(false)) to emptyList()
 
-    override suspend fun recordingOfProgram(programId: UUID): UUID? =
-        recordings().firstOrNull { it.done && it.o.int("epgEventId") == nextPvrId(programId) }?.uuid
+    override suspend fun recordingOfProgram(programId: UUID): UUID? = recordings().firstOrNull { it.done && it.o.int("epgEventId") == nextPvrId(programId) }?.uuid
 
     /** Watched: the position at the end; not watched: no position (NextPVR has no flag of its own). */
     override suspend fun setPlayed(
@@ -553,7 +687,11 @@ class NextPvrBackend(
         val tuners = runCatching { call("system.status").jsonObject["status"]?.jsonArray?.size }.getOrNull() ?: 0
         val now = System.currentTimeMillis() / 1000
         val found =
-            call("channel.listings.search", mapOf("title" to title)).jsonObject["listings"]?.jsonArray.orEmpty().map { it.jsonObject }
+            call("channel.listings.search", mapOf("title" to title))
+                .jsonObject["listings"]
+                ?.jsonArray
+                .orEmpty()
+                .map { it.jsonObject }
                 .filter { it.str("name").equals(title, true) && (it.long("end") ?: 0) > now }
                 .filter { episode == null || it.str("subtitle").equals(episode, true) }
                 .sortedBy { it.long("start") }
@@ -601,19 +739,41 @@ class NextPvrBackend(
             val kind = ruleKind(r)
             val what =
                 when {
-                    kind == "keyword" -> keywordOf(r.str("advancedRules").orEmpty())?.let { (k, m) -> "“$k” " + when (m) {
-                        KeywordMatch.TITLE -> "in the title"
-                        KeywordMatch.ANYWHERE -> "in the title or description"
-                        KeywordMatch.PEOPLE -> "in the cast or crew"
-                    } } ?: "rule: ${r.str("advancedRules").orEmpty()}"
+                    kind == "keyword" -> {
+                        keywordOf(r.str("advancedRules").orEmpty())?.let { (k, m) ->
+                            "“$k” " +
+                                when (m) {
+                                    KeywordMatch.TITLE -> "in the title"
+                                    KeywordMatch.ANYWHERE -> "in the title or description"
+                                    KeywordMatch.PEOPLE -> "in the cast or crew"
+                                }
+                        } ?: "rule: ${r.str("advancedRules").orEmpty()}"
+                    }
+
                     // Types 3–6 record one timeslot: NextPVR words it "2:30 AM - 3:00 AM (Daily)".
-                    type in 3..6 -> period
-                    period.contains("new", true) -> "new episodes only"
-                    else -> "all episodes"
+                    type in 3..6 -> {
+                        period
+                    }
+
+                    period.contains("new", true) -> {
+                        "new episodes only"
+                    }
+
+                    else -> {
+                        "all episodes"
+                    }
                 }
             val mine = scheduled[r.int("id")].orEmpty().sortedBy { it.start }
             // The channel only when the rule records on any.
-            val next = mine.firstOrNull()?.let { "next ${time(it.start).day()} ${time(it.start).time()}" + (it.o.str("channel")?.takeIf { (r.int("channelID") ?: 0) == 0 }?.let { c -> " on $c" } ?: "") }
+            val next =
+                mine.firstOrNull()?.let {
+                    "next ${time(it.start).day()} ${time(it.start).time()}" + (
+                        it.o
+                            .str("channel")
+                            ?.takeIf { (r.int("channelID") ?: 0) == 0 }
+                            ?.let { c -> " on $c" } ?: ""
+                    )
+                }
             org.jellyfin.sdk.model.api.SeriesTimerInfoDto(
                 id = r.int("id")?.toString(),
                 // Switched off in its options: still listed, records nothing.
@@ -684,14 +844,25 @@ class NextPvrBackend(
     }
 
     /** The server's default padding (minutes) and its recording folders ("Default" first). */
-    class SeriesDefaults(val prePadding: Int, val postPadding: Int, val directories: List<String>)
+    class SeriesDefaults(
+        val prePadding: Int,
+        val postPadding: Int,
+        val directories: List<String>,
+    )
 
     suspend fun seriesDefaults(): SeriesDefaults {
         val o = call("setting.list").jsonObject
         return SeriesDefaults(
             prePadding = o.str("prePadding")?.toIntOrNull() ?: 0,
             postPadding = o.str("postPadding")?.toIntOrNull() ?: 0,
-            directories = o.str("recordingDirectories").orEmpty().split(',').map { it.trim() }.filter { it.isNotEmpty() }.ifEmpty { listOf("Default") },
+            directories =
+                o
+                    .str("recordingDirectories")
+                    .orEmpty()
+                    .split(',')
+                    .map { it.trim() }
+                    .filter { it.isNotEmpty() }
+                    .ifEmpty { listOf("Default") },
         )
     }
 
@@ -719,8 +890,13 @@ class NextPvrBackend(
     )
 
     suspend fun seriesRule(id: String): SeriesRule? =
-        call("recording.recurring.list").jsonObject["recurrings"]?.jsonArray.orEmpty().map { it.jsonObject }
-            .firstOrNull { it.int("id")?.toString() == id }?.let { r ->
+        call("recording.recurring.list")
+            .jsonObject["recurrings"]
+            ?.jsonArray
+            .orEmpty()
+            .map { it.jsonObject }
+            .firstOrNull { it.int("id")?.toString() == id }
+            ?.let { r ->
                 SeriesRule(
                     id = r.int("id"),
                     eventId = null,
@@ -743,24 +919,31 @@ class NextPvrBackend(
      * so going back to one channel takes the channel of its next airing in the guide.
      */
     suspend fun saveSeriesRule(r: SeriesRule) {
-        val params = mutableMapOf<String, Any?>(
-            "recurring_type" to r.type,
-            "keep" to r.keep,
-            "pre_padding" to r.prePadding,
-            "post_padding" to r.postPadding,
-            "directory_id" to r.directory,
-        )
+        val params =
+            mutableMapOf<String, Any?>(
+                "recurring_type" to r.type,
+                "keep" to r.keep,
+                "pre_padding" to r.prePadding,
+                "post_padding" to r.postPadding,
+                "directory_id" to r.directory,
+            )
         if (r.id == null) {
             params["event_id"] = r.eventId
         } else {
             params["recurring_id"] = r.id
             params["enabled"] = r.enabled
             if (r.type != 7) {
-                val channel = r.channelId.takeIf { it != 0 }
-                    ?: call("channel.listings.search", mapOf("title" to r.name)).jsonObject["listings"]?.jsonArray.orEmpty().map { it.jsonObject }
-                        .filter { it.str("name").equals(r.name, true) && (it.long("end") ?: 0) > Instant.now().epochSecond }
-                        .minByOrNull { it.long("start") ?: 0 }?.int("channelId")
-                    ?: error("${r.name} isn't in the guide: no channel to record it on")
+                val channel =
+                    r.channelId.takeIf { it != 0 }
+                        ?: call("channel.listings.search", mapOf("title" to r.name))
+                            .jsonObject["listings"]
+                            ?.jsonArray
+                            .orEmpty()
+                            .map { it.jsonObject }
+                            .filter { it.str("name").equals(r.name, true) && (it.long("end") ?: 0) > Instant.now().epochSecond }
+                            .minByOrNull { it.long("start") ?: 0 }
+                            ?.int("channelId")
+                        ?: error("${r.name} isn't in the guide: no channel to record it on")
                 params["channel_id"] = channel
             }
         }
@@ -821,16 +1004,17 @@ class NextPvrBackend(
 
     /** Saves a keyword rule, new or in place; NextPVR schedules what it matches straight away. */
     suspend fun saveKeywordRule(r: KeywordRule) {
-        val params = mutableMapOf<String, Any?>(
-            "recurring_type" to "advanced",
-            "name" to r.name.ifBlank { r.keyword.ifBlank { r.custom.orEmpty() } },
-            "channel" to r.channelId,
-            "advanced" to (r.custom ?: keywordQuery(r.keyword, r.match)),
-            "keep" to r.keep,
-            "pre_padding" to r.prePadding,
-            "post_padding" to r.postPadding,
-            "directory_id" to r.directory,
-        )
+        val params =
+            mutableMapOf<String, Any?>(
+                "recurring_type" to "advanced",
+                "name" to r.name.ifBlank { r.keyword.ifBlank { r.custom.orEmpty() } },
+                "channel" to r.channelId,
+                "advanced" to (r.custom ?: keywordQuery(r.keyword, r.match)),
+                "keep" to r.keep,
+                "pre_padding" to r.prePadding,
+                "post_padding" to r.postPadding,
+                "directory_id" to r.directory,
+            )
         if (r.id != null) {
             params["recurring_id"] = r.id
             params["enabled"] = r.enabled
@@ -865,7 +1049,16 @@ class NextPvrBackend(
     ): ManualRule {
         val now = LocalDateTime.now().withSecond(0).withNano(0)
         val from = start?.takeIf { it.isAfter(now) } ?: now.plusMinutes((30 - now.minute % 30).toLong())
-        val minutes = if (start != null && end != null) java.time.Duration.between(start, end).toMinutes().toInt().coerceIn(5, 600) else 60
+        val minutes =
+            if (start != null && end != null) {
+                java.time.Duration
+                    .between(start, end)
+                    .toMinutes()
+                    .toInt()
+                    .coerceIn(5, 600)
+            } else {
+                60
+            }
         return ManualRule(null, "", channelId?.let { nextPvrId(it) } ?: 0, 0, from, minutes, 0, defaults.prePadding, defaults.postPadding, null, true)
     }
 
@@ -899,14 +1092,15 @@ class NextPvrBackend(
             call("recording.save", mapOf("name" to name, "channel" to r.channelId, "time_t" to start, "duration" to r.minutes * 60) + padding)
             return
         }
-        val params = mutableMapOf<String, Any?>(
-            "recurring_type" to r.repeat,
-            "name" to name,
-            "channel_id" to r.channelId,
-            "start_time" to start,
-            "end_time" to start + r.minutes * 60,
-            "keep" to r.keep,
-        )
+        val params =
+            mutableMapOf<String, Any?>(
+                "recurring_type" to r.repeat,
+                "name" to name,
+                "channel_id" to r.channelId,
+                "start_time" to start,
+                "end_time" to start + r.minutes * 60,
+                "keep" to r.keep,
+            )
         params += padding
         if (r.id != null) {
             params["recurring_id"] = r.id
@@ -916,7 +1110,12 @@ class NextPvrBackend(
     }
 
     private suspend fun rule(id: String): JsonObject? =
-        call("recording.recurring.list").jsonObject["recurrings"]?.jsonArray.orEmpty().map { it.jsonObject }.firstOrNull { it.int("id")?.toString() == id }
+        call("recording.recurring.list")
+            .jsonObject["recurrings"]
+            ?.jsonArray
+            .orEmpty()
+            .map { it.jsonObject }
+            .firstOrNull { it.int("id")?.toString() == id }
 
     // ---- scheduled recordings ---------------------------------------------------------------
 
@@ -1015,7 +1214,10 @@ class NextPvrBackend(
 
     override suspend fun forgetProgram(programId: UUID): kotlinx.serialization.json.JsonObject? = null
 
-    override suspend fun forgetShow(itemId: UUID, dryRun: Boolean): ShowForget? = null
+    override suspend fun forgetShow(
+        itemId: UUID,
+        dryRun: Boolean,
+    ): ShowForget? = null
 
     override suspend fun forgetRecording(itemId: UUID): Forgot? = null
 
@@ -1043,7 +1245,8 @@ class NextPvrBackend(
     @Volatile private var scannerItems: Map<String, JsonObject>? = null
 
     private val scannerHttp by lazy {
-        Jdvr.http.newBuilder()
+        Jdvr.http
+            .newBuilder()
             .connectTimeout(2, java.util.concurrent.TimeUnit.SECONDS)
             .readTimeout(3, java.util.concurrent.TimeUnit.SECONDS)
             .build()
@@ -1057,14 +1260,33 @@ class NextPvrBackend(
         val now = System.currentTimeMillis()
         if (scannerAt != 0L && now - scannerAt < (if (scannerItems == null) 300_000 else 10_000)) return scannerItems
         scannerAt = now
-        val url = baseUrl.toHttpUrl().newBuilder().port(8867).encodedPath("/api/status").query(null).build()
+        val url =
+            baseUrl
+                .toHttpUrl()
+                .newBuilder()
+                .port(8867)
+                .encodedPath("/api/status")
+                .query(null)
+                .build()
         scannerItems =
             runCatching {
                 withContext(Dispatchers.IO) {
-                    scannerHttp.newCall(okhttp3.Request.Builder().url(url).build()).execute().use { r ->
-                        if (!r.isSuccessful) error("scanner answered ${r.code}")
-                        json.parseToJsonElement(r.body.string()).jsonObject["items"]?.jsonObject.orEmpty().mapValues { it.value.jsonObject }
-                    }
+                    scannerHttp
+                        .newCall(
+                            okhttp3.Request
+                                .Builder()
+                                .url(url)
+                                .build(),
+                        ).execute()
+                        .use { r ->
+                            if (!r.isSuccessful) error("scanner answered ${r.code}")
+                            json
+                                .parseToJsonElement(r.body.string())
+                                .jsonObject["items"]
+                                ?.jsonObject
+                                .orEmpty()
+                                .mapValues { it.value.jsonObject }
+                        }
                 }
             }.getOrNull()
         return scannerItems
@@ -1083,12 +1305,15 @@ class NextPvrBackend(
             // Waiting to be scanned again shows as scanning.
             val scanning = wanted.mapNotNull { id -> busy[files[id]]?.str("state")?.let { id to CommercialBadge(state = if (it == "queued") "scanning" else it) } }.toMap()
             val marked =
-                (wanted - scanning.keys).filter { files[it] !in cleared }.chunked(8).flatMap { chunk ->
-                    chunk.map { id -> async { edl(id)?.let { id to it } } }.awaitAll().filterNotNull()
-                }.associate { (id, breaks) ->
-                    val minutes = ((breaks.sumOf { it.endMs - it.startMs } + 30_000) / 60_000).toInt()
-                    id to CommercialBadge(state = if (breaks.isEmpty()) "none" else "found", minutes = minutes)
-                }
+                (wanted - scanning.keys)
+                    .filter { files[it] !in cleared }
+                    .chunked(8)
+                    .flatMap { chunk ->
+                        chunk.map { id -> async { edl(id)?.let { id to it } } }.awaitAll().filterNotNull()
+                    }.associate { (id, breaks) ->
+                        val minutes = ((breaks.sumOf { it.endMs - it.startMs } + 30_000) / 60_000).toInt()
+                        id to CommercialBadge(state = if (breaks.isEmpty()) "none" else "found", minutes = minutes)
+                    }
             (scanning + marked).mapKeys { it.key.toString().plainId() }
         }
 
@@ -1098,31 +1323,46 @@ class NextPvrBackend(
         val shows = recordings().filter { it.done && it.isSeries && showId(it.name) in wanted }.groupBy { showId(it.name) }
         if (shows.isEmpty()) return emptyMap()
         val each = commercialBadges(shows.values.flatten().map { it.uuid })
-        return shows.mapNotNull { (show, recs) ->
-            val states = recs.mapNotNull { each[it.uuid.toString().plainId()]?.state }
-            val badge =
-                when {
-                    "scanning" in states -> CommercialBadge(state = "scanning")
-                    states.isEmpty() -> return@mapNotNull null
-                    else -> CommercialBadge(state = "summary", done = states.count { it == "found" || it == "none" }, total = recs.size, failed = "failed" in states)
-                }
-            show.plainId() to badge
-        }.toMap()
+        return shows
+            .mapNotNull { (show, recs) ->
+                val states = recs.mapNotNull { each[it.uuid.toString().plainId()]?.state }
+                val badge =
+                    when {
+                        "scanning" in states -> CommercialBadge(state = "scanning")
+                        states.isEmpty() -> return@mapNotNull null
+                        else -> CommercialBadge(state = "summary", done = states.count { it == "found" || it == "none" }, total = recs.size, failed = "failed" in states)
+                    }
+                show.plainId() to badge
+            }.toMap()
     }
 
     private fun scannerUrl(
         path: String,
         file: String? = null,
-    ) = baseUrl.toHttpUrl().newBuilder().port(8867).encodedPath(path).query(null).apply { file?.let { addQueryParameter("file", it) } }.build()
+    ) = baseUrl
+        .toHttpUrl()
+        .newBuilder()
+        .port(8867)
+        .encodedPath(path)
+        .query(null)
+        .apply { file?.let { addQueryParameter("file", it) } }
+        .build()
 
     private fun scannerGet(
         path: String,
         file: String? = null,
     ): JsonObject =
-        scannerHttp.newCall(okhttp3.Request.Builder().url(scannerUrl(path, file)).build()).execute().use { r ->
-            if (!r.isSuccessful) error("the scanner answered ${r.code}")
-            json.parseToJsonElement(r.body.string()).jsonObject
-        }
+        scannerHttp
+            .newCall(
+                okhttp3.Request
+                    .Builder()
+                    .url(scannerUrl(path, file))
+                    .build(),
+            ).execute()
+            .use { r ->
+                if (!r.isSuccessful) error("the scanner answered ${r.code}")
+                json.parseToJsonElement(r.body.string()).jsonObject
+            }
 
     // The scanner's token for changes. It unlocks the way NextPVR's own sign-in works, with the
     // PIN's md5 this device already keeps: nobody types anything.
@@ -1141,7 +1381,9 @@ class NextPvrBackend(
         token: String?,
     ): Pair<Int, JsonObject> {
         val req =
-            okhttp3.Request.Builder().url(scannerUrl(path))
+            okhttp3.Request
+                .Builder()
+                .url(scannerUrl(path))
                 .post(okhttp3.RequestBody.create("application/json".toMediaType(), body.toString()))
                 .apply { token?.let { header("X-Token", it) } }
                 .build()
@@ -1170,7 +1412,11 @@ class NextPvrBackend(
     // A finished recording's file, when the scanner is there to act on it.
     private suspend fun scannerFile(itemId: UUID): String? {
         if (itemId.mostSignificantBits != RECORDING || scanner() == null) return null
-        return runCatching { recording(itemId) }.getOrNull()?.takeIf { it.status == "ready" }?.o?.str("file")
+        return runCatching { recording(itemId) }
+            .getOrNull()
+            ?.takeIf { it.status == "ready" }
+            ?.o
+            ?.str("file")
     }
 
     /**
@@ -1209,13 +1455,27 @@ class NextPvrBackend(
 
     override suspend fun fixAudioFormat(itemId: UUID): Message? = null
 
-    override suspend fun setProgramStart(itemId: UUID, seconds: Double, keyframe: Boolean): ProgramStartResult? = null
+    override suspend fun setProgramStart(
+        itemId: UUID,
+        seconds: Double,
+        keyframe: Boolean,
+    ): ProgramStartResult? = null
 
-    override suspend fun keyframes(itemId: UUID, seconds: Double): Keyframes? = null
+    override suspend fun keyframes(
+        itemId: UUID,
+        seconds: Double,
+    ): Keyframes? = null
 
-    override suspend fun frame(itemId: UUID, seconds: Double, width: Int): androidx.compose.ui.graphics.ImageBitmap? = null
+    override suspend fun frame(
+        itemId: UUID,
+        seconds: Double,
+        width: Int,
+    ): androidx.compose.ui.graphics.ImageBitmap? = null
 
-    override suspend fun rememberStartCard(itemId: UUID, seconds: Double): ProgramStartResult? = null
+    override suspend fun rememberStartCard(
+        itemId: UUID,
+        seconds: Double,
+    ): ProgramStartResult? = null
 
     override suspend fun editing(): Editing? = null
 
@@ -1235,7 +1495,10 @@ class NextPvrBackend(
 
     override suspend fun archiveChoices(itemId: UUID): ArchiveChoices? = null
 
-    override suspend fun archive(itemId: UUID, target: String): Message? = null
+    override suspend fun archive(
+        itemId: UUID,
+        target: String,
+    ): Message? = null
 
     override suspend fun recordInstead(programId: UUID): Message? = null
 
@@ -1284,7 +1547,11 @@ class NextPvrBackend(
         val weekAgo = System.currentTimeMillis() / 1000 - 7 * 86400
         val failed =
             runCatching {
-                call("recording.list", mapOf("filter" to "failed")).jsonObject["recordings"]?.jsonArray.orEmpty().map { it.jsonObject }
+                call("recording.list", mapOf("filter" to "failed"))
+                    .jsonObject["recordings"]
+                    ?.jsonArray
+                    .orEmpty()
+                    .map { it.jsonObject }
                     .filter { (it.long("startTime") ?: 0) > weekAgo }
                     .sortedByDescending { it.long("startTime") }
                     .map { o ->
@@ -1305,7 +1572,14 @@ class NextPvrBackend(
     // What each tuner is doing (system.status): a stream is "LIVE&<buffer file>" for live TV, else a
     // recording's file. Live buffers are named live-<channel name>-<n>-<tuner>.ts.
     override suspend fun tuners(channelId: UUID?): TunerStatus? {
-        val devices = runCatching { call("system.status").jsonObject["status"]?.jsonArray.orEmpty().map { it.jsonObject } }.getOrNull() ?: return null
+        val devices =
+            runCatching {
+                call("system.status")
+                    .jsonObject["status"]
+                    ?.jsonArray
+                    .orEmpty()
+                    .map { it.jsonObject }
+            }.getOrNull() ?: return null
         if (devices.isEmpty()) return null
         val streams = devices.flatMap { d -> d["streams"]?.jsonArray.orEmpty().map { it.jsonPrimitive.content } }
         val channels = if (streams.isEmpty()) emptyMap() else runCatching { channelInfo() }.getOrDefault(emptyMap())
@@ -1313,15 +1587,27 @@ class NextPvrBackend(
             if (streams.none { !it.startsWith("LIVE&") }) {
                 emptyList()
             } else {
-                runCatching { call("recording.list", mapOf("filter" to "recording")).jsonObject["recordings"]?.jsonArray.orEmpty().map { it.jsonObject } }.getOrDefault(emptyList())
+                runCatching {
+                    call("recording.list", mapOf("filter" to "recording"))
+                        .jsonObject["recordings"]
+                        ?.jsonArray
+                        .orEmpty()
+                        .map { it.jsonObject }
+                }.getOrDefault(emptyList())
             }
+
         fun plain(s: String) = s.filter { it.isLetterOrDigit() }.lowercase()
         val busy =
             streams.map { st ->
                 val live = st.startsWith("LIVE&")
                 val file = st.substringAfter('&')
                 if (live) {
-                    val name = Regex("""live-(.+)-\d+-\d+\.ts$""").find(file.substringAfterLast('/'))?.groupValues?.get(1).orEmpty()
+                    val name =
+                        Regex("""live-(.+)-\d+-\d+\.ts$""")
+                            .find(file.substringAfterLast('/'))
+                            ?.groupValues
+                            ?.get(1)
+                            .orEmpty()
                     val ch = channels.entries.firstOrNull { plain(it.value.str("channelName").orEmpty()) == plain(name) }
                     BusyInput(
                         channelId = ch?.let { channelUuid(it.key).toString() } ?: "",
@@ -1364,7 +1650,12 @@ class NextPvrBackend(
 
         // Its own client: the player cancels its call when it lets the stream go, and a cancel
         // here would close the connection being kept.
-        private val keeper by lazy { okhttp3.OkHttpClient.Builder().readTimeout(0, java.util.concurrent.TimeUnit.SECONDS).build() }
+        private val keeper by lazy {
+            okhttp3.OkHttpClient
+                .Builder()
+                .readTimeout(0, java.util.concurrent.TimeUnit.SECONDS)
+                .build()
+        }
 
         val interceptor =
             okhttp3.Interceptor { chain ->
@@ -1409,15 +1700,17 @@ class NextPvrBackend(
                                 }
                         }
                     }.buffer()
-                response.newBuilder().body(
-                    object : okhttp3.ResponseBody() {
-                        override fun contentType() = body.contentType()
+                response
+                    .newBuilder()
+                    .body(
+                        object : okhttp3.ResponseBody() {
+                            override fun contentType() = body.contentType()
 
-                        override fun contentLength() = body.contentLength()
+                            override fun contentLength() = body.contentLength()
 
-                        override fun source() = source
-                    },
-                ).build()
+                            override fun source() = source
+                        },
+                    ).build()
             }
     }
 
@@ -1433,7 +1726,12 @@ class NextPvrBackend(
 
         /** [url] (a live buffer file) pinned to the size it has when first asked for: seeks like a recording. */
         fun pinnedNow(url: String): String =
-            url.toHttpUrl().newBuilder().setQueryParameter(SNAPSHOT, "auto" + System.nanoTime()).build().toString()
+            url
+                .toHttpUrl()
+                .newBuilder()
+                .setQueryParameter(SNAPSHOT, "auto" + System.nanoTime())
+                .build()
+                .toString()
 
         val snapshotLength =
             okhttp3.Interceptor { chain ->
@@ -1472,7 +1770,10 @@ class NextPvrBackend(
                             object : okio.ForwardingSource(body.source()) {
                                 var left = count
 
-                                override fun read(sink: okio.Buffer, byteCount: Long): Long {
+                                override fun read(
+                                    sink: okio.Buffer,
+                                    byteCount: Long,
+                                ): Long {
                                     if (left <= 0) return -1
                                     val n = super.read(sink, minOf(byteCount, left))
                                     if (n > 0) left -= n
@@ -1485,7 +1786,8 @@ class NextPvrBackend(
 
                         override fun close() = body.close()
                     }
-                response.newBuilder()
+                response
+                    .newBuilder()
                     .header("Content-Length", count.toString())
                     .apply { if (response.code == 206) header("Content-Range", "bytes $from-$end/$len") }
                     .body(capped)
@@ -1538,16 +1840,45 @@ class NextPvrBackend(
             pinMd5: String,
         ): String {
             val get = { url: String ->
-                Jdvr.http.newCall(okhttp3.Request.Builder().url(url).build()).execute().use { r ->
-                    if (!r.isSuccessful) error("NextPVR answered ${r.code}")
-                    Json.parseToJsonElement(r.body.string()).jsonObject
-                }
+                Jdvr.http
+                    .newCall(
+                        okhttp3.Request
+                            .Builder()
+                            .url(url)
+                            .build(),
+                    ).execute()
+                    .use { r ->
+                        if (!r.isSuccessful) error("NextPVR answered ${r.code}")
+                        Json.parseToJsonElement(r.body.string()).jsonObject
+                    }
             }
             val base = baseUrl.toHttpUrl()
-            val start = get(base.newBuilder().addPathSegment("service").addQueryParameter("method", "session.initiate").addQueryParameter("ver", "1.0").addQueryParameter("device", "JDVR").addQueryParameter("format", "json").build().toString())
+            val start =
+                get(
+                    base
+                        .newBuilder()
+                        .addPathSegment("service")
+                        .addQueryParameter("method", "session.initiate")
+                        .addQueryParameter("ver", "1.0")
+                        .addQueryParameter("device", "JDVR")
+                        .addQueryParameter("format", "json")
+                        .build()
+                        .toString(),
+                )
             val sid = start["sid"]?.jsonPrimitive?.contentOrNull ?: error("No NextPVR server answers at $baseUrl")
             val salt = start["salt"]?.jsonPrimitive?.contentOrNull ?: error("No NextPVR server answers at $baseUrl")
-            val reply = get(base.newBuilder().addPathSegment("service").addQueryParameter("method", "session.login").addQueryParameter("sid", sid).addQueryParameter("md5", md5(":$pinMd5:$salt")).addQueryParameter("format", "json").build().toString())
+            val reply =
+                get(
+                    base
+                        .newBuilder()
+                        .addPathSegment("service")
+                        .addQueryParameter("method", "session.login")
+                        .addQueryParameter("sid", sid)
+                        .addQueryParameter("md5", md5(":$pinMd5:$salt"))
+                        .addQueryParameter("format", "json")
+                        .build()
+                        .toString(),
+                )
             if (reply["stat"]?.jsonPrimitive?.contentOrNull != "ok") error("Wrong PIN")
             return sid
         }
@@ -1555,10 +1886,27 @@ class NextPvrBackend(
         /** Whether a NextPVR server answers at this address (it starts a session for anyone). */
         fun answers(baseUrl: String): Boolean =
             runCatching {
-                val url = baseUrl.toHttpUrl().newBuilder().addPathSegment("service").addQueryParameter("method", "session.initiate").addQueryParameter("ver", "1.0").addQueryParameter("device", "JDVR").addQueryParameter("format", "json").build().toString()
-                Jdvr.http.newCall(okhttp3.Request.Builder().url(url).build()).execute().use { r ->
-                    r.isSuccessful && Json.parseToJsonElement(r.body.string()).jsonObject["salt"] != null
-                }
+                val url =
+                    baseUrl
+                        .toHttpUrl()
+                        .newBuilder()
+                        .addPathSegment("service")
+                        .addQueryParameter("method", "session.initiate")
+                        .addQueryParameter("ver", "1.0")
+                        .addQueryParameter("device", "JDVR")
+                        .addQueryParameter("format", "json")
+                        .build()
+                        .toString()
+                Jdvr.http
+                    .newCall(
+                        okhttp3.Request
+                            .Builder()
+                            .url(url)
+                            .build(),
+                    ).execute()
+                    .use { r ->
+                        r.isSuccessful && Json.parseToJsonElement(r.body.string()).jsonObject["salt"] != null
+                    }
             }.getOrDefault(false)
 
         /**
@@ -1570,7 +1918,9 @@ class NextPvrBackend(
             withContext(Dispatchers.IO) {
                 val prefixes =
                     runCatching {
-                        java.net.NetworkInterface.getNetworkInterfaces().toList()
+                        java.net.NetworkInterface
+                            .getNetworkInterfaces()
+                            .toList()
                             .filter { it.isUp && !it.isLoopback }
                             .flatMap { it.inetAddresses.toList() }
                             .filterIsInstance<java.net.Inet4Address>()
@@ -1579,7 +1929,8 @@ class NextPvrBackend(
                             .distinct()
                     }.getOrDefault(emptyList())
                 val io = Dispatchers.IO.limitedParallelism(64)
-                prefixes.flatMap { prefix -> (1..254).map { "$prefix.$it" } }
+                prefixes
+                    .flatMap { prefix -> (1..254).map { "$prefix.$it" } }
                     .map { host ->
                         async(io) {
                             val open =
@@ -1589,7 +1940,8 @@ class NextPvrBackend(
                                 }.getOrDefault(false)
                             "http://$host:8866".takeIf { open && answers(it) }
                         }
-                    }.awaitAll().filterNotNull()
+                    }.awaitAll()
+                    .filterNotNull()
             }
     }
 }

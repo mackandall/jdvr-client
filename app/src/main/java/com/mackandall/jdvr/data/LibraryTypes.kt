@@ -68,6 +68,10 @@ data class ItemDetails(
 
 /** The letter-strip bucket for a name: its first letter without accents, or "#" for anything else. */
 fun letterOf(name: String?): String {
-    val c = java.text.Normalizer.normalize(name?.trim()?.take(1) ?: "", java.text.Normalizer.Form.NFD).firstOrNull()?.uppercaseChar()
+    val c =
+        java.text.Normalizer
+            .normalize(name?.trim()?.take(1) ?: "", java.text.Normalizer.Form.NFD)
+            .firstOrNull()
+            ?.uppercaseChar()
     return if (c != null && c in 'A'..'Z') c.toString() else "#"
 }

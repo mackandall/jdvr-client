@@ -1,10 +1,10 @@
 package com.mackandall.jdvr.data
 
-import java.util.UUID
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonObject
 import org.jellyfin.sdk.api.client.HttpMethod
+import java.util.UUID
 
 /**
  * What the server remembers about recordings: Recorded Shows and the list by date, watched marks
@@ -83,7 +83,10 @@ interface RecordingHistory {
      * show, an episode or a guide entry), so a series recording records them again ([dryRun]
      * counts). Administrators; null otherwise or without the plugin.
      */
-    suspend fun forgetShow(itemId: UUID, dryRun: Boolean): ShowForget?
+    suspend fun forgetShow(
+        itemId: UUID,
+        dryRun: Boolean,
+    ): ShowForget?
 
     suspend fun forgetRecording(itemId: UUID): Forgot?
 
@@ -425,8 +428,7 @@ class EpisodeHistoryPlugin(
             listOfNotNull(programId?.let { "programId" to it }, reason?.let { "reason" to it }).toMap(),
         )
 
-    override suspend fun cancelRerecord(itemId: UUID): Boolean =
-        server.bytes(HttpMethod.DELETE, "/EpisodeHistory/Item/$itemId/Rerecord") != null
+    override suspend fun cancelRerecord(itemId: UUID): Boolean = server.bytes(HttpMethod.DELETE, "/EpisodeHistory/Item/$itemId/Rerecord") != null
 
     override suspend fun trash(): TrashList? = server.call<TrashList>(HttpMethod.GET, "/EpisodeHistory/Trash")?.also { t -> trashDaysCache = (if (t.enabled) t.keepDays else null) to System.currentTimeMillis() }
 
@@ -445,11 +447,9 @@ class EpisodeHistoryPlugin(
         return trashDaysCache?.first
     }
 
-    override suspend fun activeRecordings(itemId: UUID): ActiveRecordings? =
-        server.call(HttpMethod.GET, "/EpisodeHistory/Item/${itemId.plain()}/ActiveRecordings")
+    override suspend fun activeRecordings(itemId: UUID): ActiveRecordings? = server.call(HttpMethod.GET, "/EpisodeHistory/Item/${itemId.plain()}/ActiveRecordings")
 
-    override suspend fun stopRecording(recordingId: String): Boolean =
-        server.call<StoppedRecording>(HttpMethod.POST, "/EpisodeHistory/Item/${recordingId.replace("-", "")}/StopRecording")?.stopped == true
+    override suspend fun stopRecording(recordingId: String): Boolean = server.call<StoppedRecording>(HttpMethod.POST, "/EpisodeHistory/Item/${recordingId.replace("-", "")}/StopRecording")?.stopped == true
 
     override suspend fun deleteShowRecordings(
         seriesId: UUID,
@@ -474,17 +474,16 @@ class EpisodeHistoryPlugin(
 
     override suspend fun forgetProgram(programId: UUID): kotlinx.serialization.json.JsonObject? = server.call<kotlinx.serialization.json.JsonObject>(HttpMethod.DELETE, "/EpisodeHistory/Program/${programId.plain()}/History")
 
-    override suspend fun forgetShow(itemId: UUID, dryRun: Boolean): ShowForget? =
-        server.call(HttpMethod.DELETE, "/EpisodeHistory/Item/${itemId.plain()}/ShowHistory", if (dryRun) mapOf("dryRun" to "true") else emptyMap())
+    override suspend fun forgetShow(
+        itemId: UUID,
+        dryRun: Boolean,
+    ): ShowForget? = server.call(HttpMethod.DELETE, "/EpisodeHistory/Item/${itemId.plain()}/ShowHistory", if (dryRun) mapOf("dryRun" to "true") else emptyMap())
 
-    override suspend fun forgetRecording(itemId: UUID): Forgot? =
-        server.call(HttpMethod.DELETE, "/EpisodeHistory/Item/${itemId.plain()}/History", mapOf("deleteRecording" to true))
+    override suspend fun forgetRecording(itemId: UUID): Forgot? = server.call(HttpMethod.DELETE, "/EpisodeHistory/Item/${itemId.plain()}/History", mapOf("deleteRecording" to true))
 
-    override suspend fun recordedShows(filter: String): List<RecordingCard>? =
-        server.call<RecordingCards>(HttpMethod.GET, "/EpisodeHistory/Recordings", mapOf("filter" to filter, "limit" to 200))?.cards
+    override suspend fun recordedShows(filter: String): List<RecordingCard>? = server.call<RecordingCards>(HttpMethod.GET, "/EpisodeHistory/Recordings", mapOf("filter" to filter, "limit" to 200))?.cards
 
-    override suspend fun recordingsByDate(filter: String): DateRecordings? =
-        server.call(HttpMethod.GET, "/EpisodeHistory/Recordings/ByDate", mapOf("filter" to filter))
+    override suspend fun recordingsByDate(filter: String): DateRecordings? = server.call(HttpMethod.GET, "/EpisodeHistory/Recordings/ByDate", mapOf("filter" to filter))
 
     override suspend fun showRecordings(
         seriesId: String,

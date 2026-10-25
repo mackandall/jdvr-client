@@ -1,7 +1,5 @@
 package com.mackandall.jdvr.player
 
-import com.mackandall.jdvr.ui.ProgramActionsHost
-import android.view.KeyEvent as AndroidKeyEvent
 import androidx.annotation.OptIn
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.foundation.background
@@ -32,13 +30,14 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.nativeKeyCode
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
-import androidx.compose.ui.input.key.key
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -52,30 +51,31 @@ import androidx.media3.extractor.DefaultExtractorsFactory
 import androidx.media3.ui.PlayerView
 import androidx.tv.material3.Text
 import com.mackandall.jdvr.data.Channel
+import com.mackandall.jdvr.data.ItemDetails
 import com.mackandall.jdvr.data.Jdvr
+import com.mackandall.jdvr.data.MarkSymbols
+import com.mackandall.jdvr.data.TunerStatus
+import com.mackandall.jdvr.data.attempt
 import com.mackandall.jdvr.ui.Button
 import com.mackandall.jdvr.ui.Jc
-import com.mackandall.jdvr.ui.seeThrough
-import com.mackandall.jdvr.ui.Marks
 import com.mackandall.jdvr.ui.MarkChips
-import com.mackandall.jdvr.ui.rememberMarkSymbols
-import com.mackandall.jdvr.ui.time
+import com.mackandall.jdvr.ui.Marks
+import com.mackandall.jdvr.ui.ProgramActionsHost
 import com.mackandall.jdvr.ui.day
-import androidx.compose.ui.text.style.TextOverflow
+import com.mackandall.jdvr.ui.rememberMarkSymbols
+import com.mackandall.jdvr.ui.seeThrough
+import com.mackandall.jdvr.ui.time
+import com.mackandall.jdvr.ui.tryFocus
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import org.jellyfin.sdk.model.serializer.toUUIDOrNull
 import timber.log.Timber
 import java.time.Duration
 import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneId
 import java.util.UUID
-import org.jellyfin.sdk.model.serializer.toUUIDOrNull
-import com.mackandall.jdvr.data.ItemDetails
-import com.mackandall.jdvr.data.MarkSymbols
-import com.mackandall.jdvr.data.TunerStatus
-import com.mackandall.jdvr.data.attempt
-import com.mackandall.jdvr.ui.tryFocus
+import android.view.KeyEvent as AndroidKeyEvent
 
 /** Sparse-PCR recordings needed an 8 MB TS search window to seek (the Wholphin fix). */
 private const val TS_SEARCH_BYTES = 8 * 1024 * 1024
@@ -236,8 +236,7 @@ fun PlayerScreen(
                 // The mini guide uses ⏩ ⏪ to jump two hours.
                 if (ui.miniOpen && e.key.nativeKeyCode in setOf(AndroidKeyEvent.KEYCODE_MEDIA_FAST_FORWARD, AndroidKeyEvent.KEYCODE_MEDIA_REWIND)) return@onPreviewKeyEvent false
                 stream.onMediaKey(e.key.nativeKeyCode, record = record, stop = stop)
-            }
-            .onKeyEvent { e ->
+            }.onKeyEvent { e ->
                 e.type == KeyEventType.KeyDown && stream.showing &&
                     onRemoteKey(e.key.nativeKeyCode, stream, ui, step = ::step, onNumber = { n -> info.channels.firstOrNull { it.number == n }?.let { onChannelChange(it.id) } })
             },
@@ -264,7 +263,15 @@ fun PlayerScreen(
         }
         if (!ui.miniOpen && (osd || stream.error != null)) {
             LiveControls(
-                channel, symbols, stream, info, ui, formats, player, playFocus, Modifier.align(Alignment.BottomCenter),
+                channel,
+                symbols,
+                stream,
+                info,
+                ui,
+                formats,
+                player,
+                playFocus,
+                Modifier.align(Alignment.BottomCenter),
                 onRecord = record,
                 onStop = stop,
                 onFromStart = fromStart,
@@ -336,8 +343,7 @@ private fun livePlayer(context: android.content.Context): ExoPlayer {
         .setMediaSourceFactory(
             DefaultMediaSourceFactory(OkHttpDataSource.Factory(Jdvr.http), extractors)
                 .setLoadErrorHandlingPolicy(NoRetryOnServerError),
-        )
-        .build()
+        ).build()
         .apply {
             playWhenReady = true
             applySubtitlePreference(this)
@@ -382,10 +388,19 @@ private fun onRemoteKey(
     // A panel has the remote.
     if (ui.anyPanel) return false
     when (code) {
-        AndroidKeyEvent.KEYCODE_DPAD_UP, AndroidKeyEvent.KEYCODE_CHANNEL_UP -> step(1)
-        AndroidKeyEvent.KEYCODE_CHANNEL_DOWN -> step(-1)
-        AndroidKeyEvent.KEYCODE_DPAD_DOWN, AndroidKeyEvent.KEYCODE_GUIDE -> ui.miniOpen = true
-        AndroidKeyEvent.KEYCODE_DPAD_CENTER, AndroidKeyEvent.KEYCODE_ENTER ->
+        AndroidKeyEvent.KEYCODE_DPAD_UP, AndroidKeyEvent.KEYCODE_CHANNEL_UP -> {
+            step(1)
+        }
+
+        AndroidKeyEvent.KEYCODE_CHANNEL_DOWN -> {
+            step(-1)
+        }
+
+        AndroidKeyEvent.KEYCODE_DPAD_DOWN, AndroidKeyEvent.KEYCODE_GUIDE -> {
+            ui.miniOpen = true
+        }
+
+        AndroidKeyEvent.KEYCODE_DPAD_CENTER, AndroidKeyEvent.KEYCODE_ENTER -> {
             if (ui.typed.isNotEmpty()) {
                 onNumber(ui.typed)
                 ui.typed = ""
@@ -394,14 +409,28 @@ private fun onRemoteKey(
             } else {
                 ui.actionsOpen = true
             }
-        AndroidKeyEvent.KEYCODE_INFO -> ui.infoOpen = true
-        AndroidKeyEvent.KEYCODE_DPAD_LEFT -> stream.rewind()
-        AndroidKeyEvent.KEYCODE_DPAD_RIGHT -> stream.forward()
+        }
+
+        AndroidKeyEvent.KEYCODE_INFO -> {
+            ui.infoOpen = true
+        }
+
+        AndroidKeyEvent.KEYCODE_DPAD_LEFT -> {
+            stream.rewind()
+        }
+
+        AndroidKeyEvent.KEYCODE_DPAD_RIGHT -> {
+            stream.forward()
+        }
+
         in AndroidKeyEvent.KEYCODE_0..AndroidKeyEvent.KEYCODE_9 -> {
             ui.typed = (ui.typed + (code - AndroidKeyEvent.KEYCODE_0)).takeLast(4)
             ui.typedAt = System.currentTimeMillis()
         }
-        else -> return false
+
+        else -> {
+            return false
+        }
     }
     return true
 }
@@ -425,7 +454,14 @@ private fun LiveControls(
     val offset = stream.behindLiveMs()
     val paused = stream.pausedAt
     // Paused: behind from the first second, never "● LIVE" beside the Paused line.
-    val behind = if (offset > 15_000) offset else if (paused != null) offset.coerceAtLeast(1_000) else 0L
+    val behind =
+        if (offset > 15_000) {
+            offset
+        } else if (paused != null) {
+            offset.coerceAtLeast(1_000)
+        } else {
+            0L
+        }
     val recording = info.realRecording(stream.channelId)
     InfoBar(channel, symbols, modifier, behindMs = behind, recording = recording, formats = formats, watchingAt = LocalDateTime.now().minusNanos(offset * 1_000_000), bufferFrom = stream.bufferFrom(offset), pausedAt = paused) {
         if (!ui.actionsOpen) return@InfoBar
@@ -465,11 +501,26 @@ private fun androidx.compose.foundation.layout.BoxScope.LiveMessages(
             "❚❚  Paused at " + LocalDateTime.ofInstant(at, ZoneId.systemDefault()).time() + "  ·  ▶ or OK to resume",
             color = Jc.Text,
             fontSize = 18.sp,
-            modifier = Modifier.align(Alignment.TopStart).padding(28.dp).background(Jc.Ink.copy(alpha = 0.8f), RoundedCornerShape(10.dp)).padding(horizontal = 16.dp, vertical = 10.dp),
+            modifier =
+                Modifier
+                    .align(Alignment.TopStart)
+                    .padding(28.dp)
+                    .background(Jc.Ink.copy(alpha = 0.8f), RoundedCornerShape(10.dp))
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
         )
     }
     ui.note?.let {
-        Text(it, color = Jc.Text, fontSize = 16.sp, modifier = Modifier.align(Alignment.TopCenter).padding(28.dp).background(Jc.Ink.copy(alpha = 0.8f), RoundedCornerShape(10.dp)).padding(14.dp))
+        Text(
+            it,
+            color = Jc.Text,
+            fontSize = 16.sp,
+            modifier =
+                Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(28.dp)
+                    .background(Jc.Ink.copy(alpha = 0.8f), RoundedCornerShape(10.dp))
+                    .padding(14.dp),
+        )
     }
     if (ui.typed.isNotEmpty()) {
         Text(
@@ -477,7 +528,12 @@ private fun androidx.compose.foundation.layout.BoxScope.LiveMessages(
             color = Jc.Text,
             fontSize = 48.sp,
             fontWeight = FontWeight.Bold,
-            modifier = Modifier.align(Alignment.TopEnd).padding(32.dp).background(Jc.Ink.copy(alpha = 0.8f), RoundedCornerShape(12.dp)).padding(horizontal = 22.dp, vertical = 8.dp),
+            modifier =
+                Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(32.dp)
+                    .background(Jc.Ink.copy(alpha = 0.8f), RoundedCornerShape(12.dp))
+                    .padding(horizontal = 22.dp, vertical = 8.dp),
         )
     }
     stream.error?.let {
@@ -514,13 +570,27 @@ private fun TuningFiller(channel: Channel?) {
             )
         } else {
             channel?.logoUrl?.let {
-                coil3.compose.AsyncImage(model = it, contentDescription = null, contentScale = androidx.compose.ui.layout.ContentScale.Fit, modifier = Modifier.align(Alignment.Center).padding(bottom = 140.dp).width(260.dp).height(160.dp))
+                coil3.compose.AsyncImage(
+                    model = it,
+                    contentDescription = null,
+                    contentScale = androidx.compose.ui.layout.ContentScale.Fit,
+                    modifier =
+                        Modifier
+                            .align(Alignment.Center)
+                            .padding(bottom = 140.dp)
+                            .width(260.dp)
+                            .height(160.dp),
+                )
             }
         }
         Box(Modifier.fillMaxSize().background(Color(0x73080B10)))
         Row(
             // Middle right: the top box and the info bar are up while it tunes.
-            Modifier.align(Alignment.CenterEnd).padding(28.dp).background(Jc.Ink.copy(alpha = 0.8f), RoundedCornerShape(50)).padding(horizontal = 14.dp, vertical = 7.dp),
+            Modifier
+                .align(Alignment.CenterEnd)
+                .padding(28.dp)
+                .background(Jc.Ink.copy(alpha = 0.8f), RoundedCornerShape(50))
+                .padding(horizontal = 14.dp, vertical = 7.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
@@ -532,15 +602,23 @@ private fun TuningFiller(channel: Channel?) {
 
 @Composable
 private fun Spinner() {
-    val t = androidx.compose.animation.core.rememberInfiniteTransition(label = "spin")
+    val t =
+        androidx.compose.animation.core
+            .rememberInfiniteTransition(label = "spin")
     val angle by t.animateFloat(
         0f,
         360f,
-        androidx.compose.animation.core.infiniteRepeatable(androidx.compose.animation.core.tween(900, easing = androidx.compose.animation.core.LinearEasing)),
+        androidx.compose.animation.core
+            .infiniteRepeatable(
+                androidx.compose.animation.core
+                    .tween(900, easing = androidx.compose.animation.core.LinearEasing),
+            ),
         label = "angle",
     )
     androidx.compose.foundation.Canvas(Modifier.width(18.dp).height(18.dp)) {
-        val stroke = androidx.compose.ui.graphics.drawscope.Stroke(width = 3.dp.toPx())
+        val stroke =
+            androidx.compose.ui.graphics.drawscope
+                .Stroke(width = 3.dp.toPx())
         drawArc(Jc.Line, 0f, 360f, false, style = stroke)
         drawArc(Jc.Focus, angle, 100f, false, style = stroke)
     }
@@ -584,7 +662,14 @@ private fun TopInfoBox(
                 now?.let { Text("Aired ${it.start.day()} · ${it.start.time()} – ${it.end.time()}", color = Jc.Text, fontSize = 13.sp) }
                 details?.item?.officialRating?.let { Text(it, color = Jc.Text, fontSize = 12.sp, modifier = Modifier.background(Jc.Panel2, RoundedCornerShape(4.dp)).padding(horizontal = 5.dp)) }
                 details?.communityRating?.let { Text("★ %.1f".format(it), color = Jc.Gold, fontSize = 13.sp) }
-                listOfNotNull(details?.genres?.take(3)?.joinToString(" · ")?.ifEmpty { null }, details?.item?.year?.toString()).joinToString(" · ").takeIf { it.isNotEmpty() }?.let {
+                listOfNotNull(
+                    details
+                        ?.genres
+                        ?.take(3)
+                        ?.joinToString(" · ")
+                        ?.ifEmpty { null },
+                    details?.item?.year?.toString(),
+                ).joinToString(" · ").takeIf { it.isNotEmpty() }?.let {
                     Text(it, color = Jc.Muted, fontSize = 13.sp, maxLines = 1)
                 }
             }
@@ -622,29 +707,29 @@ private fun InfoBar(
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         TitleWithFormats(formats, Modifier.fillMaxWidth()) {
-        Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            Text(
-                listOfNotNull(channel?.number, channel?.name).joinToString("  "),
-                color = Jc.Muted,
-                fontSize = 18.sp,
-                maxLines = 1,
-                softWrap = false,
-            )
-            Text(now?.name ?: "", color = Jc.Text, fontSize = 26.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
-            MarkChips(marks)
-            if (behindMs > 0) {
-                val sec = behindMs / 1000
+            Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                 Text(
-                    "−" + (if (sec >= 3600) "%d:%02d:%02d".format(sec / 3600, sec / 60 % 60, sec % 60) else "%d:%02d".format(sec / 60, sec % 60)) + " behind live",
-                    color = Jc.Amber,
-                    fontSize = 16.sp,
+                    listOfNotNull(channel?.number, channel?.name).joinToString("  "),
+                    color = Jc.Muted,
+                    fontSize = 18.sp,
                     maxLines = 1,
                     softWrap = false,
                 )
-            } else {
-                Text("● LIVE", color = Jc.Recording, fontSize = 15.sp, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
+                Text(now?.name ?: "", color = Jc.Text, fontSize = 26.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                MarkChips(marks)
+                if (behindMs > 0) {
+                    val sec = behindMs / 1000
+                    Text(
+                        "−" + (if (sec >= 3600) "%d:%02d:%02d".format(sec / 3600, sec / 60 % 60, sec % 60) else "%d:%02d".format(sec / 60, sec % 60)) + " behind live",
+                        color = Jc.Amber,
+                        fontSize = 16.sp,
+                        maxLines = 1,
+                        softWrap = false,
+                    )
+                } else {
+                    Text("● LIVE", color = Jc.Recording, fontSize = 15.sp, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
+                }
             }
-        }
         }
         val sub = listOfNotNull(now?.seasonEpisode, marks.title).joinToString(" · ")
         if (sub.isNotEmpty() || pausedAt != null) {
@@ -695,7 +780,13 @@ private fun LiveTimeline(
     behindMs: Long,
     modifier: Modifier,
 ) {
-    val total = Duration.between(start, end).seconds.coerceAtLeast(1).toFloat()
+    val total =
+        Duration
+            .between(start, end)
+            .seconds
+            .coerceAtLeast(1)
+            .toFloat()
+
     fun at(t: LocalDateTime) = (Duration.between(start, t).seconds / total).coerceIn(0f, 1f)
     val live = at(LocalDateTime.now())
     val watching = at(watchingAt).coerceAtMost(live)
@@ -714,9 +805,25 @@ private fun LiveTimeline(
         androidx.compose.foundation.Canvas(Modifier.fillMaxSize()) {
             val h = 6.dp.toPx()
             val y = barMid.toPx() - h / 2
-            val r = androidx.compose.ui.geometry.CornerRadius(h / 2)
-            fun seg(a: Float, b: Float, c: Color) {
-                if (b > a) drawRoundRect(c, androidx.compose.ui.geometry.Offset(a * size.width, y), androidx.compose.ui.geometry.Size((b - a) * size.width, h), r)
+            val r =
+                androidx.compose.ui.geometry
+                    .CornerRadius(h / 2)
+
+            fun seg(
+                a: Float,
+                b: Float,
+                c: Color,
+            ) {
+                if (b > a) {
+                    drawRoundRect(
+                        c,
+                        androidx.compose.ui.geometry
+                            .Offset(a * size.width, y),
+                        androidx.compose.ui.geometry
+                            .Size((b - a) * size.width, h),
+                        r,
+                    )
+                }
             }
             seg(0f, 1f, line)
             seg(0f, from, aired)
@@ -726,33 +833,110 @@ private fun LiveTimeline(
             val a = watching * size.width
             val b = live * size.width
             if (b > a) {
-                drawRoundRect(focus.copy(alpha = 0.12f), androidx.compose.ui.geometry.Offset(a, y), androidx.compose.ui.geometry.Size(b - a, h), r)
-                val clip = androidx.compose.ui.graphics.Path().apply { addRoundRect(androidx.compose.ui.geometry.RoundRect(a, y, b, y + h, r)) }
+                drawRoundRect(
+                    focus.copy(alpha = 0.12f),
+                    androidx.compose.ui.geometry
+                        .Offset(a, y),
+                    androidx.compose.ui.geometry
+                        .Size(b - a, h),
+                    r,
+                )
+                val clip =
+                    androidx.compose.ui.graphics
+                        .Path()
+                        .apply {
+                            addRoundRect(
+                                androidx.compose.ui.geometry
+                                    .RoundRect(a, y, b, y + h, r),
+                            )
+                        }
                 clipPath(clip) {
                     val step = 7.dp.toPx()
                     var x = a - h
                     while (x < b) {
-                        drawLine(focus.copy(alpha = 0.75f), androidx.compose.ui.geometry.Offset(x, y + h), androidx.compose.ui.geometry.Offset(x + h, y), strokeWidth = 3.dp.toPx())
+                        drawLine(
+                            focus.copy(alpha = 0.75f),
+                            androidx.compose.ui.geometry
+                                .Offset(x, y + h),
+                            androidx.compose.ui.geometry
+                                .Offset(x + h, y),
+                            strokeWidth = 3.dp.toPx(),
+                        )
                         x += step
                     }
                 }
             }
             // Live: a red tick.
-            drawRect(red, androidx.compose.ui.geometry.Offset(b - 1.dp.toPx(), barMid.toPx() - 9.dp.toPx()), androidx.compose.ui.geometry.Size(2.dp.toPx(), 18.dp.toPx()))
+            drawRect(
+                red,
+                androidx.compose.ui.geometry
+                    .Offset(b - 1.dp.toPx(), barMid.toPx() - 9.dp.toPx()),
+                androidx.compose.ui.geometry
+                    .Size(2.dp.toPx(), 18.dp.toPx()),
+            )
             // The bracket from you to live, under the bar.
             val by = barMid.toPx() + 12.dp.toPx()
             val bh = 6.dp.toPx()
             val sw = 1.dp.toPx()
-            drawLine(amber, androidx.compose.ui.geometry.Offset(a, by), androidx.compose.ui.geometry.Offset(a, by + bh), sw)
-            drawLine(amber, androidx.compose.ui.geometry.Offset(a, by + bh), androidx.compose.ui.geometry.Offset(b, by + bh), sw)
-            drawLine(amber, androidx.compose.ui.geometry.Offset(b, by), androidx.compose.ui.geometry.Offset(b, by + bh), sw)
+            drawLine(
+                amber,
+                androidx.compose.ui.geometry
+                    .Offset(a, by),
+                androidx.compose.ui.geometry
+                    .Offset(a, by + bh),
+                sw,
+            )
+            drawLine(
+                amber,
+                androidx.compose.ui.geometry
+                    .Offset(a, by + bh),
+                androidx.compose.ui.geometry
+                    .Offset(b, by + bh),
+                sw,
+            )
+            drawLine(
+                amber,
+                androidx.compose.ui.geometry
+                    .Offset(b, by),
+                androidx.compose.ui.geometry
+                    .Offset(b, by + bh),
+                sw,
+            )
             // You: a thumb.
             val tw = 8.dp.toPx()
             val th = 22.dp.toPx()
-            val tl = androidx.compose.ui.geometry.Offset(a - tw / 2, barMid.toPx() - th / 2)
-            drawRoundRect(Color.Black.copy(alpha = 0.5f), tl + androidx.compose.ui.geometry.Offset(0f, 2.dp.toPx()), androidx.compose.ui.geometry.Size(tw, th), androidx.compose.ui.geometry.CornerRadius(tw / 2))
-            drawRoundRect(Color.White, tl, androidx.compose.ui.geometry.Size(tw, th), androidx.compose.ui.geometry.CornerRadius(tw / 2))
-            drawRoundRect(focus, tl, androidx.compose.ui.geometry.Size(tw, th), androidx.compose.ui.geometry.CornerRadius(tw / 2), style = androidx.compose.ui.graphics.drawscope.Stroke(2.dp.toPx()))
+            val tl =
+                androidx.compose.ui.geometry
+                    .Offset(a - tw / 2, barMid.toPx() - th / 2)
+            drawRoundRect(
+                Color.Black.copy(alpha = 0.5f),
+                tl +
+                    androidx.compose.ui.geometry
+                        .Offset(0f, 2.dp.toPx()),
+                androidx.compose.ui.geometry
+                    .Size(tw, th),
+                androidx.compose.ui.geometry
+                    .CornerRadius(tw / 2),
+            )
+            drawRoundRect(
+                Color.White,
+                tl,
+                androidx.compose.ui.geometry
+                    .Size(tw, th),
+                androidx.compose.ui.geometry
+                    .CornerRadius(tw / 2),
+            )
+            drawRoundRect(
+                focus,
+                tl,
+                androidx.compose.ui.geometry
+                    .Size(tw, th),
+                androidx.compose.ui.geometry
+                    .CornerRadius(tw / 2),
+                style =
+                    androidx.compose.ui.graphics.drawscope
+                        .Stroke(2.dp.toPx()),
+            )
         }
         if (behind) {
             // LIVE over the live edge, and how far behind under the middle of the bracket.
@@ -835,14 +1019,25 @@ private object NoRetryOnServerError : androidx.media3.exoplayer.upstream.Default
 /** What went wrong with a live channel, in words. */
 private fun liveErrorText(e: PlaybackException): String =
     when (e.errorCode) {
-        PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS, PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND ->
+        PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS, PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND -> {
             "The server couldn't start this channel. It may be off the air, or its tuner may be busy or not working."
-        PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED, PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT ->
+        }
+
+        PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED, PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT -> {
             "Lost the connection to the server."
+        }
+
         PlaybackException.ERROR_CODE_DECODER_INIT_FAILED, PlaybackException.ERROR_CODE_DECODING_FAILED,
-        PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED, PlaybackException.ERROR_CODE_DECODING_FORMAT_EXCEEDS_CAPABILITIES ->
+        PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED, PlaybackException.ERROR_CODE_DECODING_FORMAT_EXCEEDS_CAPABILITIES,
+        -> {
             "This TV couldn't play this channel's picture or sound."
-        PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED, PlaybackException.ERROR_CODE_PARSING_MANIFEST_MALFORMED ->
+        }
+
+        PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED, PlaybackException.ERROR_CODE_PARSING_MANIFEST_MALFORMED -> {
             "The channel's stream came through damaged."
-        else -> "Playback stopped (${e.errorCodeName})."
+        }
+
+        else -> {
+            "Playback stopped (${e.errorCodeName})."
+        }
     }

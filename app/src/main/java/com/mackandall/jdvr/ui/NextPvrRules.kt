@@ -245,7 +245,11 @@ fun NextPvrKeywordRule(
             Field("Name in the Series list (empty: the keyword)", r.name, onChange = { rule = r.copy(name = it) })
         }
         PaddingRows(
-            d, r.keep, r.prePadding, r.postPadding, r.directory,
+            d,
+            r.keep,
+            r.prePadding,
+            r.postPadding,
+            r.directory,
             onKeep = { rule = r.copy(keep = it) },
             onPre = { rule = r.copy(prePadding = it) },
             onPost = { rule = r.copy(postPadding = it) },
@@ -342,18 +346,28 @@ fun NextPvrManualRecording(
             rule = r.copy(repeat = stepIn(repeats.map { it.first }, r.repeat, 1))
         }
         val today = LocalDate.now()
+
         fun onDay(by: Int) {
             val day = r.start.toLocalDate().plusDays(by.toLong())
             // From today up to two weeks on (the guide's reach); round the ends.
-            val d2 = if (day.isBefore(today)) today.plusDays(13) else if (day.isAfter(today.plusDays(13))) today else day
+            val d2 =
+                if (day.isBefore(today)) {
+                    today.plusDays(13)
+                } else if (day.isAfter(today.plusDays(13))) {
+                    today
+                } else {
+                    day
+                }
             rule = r.copy(start = d2.atTime(r.start.toLocalTime()))
         }
         EditRow("Day", if (r.repeat == 0) "The day it records." else "The first day it records.", dayName(r.start.toLocalDate()), onStep = ::onDay) { onDay(1) }
+
         // ◀ ▶ five minutes; OK half an hour. The day stays put.
         fun onTime(by: Int) {
             rule = r.copy(start = r.start.toLocalDate().atTime(r.start.toLocalTime().plusMinutes(by.toLong())))
         }
         EditRow("Start", "◀ ▶ 5 minutes · OK 30 minutes.", r.start.time(), onStep = { onTime(it * 5) }) { onTime(30) }
+
         fun onLength(by: Int) {
             rule = r.copy(minutes = (r.minutes + by).coerceIn(5, 600))
         }
@@ -364,7 +378,11 @@ fun NextPvrManualRecording(
             Field("Name (empty: ${channelName.substringAfter(' ')} ${r.start.time()})", r.name, onChange = { rule = r.copy(name = it) })
         }
         PaddingRows(
-            d, r.keep.takeIf { r.repeat != 0 }, r.prePadding, r.postPadding, r.directory,
+            d,
+            r.keep.takeIf { r.repeat != 0 },
+            r.prePadding,
+            r.postPadding,
+            r.directory,
             onKeep = { rule = r.copy(keep = it) },
             onPre = { rule = r.copy(prePadding = it) },
             onPost = { rule = r.copy(postPadding = it) },

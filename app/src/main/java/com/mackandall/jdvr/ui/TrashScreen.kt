@@ -33,22 +33,21 @@ import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
 import com.mackandall.jdvr.data.Jdvr
+import com.mackandall.jdvr.data.TrashItem
+import com.mackandall.jdvr.data.TrashList
+import com.mackandall.jdvr.data.attempt
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.time.Duration
 import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneId
-import com.mackandall.jdvr.data.TrashItem
-import com.mackandall.jdvr.data.TrashList
-import com.mackandall.jdvr.data.attempt
 
 private fun utc(iso: String): Instant? = runCatching { Instant.parse(iso) }.getOrNull()
 
 private fun local(i: Instant): LocalDateTime = LocalDateTime.ofInstant(i, ZoneId.systemDefault())
 
-private fun gb(bytes: Long): String =
-    if (bytes >= 1L shl 30) "%.1f GB".format(bytes / (1024.0 * 1024 * 1024)) else "${maxOf(1, bytes / (1024 * 1024))} MB"
+private fun gb(bytes: Long): String = if (bytes >= 1L shl 30) "%.1f GB".format(bytes / (1024.0 * 1024 * 1024)) else "${maxOf(1, bytes / (1024 * 1024))} MB"
 
 /** "3 h ago", "yesterday 9:40 PM", or the day and time. */
 private fun ago(i: Instant): String {
@@ -108,8 +107,11 @@ fun TrashScreen(entry: FocusRequester) {
         }
         if (t != null) {
             Text(
-                if (!t.enabled) "The trash is off on the server: deletes are for good."
-                else "Deleted recordings stay here ${daysText(t.keepDays)}" + (if (t.minFreeGb > 0) ", or until a drive has under ${t.minFreeGb} GB free" else "") + ".",
+                if (!t.enabled) {
+                    "The trash is off on the server: deletes are for good."
+                } else {
+                    "Deleted recordings stay here ${daysText(t.keepDays)}" + (if (t.minFreeGb > 0) ", or until a drive has under ${t.minFreeGb} GB free" else "") + "."
+                },
                 color = Jc.Muted,
                 fontSize = 14.sp,
                 modifier = Modifier.padding(top = 4.dp),
@@ -117,9 +119,18 @@ fun TrashScreen(entry: FocusRequester) {
         }
         Spacer(12)
         when {
-            !loaded -> Text("Loading…", color = Jc.Muted, fontSize = 16.sp)
-            t == null -> Text("Couldn't load the trash (it needs Episode History on the server).", color = Jc.Amber, fontSize = 16.sp)
-            t.items.isEmpty() -> Text("The trash is empty.", color = Jc.Muted, fontSize = 16.sp, modifier = Modifier.focusRequester(entry))
+            !loaded -> {
+                Text("Loading…", color = Jc.Muted, fontSize = 16.sp)
+            }
+
+            t == null -> {
+                Text("Couldn't load the trash (it needs Episode History on the server).", color = Jc.Amber, fontSize = 16.sp)
+            }
+
+            t.items.isEmpty() -> {
+                Text("The trash is empty.", color = Jc.Muted, fontSize = 16.sp, modifier = Modifier.focusRequester(entry))
+            }
+
             else -> {
                 if (t.canEmpty) {
                     var armed by remember { mutableStateOf(false) }

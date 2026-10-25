@@ -1,9 +1,9 @@
 package com.mackandall.jdvr.data
 
-import java.util.UUID
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import org.jellyfin.sdk.api.client.HttpMethod
+import java.util.UUID
 
 /**
  * Recording Favourites (title and keyword rules), what will record and why, Record instead, and

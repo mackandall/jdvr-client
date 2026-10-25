@@ -41,7 +41,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.tv.material3.Text
+import com.mackandall.jdvr.data.FavouriteEntry
+import com.mackandall.jdvr.data.FavouritesList
 import com.mackandall.jdvr.data.Jdvr
+import com.mackandall.jdvr.data.SeriesScheduled
+import com.mackandall.jdvr.data.attempt
+import com.mackandall.jdvr.data.attemptResult
 import com.mackandall.jdvr.data.plainId
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -49,11 +54,6 @@ import org.jellyfin.sdk.model.api.SeriesTimerInfoDto
 import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneId
-import com.mackandall.jdvr.data.FavouriteEntry
-import com.mackandall.jdvr.data.FavouritesList
-import com.mackandall.jdvr.data.SeriesScheduled
-import com.mackandall.jdvr.data.attempt
-import com.mackandall.jdvr.data.attemptResult
 
 /**
  * Series recordings (Jellyfin's, tied to the guide's series id) beside Recording Favourites
@@ -90,7 +90,10 @@ fun SeriesScreen(entry: FocusRequester) {
         }
     }
 
-    val seriesList = androidx.compose.foundation.lazy.rememberLazyListState()
+    val seriesList =
+        androidx.compose.foundation.lazy
+            .rememberLazyListState()
+
     // NextPVR: a place up or down its priority list; the list comes back in the new order (the
     // rows are keyed, so focus stays on the moved series' button).
     fun move(
@@ -98,7 +101,11 @@ fun SeriesScreen(entry: FocusRequester) {
         higher: Boolean,
     ) {
         scope.launch {
-            note = runCatching { Jdvr.nextPvrBackend?.moveSeries(s.id!!, higher); null }.getOrElse { "Didn't work: ${it.message ?: it.javaClass.simpleName}" }
+            note =
+                runCatching {
+                    Jdvr.nextPvrBackend?.moveSeries(s.id!!, higher)
+                    null
+                }.getOrElse { "Didn't work: ${it.message ?: it.javaClass.simpleName}" }
             series = attempt { Jdvr.backend.seriesTimers() } ?: series
             // Keep the moved series on screen (the top row can scroll off above).
             series?.indexOfFirst { it.id == s.id }?.takeIf { it >= 0 }?.let { i ->
@@ -152,9 +159,15 @@ fun SeriesScreen(entry: FocusRequester) {
                 Spacer(8)
                 val list = series
                 when {
-                    list == null -> Text("Loading…", color = Jc.Muted, fontSize = 15.sp)
-                    list.isEmpty() -> Text("No series recordings.", color = Jc.Muted, fontSize = 15.sp)
-                    else ->
+                    list == null -> {
+                        Text("Loading…", color = Jc.Muted, fontSize = 15.sp)
+                    }
+
+                    list.isEmpty() -> {
+                        Text("No series recordings.", color = Jc.Muted, fontSize = 15.sp)
+                    }
+
+                    else -> {
                         LazyColumn(state = seriesList, verticalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(bottom = 40.dp)) {
                             itemsIndexed(list, key = { _, it -> it.id ?: it.name ?: "" }) { i, s ->
                                 SeriesRow(
@@ -173,72 +186,87 @@ fun SeriesScreen(entry: FocusRequester) {
                                 }
                             }
                         }
+                    }
                 }
             }
             // NextPVR: new keyword rules and manual recordings (they join the list on the left).
             // Narrow: the rules' rows need the room for their buttons.
-            if (Jdvr.isNextPvr) Column(Modifier.width(280.dp).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("New rule", color = Jc.Text, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
-                Text("Joins the list, at the bottom", color = Jc.Muted, fontSize = 13.sp)
-                Spacer(4)
-                Button("+ Keyword rule", modifier = if (series?.isEmpty() == true) Modifier.focusRequester(entry) else Modifier) { nextPvrEditing = "keyword" to null }
-                Text("Every airing with a word or name in its title, description or cast.", color = Jc.Muted, fontSize = 14.sp)
-                Spacer(6)
-                Button("+ Manual recording") { nextPvrEditing = "manual" to null }
-                Text("A channel and a time: once, or every day, week, weekday or weekend.", color = Jc.Muted, fontSize = 14.sp)
+            if (Jdvr.isNextPvr) {
+                Column(Modifier.width(280.dp).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("New rule", color = Jc.Text, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+                    Text("Joins the list, at the bottom", color = Jc.Muted, fontSize = 13.sp)
+                    Spacer(4)
+                    Button("+ Keyword rule", modifier = if (series?.isEmpty() == true) Modifier.focusRequester(entry) else Modifier) { nextPvrEditing = "keyword" to null }
+                    Text("Every airing with a word or name in its title, description or cast.", color = Jc.Muted, fontSize = 14.sp)
+                    Spacer(6)
+                    Button("+ Manual recording") { nextPvrEditing = "manual" to null }
+                    Text("A channel and a time: once, or every day, week, weekday or weekend.", color = Jc.Muted, fontSize = 14.sp)
+                }
             }
             // Recording Favourites (a Jellyfin plugin's: not on NextPVR).
-            if (!Jdvr.isNextPvr) Column(Modifier.weight(1f).fillMaxHeight()) {
-                Text("Recording Favourites", color = Jc.Text, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
-                Text("JellyDVR Schedule's: by title, on any channel", color = Jc.Muted, fontSize = 13.sp)
-                Spacer(8)
-                val fav = favourites
-                if (fav?.canManage == true) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        BasicTextField(
-                            value = newTitle,
-                            onValueChange = { newTitle = it },
-                            singleLine = true,
-                            textStyle = TextStyle(color = Jc.Text, fontSize = 16.sp),
-                            cursorBrush = SolidColor(Jc.Focus),
-                            modifier =
-                                Modifier
-                                    .weight(1f)
-                                    .border(BorderStroke(2.dp, Jc.Line), RoundedCornerShape(10.dp))
-                                    .background(Jc.Panel2, RoundedCornerShape(10.dp))
-                                    .padding(horizontal = 12.dp, vertical = 11.dp),
-                            decorationBox = { inner ->
-                                if (newTitle.isEmpty()) Text("Title or keyword", color = Jc.Muted, fontSize = 16.sp)
-                                inner()
-                            },
-                        )
-                        Button(if (keyword) "Keyword" else "Exact title") { keyword = !keyword }
-                        Button("+ Add", primary = true) {
-                            val t = newTitle.trim()
-                            if (t.isNotEmpty()) {
-                                newTitle = ""
-                                act { Jdvr.backend.addFavouriteByTitle(t, keyword)?.message }
+            if (!Jdvr.isNextPvr) {
+                Column(Modifier.weight(1f).fillMaxHeight()) {
+                    Text("Recording Favourites", color = Jc.Text, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+                    Text("JellyDVR Schedule's: by title, on any channel", color = Jc.Muted, fontSize = 13.sp)
+                    Spacer(8)
+                    val fav = favourites
+                    if (fav?.canManage == true) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            BasicTextField(
+                                value = newTitle,
+                                onValueChange = { newTitle = it },
+                                singleLine = true,
+                                textStyle = TextStyle(color = Jc.Text, fontSize = 16.sp),
+                                cursorBrush = SolidColor(Jc.Focus),
+                                modifier =
+                                    Modifier
+                                        .weight(1f)
+                                        .border(BorderStroke(2.dp, Jc.Line), RoundedCornerShape(10.dp))
+                                        .background(Jc.Panel2, RoundedCornerShape(10.dp))
+                                        .padding(horizontal = 12.dp, vertical = 11.dp),
+                                decorationBox = { inner ->
+                                    if (newTitle.isEmpty()) Text("Title or keyword", color = Jc.Muted, fontSize = 16.sp)
+                                    inner()
+                                },
+                            )
+                            Button(if (keyword) "Keyword" else "Exact title") { keyword = !keyword }
+                            Button("+ Add", primary = true) {
+                                val t = newTitle.trim()
+                                if (t.isNotEmpty()) {
+                                    newTitle = ""
+                                    act { Jdvr.backend.addFavouriteByTitle(t, keyword)?.message }
+                                }
+                            }
+                        }
+                        Spacer(10)
+                    }
+                    when {
+                        fav == null && !favouritesLoaded -> {
+                            Text("Loading…", color = Jc.Muted, fontSize = 15.sp)
+                        }
+
+                        fav == null -> {
+                            Text("Recording Favourites need the JellyDVR Schedule plugin on the server.", color = Jc.Muted, fontSize = 15.sp)
+                        }
+
+                        fav.favourites.isEmpty() -> {
+                            Text("No recording favourites yet.", color = Jc.Muted, fontSize = 15.sp)
+                        }
+
+                        else -> {
+                            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(bottom = 40.dp)) {
+                                items(fav.favourites.sortedBy { it.title.lowercase() }, key = { it.id }) { f ->
+                                    FavouriteRow(
+                                        f = f,
+                                        canManage = fav.canManage,
+                                        modifier = if (series.isNullOrEmpty() && f == fav.favourites.minByOrNull { it.title.lowercase() }) Modifier.focusRequester(entry) else Modifier,
+                                        onToggle = { act { Jdvr.backend.setFavouriteEnabled(f.id, !f.enabled)?.message } },
+                                        onRemove = { act { Jdvr.backend.removeFavourite(f.id)?.message } },
+                                    )
+                                }
                             }
                         }
                     }
-                    Spacer(10)
-                }
-                when {
-                    fav == null && !favouritesLoaded -> Text("Loading…", color = Jc.Muted, fontSize = 15.sp)
-                    fav == null -> Text("Recording Favourites need the JellyDVR Schedule plugin on the server.", color = Jc.Muted, fontSize = 15.sp)
-                    fav.favourites.isEmpty() -> Text("No recording favourites yet.", color = Jc.Muted, fontSize = 15.sp)
-                    else ->
-                        LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(bottom = 40.dp)) {
-                            items(fav.favourites.sortedBy { it.title.lowercase() }, key = { it.id }) { f ->
-                                FavouriteRow(
-                                    f = f,
-                                    canManage = fav.canManage,
-                                    modifier = if (series.isNullOrEmpty() && f == fav.favourites.minByOrNull { it.title.lowercase() }) Modifier.focusRequester(entry) else Modifier,
-                                    onToggle = { act { Jdvr.backend.setFavouriteEnabled(f.id, !f.enabled)?.message } },
-                                    onRemove = { act { Jdvr.backend.removeFavourite(f.id)?.message } },
-                                )
-                            }
-                        }
                 }
             }
         }
@@ -280,12 +308,14 @@ private fun SeriesRow(
             ).joinToString(" · ")
         Text(details, color = Jc.Muted, fontSize = 14.sp)
         // (NextPVR's rows say it in their details.)
-        if (!Jdvr.isNextPvr) Text(
-            next?.let { "${it.count} scheduled · next ${it.next.day()} ${it.next.time()}" + (it.nextChannel?.let { c -> " $c" } ?: "") }
-                ?: "Nothing scheduled: not in the guide right now.",
-            color = Jc.Text,
-            fontSize = 14.sp,
-        )
+        if (!Jdvr.isNextPvr) {
+            Text(
+                next?.let { "${it.count} scheduled · next ${it.next.day()} ${it.next.time()}" + (it.nextChannel?.let { c -> " $c" } ?: "") }
+                    ?: "Nothing scheduled: not in the guide right now.",
+                color = Jc.Text,
+                fontSize = 14.sp,
+            )
+        }
         Row(Modifier.padding(top = 4.dp)) {
             Button("Edit", modifier = modifier.padding(end = 8.dp), onClick = onEdit)
             // Both on every row (at the top or bottom they do nothing), so a move never takes away
@@ -302,7 +332,7 @@ private fun SeriesRow(
                     else -> null
                 }
             Button(
-                if (armed) "Press again: " + (what?.let { "remove the $it" } ?: "cancel the series") else what?.let { "Remove ${it}" } ?: "Cancel series recording",
+                if (armed) "Press again: " + (what?.let { "remove the $it" } ?: "cancel the series") else what?.let { "Remove $it" } ?: "Cancel series recording",
                 leading = { SeriesDots(height = 14.dp, crossed = true) },
             ) {
                 if (armed) onCancel() else armed = true
@@ -419,7 +449,12 @@ internal fun SeriesTimerRows(
     first: FocusRequester,
     onChange: (SeriesTimerInfoDto) -> Unit,
 ) {
-    val start = t.startDate?.let { java.time.LocalDateTime.ofInstant(it.atZone(java.time.ZoneOffset.UTC).toInstant(), java.time.ZoneId.systemDefault()).time() }
+    val start =
+        t.startDate?.let {
+            java.time.LocalDateTime
+                .ofInstant(it.atZone(java.time.ZoneOffset.UTC).toInstant(), java.time.ZoneId.systemDefault())
+                .time()
+        }
     EditRow("Episodes", "Which airings to record.", if (t.recordNewOnly == true) "New episodes only" else "All episodes", Modifier.focusRequester(first)) {
         onChange(t.copy(recordNewOnly = t.recordNewOnly != true))
     }
@@ -472,10 +507,18 @@ internal fun EditRow(
                     }
                 },
             ),
-        shape = androidx.tv.material3.ClickableSurfaceDefaults.shape(RoundedCornerShape(10.dp)),
-        colors = androidx.tv.material3.ClickableSurfaceDefaults.colors(containerColor = Jc.Panel, focusedContainerColor = Jc.FocusFill, contentColor = Jc.Text, focusedContentColor = Jc.Text),
-        border = androidx.tv.material3.ClickableSurfaceDefaults.border(focusedBorder = androidx.tv.material3.Border(BorderStroke(2.dp, Jc.Focus))),
-        scale = androidx.tv.material3.ClickableSurfaceDefaults.scale(focusedScale = 1.01f),
+        shape =
+            androidx.tv.material3.ClickableSurfaceDefaults
+                .shape(RoundedCornerShape(10.dp)),
+        colors =
+            androidx.tv.material3.ClickableSurfaceDefaults
+                .colors(containerColor = Jc.Panel, focusedContainerColor = Jc.FocusFill, contentColor = Jc.Text, focusedContentColor = Jc.Text),
+        border =
+            androidx.tv.material3.ClickableSurfaceDefaults
+                .border(focusedBorder = androidx.tv.material3.Border(BorderStroke(2.dp, Jc.Focus))),
+        scale =
+            androidx.tv.material3.ClickableSurfaceDefaults
+                .scale(focusedScale = 1.01f),
     ) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {

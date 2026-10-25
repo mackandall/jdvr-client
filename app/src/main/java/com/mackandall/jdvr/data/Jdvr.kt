@@ -6,9 +6,9 @@ import com.mackandall.jdvr.profile.MediaCodecCapabilitiesTest
 import com.mackandall.jdvr.profile.createDeviceProfile
 import okhttp3.OkHttpClient
 import org.jellyfin.sdk.Jellyfin
+import org.jellyfin.sdk.android.androidDevice
 import org.jellyfin.sdk.api.client.ApiClient
 import org.jellyfin.sdk.api.okhttp.OkHttpFactory
-import org.jellyfin.sdk.android.androidDevice
 import org.jellyfin.sdk.createJellyfin
 import org.jellyfin.sdk.model.ClientInfo
 import org.jellyfin.sdk.model.api.DeviceProfile
@@ -43,6 +43,7 @@ object Jdvr {
     val backend: TvBackend get() = nextPvr ?: jellyfinBackend
 
     val isNextPvr: Boolean get() = nextPvr != null
+
     /** NextPVR's own calls (series options), when signed in to one. */
     val nextPvrBackend: NextPvrBackend? get() = nextPvr
 
@@ -50,7 +51,12 @@ object Jdvr {
         appContext = context.applicationContext
         session = Session(appContext)
         prefs = Prefs(appContext)
-        http = OkHttpClient.Builder().addInterceptor(NextPvrBackend.snapshotLength).addInterceptor(NextPvrBackend.LiveHold.interceptor).build()
+        http =
+            OkHttpClient
+                .Builder()
+                .addInterceptor(NextPvrBackend.snapshotLength)
+                .addInterceptor(NextPvrBackend.LiveHold.interceptor)
+                .build()
         val factory = OkHttpFactory(http)
         jellyfin =
             createJellyfin {
@@ -72,7 +78,7 @@ object Jdvr {
         }
     }
 
-    val signedIn: Boolean get() = nextPvr != null || api != null && userId != null
+    val signedIn: Boolean get() = nextPvr != null || (api != null && userId != null)
 
     fun signIn(
         url: String,

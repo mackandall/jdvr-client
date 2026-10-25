@@ -153,7 +153,15 @@ private fun FormatPills(f: PlayingFormats) {
             video?.let { Pill(it, resolution(v)) }
             hdr(v)?.let { Pill(it, null) }
         }
-        if (video != null && audio != null) Box(Modifier.padding(horizontal = 3.dp).width(1.dp).height(20.dp).background(PillBorder))
+        if (video != null && audio != null) {
+            Box(
+                Modifier
+                    .padding(horizontal = 3.dp)
+                    .width(1.dp)
+                    .height(20.dp)
+                    .background(PillBorder),
+            )
+        }
         f.audio?.let { a -> audio?.let { Pill(it, channels(a.channelCount)) } }
     }
 }
@@ -227,7 +235,12 @@ private fun resolution(f: Format): String? {
             f.height >= 560 -> "576p"
             else -> "${f.height}p"
         }
-    return lines + (f.frameRate.takeIf { it > 0 }?.roundToInt()?.toString() ?: "")
+    return lines + (
+        f.frameRate
+            .takeIf { it > 0 }
+            ?.roundToInt()
+            ?.toString() ?: ""
+    )
 }
 
 private fun hdr(f: Format): String? =
