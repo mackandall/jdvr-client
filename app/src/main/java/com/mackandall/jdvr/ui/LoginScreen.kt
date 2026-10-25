@@ -297,6 +297,8 @@ fun LoginScreen(
                     when {
                         searching -> "Looking for Jellyfin and NextPVR servers on your network…"
                         found.isEmpty() -> "No server found on the network. Type its address."
+                        // Switching, with only the server in use answering.
+                        others.isEmpty() && saved.isEmpty() -> "No other server found on the network. Type its address."
                         else -> "Pick a server, or type its address."
                     },
                     color = Jc.Muted,
