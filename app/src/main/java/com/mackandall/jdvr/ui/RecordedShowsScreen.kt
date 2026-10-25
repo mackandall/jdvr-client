@@ -10,13 +10,9 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
@@ -48,7 +44,6 @@ import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
 import coil3.compose.AsyncImage
 import com.mackandall.jdvr.data.Jdvr
-import com.mackandall.jdvr.data.LiveTvRepository
 import com.mackandall.jdvr.data.Prefs
 import com.mackandall.jdvr.data.plainId
 import com.mackandall.jdvr.data.toUuid
@@ -56,6 +51,9 @@ import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneId
 import java.util.UUID
+import com.mackandall.jdvr.data.CommercialBadge
+import com.mackandall.jdvr.data.RecordingCard
+import com.mackandall.jdvr.data.attempt
 
 private fun local(iso: String?): LocalDateTime? = iso?.let { runCatching { LocalDateTime.ofInstant(Instant.parse(it), ZoneId.systemDefault()) }.getOrNull() }
 
@@ -88,17 +86,17 @@ fun RecordedShowsScreen(
     var visit by remember { mutableStateOf(preset) }
     // A movie or one-off recording's details page (from the grid).
     var details by remember { mutableStateOf<UUID?>(null) }
-    var badges by remember { mutableStateOf<Map<String, LiveTvRepository.CommercialBadge>>(emptyMap()) }
+    var badges by remember { mutableStateOf<Map<String, CommercialBadge>>(emptyMap()) }
     var reloadCards by remember { mutableStateOf(0) }
     // Opened on a show from elsewhere (Home): Back from it goes back there, not to the grid.
     val cameForShow = remember { openShowId != null }
-    var cards by remember { mutableStateOf<List<LiveTvRepository.RecordingCard>?>(null) }
+    var cards by remember { mutableStateOf<List<RecordingCard>?>(null) }
     // Without Episode History: Jellyfin's own recordings, one card each (no live folder / archive).
     var plain by remember { mutableStateOf(false) }
     var loaded by remember { mutableStateOf(false) }
-    var openShow by remember { mutableStateOf<LiveTvRepository.RecordingCard?>(null) }
+    var openShow by remember { mutableStateOf<RecordingCard?>(null) }
     // Hold OK on a card: its quick actions.
-    var quick by remember { mutableStateOf<LiveTvRepository.RecordingCard?>(null) }
+    var quick by remember { mutableStateOf<RecordingCard?>(null) }
     // Hold OK on a line of the list by date: its quick actions.
     var quickLine by remember { mutableStateOf<UUID?>(null) }
     // The list by date needs a newer Episode History; without it, the cards.
@@ -112,12 +110,12 @@ fun RecordedShowsScreen(
     val movesFinished by MoveWatcher.finished.collectAsState()
     LaunchedEffect(filter, reloadCards, movesFinished) {
         loaded = false
-        val shows = Jdvr.liveTv.recordedShows(filter)
+        val shows = Jdvr.backend.recordedShows(filter)
         plain = shows == null
-        cards = shows ?: Jdvr.liveTv.jellyfinRecordings()
+        cards = shows ?: Jdvr.backend.jellyfinRecordings()
         // Comskip's badges for the cards (a show's: how many of its recordings are scanned).
-        badges = cards?.mapNotNull { it.id.toUuid() }?.let { ids -> runCatching { Jdvr.liveTv.commercialBadges(ids) }.getOrNull() }.orEmpty() +
-            cards?.filter { it.id.toUuid() == null }?.map { it.id }?.let { ids -> runCatching { Jdvr.liveTv.showCommercialBadges(ids) }.getOrNull() }.orEmpty()
+        badges = cards?.mapNotNull { it.id.toUuid() }?.let { ids -> attempt { Jdvr.backend.commercialBadges(ids) } }.orEmpty() +
+            cards?.filter { it.id.toUuid() == null }?.map { it.id }?.let { ids -> attempt { Jdvr.backend.showCommercialBadges(ids) } }.orEmpty()
         loaded = true
         // Asked to open a show (from Home): straight to its episodes.
         openShowId?.let { id -> cards?.firstOrNull { it.id == id }?.let { openShow = it } }
@@ -156,24 +154,24 @@ fun RecordedShowsScreen(
     var focusedCard by remember { mutableStateOf<String?>(null) }
     if (Jc.Style == UiStyle.Gem) {
         androidx.compose.animation.Crossfade(targetState = focusedCard?.toUuid(), animationSpec = androidx.compose.animation.core.tween(600), label = "gem fanart") { id ->
-            if (id != null) AsyncImage(model = Jdvr.liveTv.backdropUrl(id), contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+            if (id != null) AsyncImage(model = Jdvr.backend.backdropUrl(id), contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
         }
         Box(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color(0xC708090C)))
     } else {
         // The other themes: the focused show's picture at the top right (a NextPVR show's from its
         // newest recording), once focus rests on a card.
-        var artCard by remember { mutableStateOf<LiveTvRepository.RecordingCard?>(null) }
+        var artCard by remember { mutableStateOf<RecordingCard?>(null) }
         LaunchedEffect(focusedCard, cards) {
             if (artCard != null) kotlinx.coroutines.delay(300)
             artCard = cards?.firstOrNull { it.id == focusedCard }
         }
         val artId = artCard?.let { (it.imageId ?: it.id).toUuid() }
-        FadingBackdrop(artId, artId?.let { Jdvr.liveTv.backdropUrl(it) }, artId?.let { Jdvr.liveTv.imageUrl(it, 720) }, strength = 0.85f)
+        FadingBackdrop(artId, artId?.let { Jdvr.backend.backdropUrl(it) }, artId?.let { Jdvr.backend.imageUrl(it, 720) }, strength = 0.85f)
     }
     Column(Modifier.fillMaxSize().padding(start = 28.dp, top = 24.dp, end = 28.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             Column(Modifier.weight(1f)) {
-                Text("Recorded Shows", color = Jc.Text, fontSize = 28.sp, fontWeight = FontWeight.SemiBold)
+                Text("Recorded Shows", color = Jc.Title, fontSize = 28.sp, fontWeight = FontWeight.SemiBold)
                 Text(
                     (if (plain) "Jellyfin's recordings · newest first" else if (Jdvr.isNextPvr) "NextPVR's recordings · newest first" else when (filter) {
                         Prefs.ARCHIVED -> "Moved to the archive · newest first"
@@ -231,7 +229,7 @@ fun RecordedShowsScreen(
                         if (index >= 0) {
                             if (gridState.layoutInfo.visibleItemsInfo.none { it.index == index }) gridState.scrollToItem(index)
                             repeat(40) {
-                                if (runCatching { back.requestFocus() }.isSuccess) {
+                                if (back.tryFocus()) {
                                     returnTo = null
                                     return@LaunchedEffect
                                 }
@@ -244,10 +242,7 @@ fun RecordedShowsScreen(
                     }
                     if (focusedFirst) return@LaunchedEffect
                     focusedFirst = true
-                    repeat(40) {
-                        if (runCatching { entry.requestFocus() }.isSuccess) return@LaunchedEffect
-                        delay(50)
-                    }
+                    entry.focusSoon(withinMs = 2000)
                 }
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(5),
@@ -313,8 +308,8 @@ fun RecordedShowsScreen(
 
 @Composable
 private fun RecordingCardView(
-    c: LiveTvRepository.RecordingCard,
-    commercials: LiveTvRepository.CommercialBadge?,
+    c: RecordingCard,
+    commercials: CommercialBadge?,
     modifier: Modifier,
     onHold: (() -> Unit)?,
     onClick: () -> Unit,
@@ -330,7 +325,7 @@ private fun RecordingCardView(
             scale = ClickableSurfaceDefaults.scale(focusedScale = 1.05f),
         ) {
             Box(Modifier.fillMaxSize()) {
-                val image = (c.imageId ?: c.id).let { Jdvr.liveTv.imageUrl(it, 400) }
+                val image = (c.imageId ?: c.id).let { Jdvr.backend.imageUrl(it, 400) }
                 if (image != null) {
                     AsyncImage(model = image, contentDescription = c.name, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
                 }
@@ -393,7 +388,7 @@ private fun Badge(
 /** A show's recordings, in the episode browser (list with details, or tiles); OK plays one. */
 @Composable
 private fun ShowEpisodes(
-    show: LiveTvRepository.RecordingCard,
+    show: RecordingCard,
     entry: FocusRequester,
     filter: String,
     refresh: Int,
@@ -407,7 +402,7 @@ private fun ShowEpisodes(
     val scope = rememberCoroutineScope()
     LaunchedEffect(show.id, refresh, reload) {
         episodes =
-            Jdvr.liveTv.showRecordings(show.id, filter)?.mapNotNull { e ->
+            Jdvr.backend.showRecordings(show.id, filter)?.mapNotNull { e ->
                 e.id.toUuid()?.let { id ->
                     EpisodeEntry(
                         id = id,
@@ -447,7 +442,7 @@ private fun ShowEpisodes(
         onShowChanged = { reload++ },
         onToggleWatched = { e ->
             scope.launch {
-                runCatching { Jdvr.liveTv.setPlayed(e.id, !e.played) }
+                attempt { Jdvr.backend.setPlayed(e.id, !e.played) }
                 reload++
             }
         },

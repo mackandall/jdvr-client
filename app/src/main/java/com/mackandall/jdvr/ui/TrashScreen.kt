@@ -33,13 +33,15 @@ import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
 import com.mackandall.jdvr.data.Jdvr
-import com.mackandall.jdvr.data.LiveTvRepository
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.time.Duration
 import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneId
+import com.mackandall.jdvr.data.TrashItem
+import com.mackandall.jdvr.data.TrashList
+import com.mackandall.jdvr.data.attempt
 
 private fun utc(iso: String): Instant? = runCatching { Instant.parse(iso) }.getOrNull()
 
@@ -76,7 +78,7 @@ private fun until(i: Instant): String {
  */
 @Composable
 fun TrashScreen(entry: FocusRequester) {
-    var trash by remember { mutableStateOf<LiveTvRepository.TrashList?>(null) }
+    var trash by remember { mutableStateOf<TrashList?>(null) }
     var loaded by remember { mutableStateOf(false) }
     var reload by remember { mutableIntStateOf(0) }
     var open by remember { mutableStateOf<String?>(null) }
@@ -84,7 +86,7 @@ fun TrashScreen(entry: FocusRequester) {
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(reload) {
-        trash = Jdvr.liveTv.trash()
+        trash = Jdvr.backend.trash()
         loaded = true
     }
     // An entry goes by itself when its time is up: the list follows.
@@ -98,7 +100,7 @@ fun TrashScreen(entry: FocusRequester) {
     Column(Modifier.fillMaxSize().padding(start = 28.dp, top = 24.dp, end = 28.dp)) {
         val t = trash
         Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            Text("Trash", color = Jc.Text, fontSize = 28.sp, fontWeight = FontWeight.SemiBold)
+            Text("Trash", color = Jc.Title, fontSize = 28.sp, fontWeight = FontWeight.SemiBold)
             if (t != null && t.items.isNotEmpty()) {
                 Text("${t.items.size} item${if (t.items.size == 1) "" else "s"} · ${gb(t.bytes)}", color = Jc.Muted, fontSize = 15.sp, modifier = Modifier.padding(bottom = 4.dp))
             }
@@ -133,7 +135,7 @@ fun TrashScreen(entry: FocusRequester) {
                         } else {
                             armed = false
                             scope.launch {
-                                val n = runCatching { Jdvr.liveTv.emptyTrash() }.getOrNull()
+                                val n = attempt { Jdvr.backend.emptyTrash() }
                                 note = if (n == null) "Couldn't empty it." else "Deleted $n for good."
                                 reload++
                             }
@@ -152,7 +154,7 @@ fun TrashScreen(entry: FocusRequester) {
                             onToggle = { open = if (open == e.id) null else e.id },
                             onRestore = {
                                 scope.launch {
-                                    val ok = runCatching { Jdvr.liveTv.restoreFromTrash(e.id) }.getOrDefault(false)
+                                    val ok = attempt { Jdvr.backend.restoreFromTrash(e.id) } ?: false
                                     note = if (ok) "Put back: ${e.title}. It's in its library again in a minute or so." else "Couldn't put it back: something may already be where it was."
                                     open = null
                                     reload++
@@ -160,7 +162,7 @@ fun TrashScreen(entry: FocusRequester) {
                             },
                             onDelete = {
                                 scope.launch {
-                                    val ok = runCatching { Jdvr.liveTv.deleteFromTrash(e.id) }.getOrDefault(false)
+                                    val ok = attempt { Jdvr.backend.deleteFromTrash(e.id) } ?: false
                                     note = if (ok) "Deleted for good: ${e.title}." else "Couldn't delete it."
                                     open = null
                                     reload++
@@ -176,7 +178,7 @@ fun TrashScreen(entry: FocusRequester) {
 
 @Composable
 private fun TrashRow(
-    e: LiveTvRepository.TrashItem,
+    e: TrashItem,
     expanded: Boolean,
     canRestore: Boolean,
     canDelete: Boolean,
@@ -223,7 +225,7 @@ private fun TrashRow(
             var armed by remember(e.id) { mutableStateOf(false) }
             // Opening a row puts the remote on its first button, not wherever Down would land.
             val first = remember { FocusRequester() }
-            LaunchedEffect(Unit) { runCatching { first.requestFocus() } }
+            LaunchedEffect(Unit) { first.tryFocus() }
             LaunchedEffect(armed) {
                 if (armed) {
                     delay(4000)

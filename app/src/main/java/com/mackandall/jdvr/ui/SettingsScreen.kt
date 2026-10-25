@@ -42,6 +42,8 @@ import androidx.tv.material3.Text
 import com.mackandall.jdvr.BuildConfig
 import com.mackandall.jdvr.data.Jdvr
 import com.mackandall.jdvr.data.Prefs
+import com.mackandall.jdvr.data.Library
+import com.mackandall.jdvr.data.attempt
 
 /**
  * Settings: things set once for the whole app. Actions that belong to what's on screen (Record,
@@ -50,7 +52,7 @@ import com.mackandall.jdvr.data.Prefs
 @Composable
 fun SettingsScreen(
     entry: FocusRequester,
-    libraries: List<com.mackandall.jdvr.data.LiveTvRepository.Library> = emptyList(),
+    libraries: List<Library> = emptyList(),
     // Straight to the menu's page (SageTV's Setup › Menu order).
     openMenuPage: Boolean = false,
     onSwitchServer: () -> Unit = {},
@@ -68,12 +70,12 @@ fun SettingsScreen(
         return
     }
     // Back from the Menu page: focus where it was opened from.
-    androidx.compose.runtime.LaunchedEffect(Unit) { if (cameBack) runCatching { menuButton.requestFocus() } }
+    androidx.compose.runtime.LaunchedEffect(Unit) { if (cameBack) menuButton.tryFocus() }
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(start = 28.dp, top = 24.dp, end = 28.dp, bottom = 32.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Text("Settings", color = Jc.Text, fontSize = 28.sp, fontWeight = FontWeight.SemiBold)
+        Text("Settings", color = Jc.Title, fontSize = 28.sp, fontWeight = FontWeight.SemiBold)
         Spacer(6)
         Section("Appearance")
         // OK on Theme opens the gallery (Gemstone's colours are on its card there).
@@ -308,7 +310,7 @@ private fun TownRow() {
         if (q.isEmpty()) return
         scope.launch {
             note =
-                runCatching { com.mackandall.jdvr.data.Weather.find(q) }.getOrNull()?.let {
+                attempt { com.mackandall.jdvr.data.Weather.find(q) }?.let {
                     prefs.changeWeatherPlace(it)
                     text = ""
                     "Weather for ${it.name}"
@@ -377,10 +379,7 @@ private fun TownRow() {
                     },
                 )
                 LaunchedEffect(Unit) {
-                    repeat(20) {
-                        if (runCatching { field.requestFocus() }.isSuccess) return@LaunchedEffect
-                        kotlinx.coroutines.delay(30)
-                    }
+                    field.focusSoon()
                 }
             }
             Button("Find", primary = true) { find() }
@@ -395,7 +394,7 @@ private fun TownRow() {
  * and each library within it.
  */
 @Composable
-private fun MenuSettings(libraries: List<com.mackandall.jdvr.data.LiveTvRepository.Library>) {
+private fun MenuSettings(libraries: List<Library>) {
     val prefs = Jdvr.prefs
     val libs = libraries.inMenuOrder()
     data class MRow(
@@ -416,7 +415,7 @@ private fun MenuSettings(libraries: List<com.mackandall.jdvr.data.LiveTvReposito
     // The order before the pick-up, for Back.
     var before by remember { mutableStateOf<Pair<List<String>, List<String>>?>(null) }
     val first = remember { FocusRequester() }
-    androidx.compose.runtime.LaunchedEffect(Unit) { runCatching { first.requestFocus() } }
+    androidx.compose.runtime.LaunchedEffect(Unit) { first.tryFocus() }
 
     fun move(
         key: String,
@@ -451,7 +450,7 @@ private fun MenuSettings(libraries: List<com.mackandall.jdvr.data.LiveTvReposito
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("Settings", color = Jc.Text, fontSize = 28.sp, fontWeight = FontWeight.SemiBold)
+            Text("Settings", color = Jc.Title, fontSize = 28.sp, fontWeight = FontWeight.SemiBold)
             Text("› Menu", color = Jc.Muted, fontSize = 20.sp, modifier = Modifier.padding(bottom = 3.dp))
         }
         Text(

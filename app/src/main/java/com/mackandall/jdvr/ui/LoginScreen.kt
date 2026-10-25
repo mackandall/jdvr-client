@@ -24,6 +24,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.SolidColor
@@ -56,6 +57,7 @@ import org.jellyfin.sdk.api.client.extensions.systemApi
 import org.jellyfin.sdk.model.api.AuthenticationResult
 import org.jellyfin.sdk.model.api.QuickConnectDto
 import timber.log.Timber
+import com.mackandall.jdvr.data.attemptQuietly
 
 /**
  * Sign in. The server: the last one signed in to, or one found on the network (Jellyfin answers a
@@ -159,10 +161,10 @@ fun LoginScreen(
         delay(400)
         for (c in candidates.filter { !it.endsWith(":8866") }) {
             serverName =
-                runCatching {
+                attemptQuietly {
                     val api = Jdvr.jellyfin.createApi(baseUrl = c)
                     withContext(Dispatchers.IO) { api.systemApi.getPublicSystemInfo().content.serverName }
-                }.getOrNull()
+                }
             if (serverName != null) {
                 base = c
                 break
@@ -192,7 +194,7 @@ fun LoginScreen(
             val api = Jdvr.jellyfin.createApi(baseUrl = address)
             val kept = PendingCode.takeIf { it?.server == address && it.attempt == attempt && System.currentTimeMillis() - it.at < 9 * 60_000 }
             var state =
-                kept?.let { k -> runCatching { withContext(Dispatchers.IO) { api.quickConnectApi.getQuickConnectState(secret = k.secret).content } }.getOrNull() }
+                kept?.let { k -> attemptQuietly { withContext(Dispatchers.IO) { api.quickConnectApi.getQuickConnectState(secret = k.secret).content } } }
                     ?: withContext(Dispatchers.IO) { api.quickConnectApi.initiateQuickConnect().content }.also {
                         PendingCode = PendingQuickConnect(address, attempt, it.secret, System.currentTimeMillis())
                     }
@@ -232,11 +234,15 @@ fun LoginScreen(
             )
             notice?.let { Text(it, color = Jc.Amber, fontSize = 15.sp) }
             if (saved.isNotEmpty()) {
+                // The first server has focus from the start, so OK picks it straight away.
+                val firstServer = remember { FocusRequester() }
+                LaunchedEffect(Unit) { firstServer.focusSoon() }
                 Text("Your servers", color = Jc.Muted, fontSize = 14.sp)
                 saved.forEach { s ->
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         val label = "${if (s.isNextPvr) "NextPVR" else "Jellyfin"} – ${s.name}" + (s.userName?.let { " · $it" } ?: "")
-                        Button(label, primary = saved.first() == s) {
+                        val first = saved.first() == s
+                        Button(label, primary = first, modifier = if (first) Modifier.focusRequester(firstServer) else Modifier) {
                             if (s.token != null) {
                                 Jdvr.switchTo(s)
                                 onSignedIn()
@@ -495,10 +501,7 @@ internal fun Field(
                         .padding(horizontal = 14.dp, vertical = 12.dp),
             )
             LaunchedEffect(Unit) {
-                repeat(20) {
-                    if (runCatching { field.requestFocus() }.isSuccess) return@LaunchedEffect
-                    delay(30)
-                }
+                field.focusSoon()
             }
         }
         // Done on the keyboard puts focus back on the box (only after typing, not when the screen opens).
@@ -507,7 +510,7 @@ internal fun Field(
             if (editing) {
                 typed = true
             } else if (typed) {
-                runCatching { box.requestFocus() }
+                box.tryFocus()
             }
         }
     }

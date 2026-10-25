@@ -29,7 +29,6 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.tv.material3.Text
 import com.mackandall.jdvr.data.Jdvr
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.jellyfin.sdk.model.api.SeriesTimerInfoDto
 import java.util.UUID
@@ -53,7 +52,7 @@ fun SeriesOptions(
 
     LaunchedEffect(Unit) {
         try {
-            timer = Jdvr.liveTv.newSeriesTimer(programId) ?: error("This server doesn't offer series options")
+            timer = Jdvr.backend.newSeriesTimer(programId) ?: error("This server doesn't offer series options")
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -63,10 +62,7 @@ fun SeriesOptions(
     // Focus on the first row once the options are in (not on Loading's Close, which then goes);
     // the dialog's window needs a frame or two before focus can land.
     LaunchedEffect(timer != null, problem) {
-        repeat(20) {
-            delay(50)
-            if (runCatching { first.requestFocus() }.isSuccess) return@LaunchedEffect
-        }
+        first.focusSoon()
     }
 
     Dialog(onDismissRequest = { onDone(null) }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
@@ -83,7 +79,7 @@ fun SeriesOptions(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 val t = timer
-                Text(t?.name?.ifEmpty { null } ?: programName.ifEmpty { "Series recording" }, color = Jc.Text, fontSize = 26.sp, fontWeight = FontWeight.SemiBold)
+                Text(t?.name?.ifEmpty { null } ?: programName.ifEmpty { "Series recording" }, color = Jc.Title, fontSize = 26.sp, fontWeight = FontWeight.SemiBold)
                 Text("Record series · OK changes a row · Back cancels", color = Jc.Muted, fontSize = 14.sp)
                 problem?.let { Text(it, color = Jc.Amber, fontSize = 15.sp) }
                 if (t == null) {
@@ -98,7 +94,7 @@ fun SeriesOptions(
                         saving = true
                         scope.launch {
                             try {
-                                Jdvr.liveTv.createSeriesTimer(t)
+                                Jdvr.backend.createSeriesTimer(t)
                                 onDone("Series recording set up.")
                             } catch (e: CancellationException) {
                                 throw e

@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -54,11 +53,13 @@ import androidx.tv.material3.Text
 import com.mackandall.jdvr.PlayRecording
 import com.mackandall.jdvr.data.Channel
 import com.mackandall.jdvr.data.Jdvr
-import com.mackandall.jdvr.data.LiveTvRepository
 import com.mackandall.jdvr.data.Program
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.UUID
+import com.mackandall.jdvr.data.LibItem
+import com.mackandall.jdvr.data.MarkSymbols
+import com.mackandall.jdvr.data.attempt
 
 /** What was last searched for, so Search opens with it again. */
 private object LastSearch {
@@ -78,14 +79,14 @@ fun SearchScreen(
     onPlay: (PlayRecording) -> Unit,
 ) {
     var text by remember { mutableStateOf(LastSearch.text) }
-    var library by remember { mutableStateOf<List<LiveTvRepository.LibItem>?>(null) }
+    var library by remember { mutableStateOf<List<LibItem>?>(null) }
     var guide by remember { mutableStateOf<List<Program>?>(null) }
     var reload by remember { mutableStateOf(0) }
-    var movie by remember { mutableStateOf<LiveTvRepository.LibItem?>(null) }
-    var show by remember { mutableStateOf<LiveTvRepository.LibItem?>(null) }
+    var movie by remember { mutableStateOf<LibItem?>(null) }
+    var show by remember { mutableStateOf<LibItem?>(null) }
     var program by remember { mutableStateOf<Program?>(null) }
     var note by remember { mutableStateOf<String?>(null) }
-    val channels by produceState<List<Channel>>(emptyList()) { value = runCatching { Jdvr.liveTv.allChannels() }.getOrDefault(emptyList()) }
+    val channels by produceState<List<Channel>>(emptyList()) { value = attempt { Jdvr.backend.allChannels() } ?: emptyList() }
     val symbols = rememberMarkSymbols()
     val focusManager = LocalFocusManager.current
     var fieldFocused by remember { mutableStateOf(false) }
@@ -102,7 +103,7 @@ fun SearchScreen(
                 repeat(10) {
                     delay(60)
                     val r = rowFocus[id] ?: return@repeat
-                    if (runCatching { r.requestFocus() }.isSuccess) return@launch
+                    if (r.tryFocus()) return@launch
                 }
             }
         }
@@ -118,8 +119,8 @@ fun SearchScreen(
             return@LaunchedEffect
         }
         delay(400)
-        library = runCatching { Jdvr.liveTv.searchLibrary(q) }.getOrDefault(emptyList())
-        guide = runCatching { Jdvr.liveTv.searchGuide(q) }.getOrDefault(emptyList())
+        library = attempt { Jdvr.backend.searchLibrary(q) } ?: emptyList()
+        guide = attempt { Jdvr.backend.searchGuide(q) } ?: emptyList()
     }
     LaunchedEffect(note) {
         if (note != null) {
@@ -143,7 +144,7 @@ fun SearchScreen(
 
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize().padding(start = 28.dp, top = 20.dp, end = 28.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("Search", color = Jc.Text, fontSize = 26.sp, fontWeight = FontWeight.SemiBold)
+            Text("Search", color = Jc.Title, fontSize = 26.sp, fontWeight = FontWeight.SemiBold)
             BasicTextField(
                 value = text,
                 onValueChange = { text = it },
@@ -258,7 +259,7 @@ private fun Heading(
 private fun ProgramRow(
     p: Program,
     channel: Channel?,
-    symbols: LiveTvRepository.MarkSymbols?,
+    symbols: MarkSymbols?,
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {

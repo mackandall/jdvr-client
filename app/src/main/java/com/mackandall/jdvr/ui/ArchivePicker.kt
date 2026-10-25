@@ -38,8 +38,8 @@ import androidx.tv.material3.Border
 import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
-import com.mackandall.jdvr.data.LiveTvRepository.ArchiveChoice
-import com.mackandall.jdvr.data.LiveTvRepository.ArchiveChoices
+import com.mackandall.jdvr.data.ArchiveChoice
+import com.mackandall.jdvr.data.ArchiveChoices
 
 private const val GB = 1024.0 * 1024 * 1024
 private val UsedColour = Color(0xFF64748B)
@@ -107,7 +107,7 @@ fun ArchivePicker(choices: ArchiveChoices, onPick: (ArchiveChoice) -> Unit, onDi
         // focus, and an early requestFocus silently does nothing: retry until it lands.
         repeat(40) {
             if (hasFocus) return@LaunchedEffect
-            runCatching { first.requestFocus() }
+            first.tryFocus()
             kotlinx.coroutines.delay(50)
         }
     }

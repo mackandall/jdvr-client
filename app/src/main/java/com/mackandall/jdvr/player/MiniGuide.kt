@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
@@ -34,7 +33,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.nativeKeyCode
@@ -47,7 +45,7 @@ import androidx.compose.ui.unit.sp
 import androidx.tv.material3.Text
 import com.mackandall.jdvr.data.Channel
 import com.mackandall.jdvr.data.Jdvr
-import com.mackandall.jdvr.data.LiveTvRepository
+import com.mackandall.jdvr.data.plain
 import com.mackandall.jdvr.data.Program
 import com.mackandall.jdvr.ui.Jc
 import com.mackandall.jdvr.ui.seeThrough
@@ -59,6 +57,9 @@ import kotlinx.coroutines.launch
 import java.time.Duration
 import java.time.LocalDateTime
 import java.util.UUID
+import com.mackandall.jdvr.data.MarkSymbols
+import com.mackandall.jdvr.data.attempt
+import com.mackandall.jdvr.ui.tryFocus
 
 private const val ROWS = 4
 private const val WINDOW_MIN = 90L
@@ -75,7 +76,7 @@ private fun floorHalfHour(t: LocalDateTime): LocalDateTime = t.withSecond(0).wit
 fun MiniGuide(
     channels: List<Channel>,
     currentChannelId: UUID,
-    symbols: LiveTvRepository.MarkSymbols?,
+    symbols: MarkSymbols?,
     onWatch: (UUID) -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
@@ -83,7 +84,7 @@ fun MiniGuide(
     buffers: Set<String> = emptySet(),
     onPlayRecording: (com.mackandall.jdvr.PlayRecording) -> Unit = {},
 ) {
-    fun recording(p: Program) = p.isRecording && p.id.toString().replace("-", "").lowercase() !in buffers
+    fun recording(p: Program) = p.isRecording && p.id.plain().lowercase() !in buffers
     val focus = remember { FocusRequester() }
     val scope = rememberCoroutineScope()
     val earliest = remember { floorHalfHour(LocalDateTime.now()) }
@@ -105,7 +106,7 @@ fun MiniGuide(
     var recentIndex by remember { mutableIntStateOf(0) }
     var typedAt by remember { mutableStateOf(0L) }
 
-    LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
+    LaunchedEffect(Unit) { focus.tryFocus() }
 
     // Fetch the visible rows (and a few either side) for the next few hours.
     LaunchedEffect(top, windowStart, reload) {
@@ -115,7 +116,7 @@ fun MiniGuide(
                 .filter { reload > 0 || fetchedTo[it]?.isBefore(need) != false }
         if (want.isEmpty()) return@LaunchedEffect
         val to = windowStart.plusHours(4)
-        runCatching { Jdvr.liveTv.programs(want, earliest, to) }.getOrNull()?.let { list ->
+        attempt { Jdvr.backend.programs(want, earliest, to) }?.let { list ->
             val byChannel = list.groupBy { it.channelId }
             want.forEach {
                 programs[it] = byChannel[it].orEmpty()
@@ -162,7 +163,7 @@ fun MiniGuide(
     val sel = selected()
     if (inRecent) androidx.activity.compose.BackHandler { inRecent = false }
     // The panel closed: the band has the remote again.
-    LaunchedEffect(detail) { if (detail == null) runCatching { focus.requestFocus() } }
+    LaunchedEffect(detail) { if (detail == null) focus.tryFocus() }
     Box(modifier) {
     Column(
         Modifier

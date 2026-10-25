@@ -53,11 +53,12 @@ import androidx.tv.material3.Border
 import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
-import com.mackandall.jdvr.data.LiveTvRepository
 import com.mackandall.jdvr.data.Sky
 import com.mackandall.jdvr.data.WeatherNow
 import kotlin.math.cos
 import kotlin.math.sin
+import com.mackandall.jdvr.data.Drive
+import com.mackandall.jdvr.data.TunerStatus
 
 /**
  * Home's tiles (Settings › Home): the weather, lists that scroll inside their tile (what's
@@ -345,8 +346,8 @@ private fun ScrollingLines(
 
 @Composable
 fun TunersTile(
-    tuners: LiveTvRepository.TunerStatus?,
-    drive: LiveTvRepository.Drive?,
+    tuners: TunerStatus?,
+    drive: Drive?,
     modifier: Modifier,
     background: Color,
     cell: Color,

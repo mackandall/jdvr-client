@@ -6,7 +6,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.mackandall.jdvr.data.Jdvr
-import com.mackandall.jdvr.data.LiveTvRepository
+import com.mackandall.jdvr.data.Editing
+import com.mackandall.jdvr.data.attempt
 
 /**
  * Whether the signed-in user may edit recordings (Comskip plugin: administrators, and the users
@@ -16,7 +17,7 @@ import com.mackandall.jdvr.data.LiveTvRepository
  * back as soon as the plugin does.
  */
 object EditPermission {
-    var info by mutableStateOf<LiveTvRepository.Editing?>(null)
+    var info by mutableStateOf<Editing?>(null)
         private set
     private var forUser: String? = null
     private var at = 0L
@@ -28,7 +29,7 @@ object EditPermission {
             at = 0
         }
         if (System.currentTimeMillis() - at < 5 * 60_000) return
-        val got = runCatching { Jdvr.liveTv.editing() }.getOrNull()
+        val got = attempt { Jdvr.backend.editing() }
         info = got
         forUser = user
         at = if (got != null) System.currentTimeMillis() else 0L
@@ -37,7 +38,7 @@ object EditPermission {
 
 /** The signed-in user's edit permission; null (no edit buttons) until known. */
 @Composable
-fun editPermission(): LiveTvRepository.Editing? {
+fun editPermission(): Editing? {
     LaunchedEffect(Jdvr.serverKey) { EditPermission.load() }
     return EditPermission.info?.takeIf { it.canEdit }
 }

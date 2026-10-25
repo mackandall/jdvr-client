@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -37,11 +36,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.tv.material3.Text
 import com.mackandall.jdvr.data.Jdvr
-import com.mackandall.jdvr.data.LiveTvRepository.CutJob
-import com.mackandall.jdvr.data.LiveTvRepository.MoveProgress
+import com.mackandall.jdvr.data.CutJob
+import com.mackandall.jdvr.data.MoveProgress
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import com.mackandall.jdvr.data.attempt
 
 private val MoveBlue = Color(0xFF00A4DC)
 private val CutAmber = Color(0xFFE0A100)
@@ -79,7 +79,7 @@ object MoveWatcher {
     /** Runs for the app's lifetime (from the root composable). */
     suspend fun run() {
         while (true) {
-            val list = runCatching { Jdvr.liveTv.moving() }.getOrNull().orEmpty()
+            val list = attempt { Jdvr.backend.moving() }.orEmpty()
             val map = HashMap<String, MoveProgress>()
             list.forEach { m ->
                 map[m.itemId.plain()] = m
@@ -88,7 +88,7 @@ object MoveWatcher {
             val before = _moving.value.values.map { it.itemId }.toSet()
             if (before.any { id -> list.none { it.itemId == id } }) _finished.value++
             _moving.value = map
-            val cuts = runCatching { Jdvr.liveTv.cuts() }.getOrNull().orEmpty()
+            val cuts = attempt { Jdvr.backend.cuts() }.orEmpty()
             _cutting.value = HashMap<String, CutJob>().apply {
                 cuts.forEach { c ->
                     put(c.itemId.plain(), c)

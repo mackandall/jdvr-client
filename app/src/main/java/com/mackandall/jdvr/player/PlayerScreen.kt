@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -43,7 +42,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
@@ -55,10 +53,6 @@ import androidx.media3.ui.PlayerView
 import androidx.tv.material3.Text
 import com.mackandall.jdvr.data.Channel
 import com.mackandall.jdvr.data.Jdvr
-import com.mackandall.jdvr.data.LivePlayback
-import com.mackandall.jdvr.data.LiveTvRepository
-import com.mackandall.jdvr.data.plainId
-import com.mackandall.jdvr.data.toUuid
 import com.mackandall.jdvr.ui.Button
 import com.mackandall.jdvr.ui.Jc
 import com.mackandall.jdvr.ui.seeThrough
@@ -68,9 +62,7 @@ import com.mackandall.jdvr.ui.rememberMarkSymbols
 import com.mackandall.jdvr.ui.time
 import com.mackandall.jdvr.ui.day
 import androidx.compose.ui.text.style.TextOverflow
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import timber.log.Timber
 import java.time.Duration
@@ -79,9 +71,11 @@ import java.time.LocalDateTime
 import java.time.ZoneId
 import java.util.UUID
 import org.jellyfin.sdk.model.serializer.toUUIDOrNull
-
-/** This visit's buffer: the one recording now (an older, finished one is the wrong place to land). */
-private fun List<LiveTvRepository.Buffer>.currentBuffer() = lastOrNull { it.recording && it.itemId != null }
+import com.mackandall.jdvr.data.ItemDetails
+import com.mackandall.jdvr.data.MarkSymbols
+import com.mackandall.jdvr.data.TunerStatus
+import com.mackandall.jdvr.data.attempt
+import com.mackandall.jdvr.ui.tryFocus
 
 /** Sparse-PCR recordings needed an 8 MB TS search window to seek (the Wholphin fix). */
 private const val TS_SEARCH_BYTES = 8 * 1024 * 1024
@@ -100,468 +94,96 @@ fun PlayerScreen(
     onPlayRecording: (com.mackandall.jdvr.PlayRecording) -> Unit,
 ) {
     val scope = androidx.compose.runtime.rememberCoroutineScope()
-    var actionsOpen by remember { mutableStateOf(false) }
-    var note by remember { mutableStateOf<String?>(null) }
-    var buffers by remember { mutableStateOf<List<LiveTvRepository.Buffer>>(emptyList()) }
-    var fromStart by remember { mutableStateOf<UUID?>(null) }
-    val playFocus = remember { FocusRequester() }
-    var lastKeyAt by remember { mutableStateOf(System.currentTimeMillis()) }
-    var pausedAt by remember(channelId) { mutableStateOf<Instant?>(null) }
-    // The mini guide over the bottom of the picture: ▼ opens it, Back closes it.
-    var miniOpen by remember { mutableStateOf(false) }
-    // Between choosing a channel and its first picture: the tuning filler covers the old one.
-    var tuning by remember { mutableStateOf(true) }
-    // Guide programmes that are only a buffer (their timers look like recordings).
-    var bufferIds by remember { mutableStateOf<Set<String>>(emptySet()) }
-    var recordArmedUntil by remember { mutableStateOf(0L) }
-    // Hybrid: the channel starts as direct play (quick to tune) while the server starts an HLS copy
-    // of the same stream; pause and rewind move over to the HLS copy, where they're instant.
-    var onHls by remember(channelId) { mutableStateOf(false) }
-    var directStartedAt by remember(channelId) { mutableStateOf(0L) }
-    var hlsStartedAt by remember(channelId) { mutableStateOf<Long?>(null) }
-    // Where pause and rewind go: Jellyfin's HLS copy, or NextPVR's buffer file (found once the stream plays).
-    var copyUrl by remember(channelId) { mutableStateOf<String?>(null) }
-    var swapJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
     val context = LocalContext.current
     val symbols = rememberMarkSymbols()
-    var channels by remember { mutableStateOf<List<Channel>>(emptyList()) }
-    var playback by remember { mutableStateOf<LivePlayback?>(null) }
-
-    // NextPVR: its buffer file for this stream, once the tuner is writing it (both begin at tune-in).
-    suspend fun findCopy(p: LivePlayback, notThis: String? = null) {
-        val url = Jdvr.liveTv.liveCopyUrl(p, notThis) ?: return
-        if (playback?.channelId != p.channelId) return
-        copyUrl = url
-        hlsStartedAt = directStartedAt
-    }
-    var busy by remember { mutableStateOf<LiveTvRepository.TunerStatus?>(null) }
-    var error by remember { mutableStateOf<String?>(null) }
-    // Try again: a fresh start of the same channel (a new stream from the server).
-    var attempt by remember(channelId) { mutableIntStateOf(0) }
-    // Reconnecting by itself: a free channel's stream can break or freeze mid-programme (an ad
-    // spliced in with a wild timestamp froze the server's transcode, 2026-10-15). Up to three fresh
-    // starts in a row, a little further apart each time; the error only shows if they all fail.
-    var reconnects by remember(channelId) { mutableIntStateOf(0) }
-    var osdUntil by remember { mutableStateOf(System.currentTimeMillis() + 6000) }
-    var typed by remember { mutableStateOf("") }
-    var typedAt by remember { mutableStateOf(0L) }
-    var tick by remember { mutableIntStateOf(0) }
     val focus = remember { FocusRequester() }
-
-    val player =
-        remember {
-            val extractors = DefaultExtractorsFactory().setTsExtractorTimestampSearchBytes(TS_SEARCH_BYTES)
-            ExoPlayer
-                .Builder(context, renderersFactory(context))
-                .setMediaSourceFactory(
-                    DefaultMediaSourceFactory(OkHttpDataSource.Factory(Jdvr.http), extractors)
-                        .setLoadErrorHandlingPolicy(NoRetryOnServerError),
-                )
-                .build()
-                .apply {
-                    playWhenReady = true
-                    applySubtitlePreference(this)
-                }
-        }
-
+    val playFocus = remember { FocusRequester() }
+    val ui = remember { LiveOverlays(scope) }
+    val info = remember { LiveInfo() }
+    val player = remember { livePlayer(context) }
+    val stream = remember(channelId) { LiveStream(channelId, player, scope, ui) }
     val formats = rememberPlayingFormats(player)
+    var tick by remember { mutableIntStateOf(0) }
 
-    /** A fresh start of the channel, by itself; false once the tries are used up (the error then shows). */
-    fun reconnect(why: String): Boolean {
-        if (reconnects >= MAX_RECONNECTS) return false
-        reconnects++
-        Timber.i("Reconnecting channel %s (%d of %d): %s", channelId, reconnects, MAX_RECONNECTS, why)
-        val tryNo = reconnects
-        player.stop()
-        error = null
-        tuning = true
-        note = "Reconnecting… ($tryNo of $MAX_RECONNECTS)"
-        scope.launch {
-            delay(RECONNECT_DELAYS_MS[tryNo - 1])
-            attempt++
-        }
-        return true
-    }
-
-    DisposableEffect(Unit) {
+    DisposableEffect(stream) {
         val listener =
             object : Player.Listener {
                 override fun onPlayerError(e: PlaybackException) {
                     Timber.w(e, "Playback error")
-                    if (!reconnect("the stream stopped (${e.errorCodeName})")) {
-                        error = liveErrorText(e)
-                        tuning = false
+                    if (!stream.reconnect("the stream stopped (${e.errorCodeName})")) {
+                        stream.error = liveErrorText(e)
+                        stream.tuning = false
                     }
                 }
 
                 override fun onRenderedFirstFrame() {
-                    tuning = false
+                    stream.tuning = false
+                }
+
+                override fun onPlaybackStateChanged(state: Int) {
+                    if (state == Player.STATE_ENDED) stream.copyEnded()
                 }
             }
         player.addListener(listener)
-        val logger = playerLog("live", player).also { player.addListener(it) }
         onDispose {
             player.removeListener(listener)
+            Jdvr.backend.holdLive(false)
+        }
+    }
+    DisposableEffect(Unit) {
+        val logger = playerLog("live", player).also { player.addListener(it) }
+        onDispose {
             player.removeListener(logger)
             player.release()
         }
     }
-
     LaunchedEffect(Unit) {
-        runCatching { channels = Jdvr.liveTv.channels() }
+        info.loadChannels()
         focus.requestFocus()
     }
 
-    // Start the channel: tuner check, open the stream, play, tell Jellyfin; stop it when leaving.
-    DisposableEffect(channelId, attempt) {
-        var current: LivePlayback? = null
-        val job =
-            kotlinx.coroutines.MainScope().launch {
-                error = null
-                busy = null
-                tuning = true
-                osdUntil = System.currentTimeMillis() + 6000
-                try {
-                    val tuners = Jdvr.liveTv.tuners(channelId)
-                    if (tuners != null && tuners.isChannel && tuners.full) {
-                        tuning = false
-                        busy = tuners
-                        return@launch
-                    }
-                    // Opening takes 10+ s, and Back, Stop or a channel change meanwhile cancels this, but
-                    // the server opens the stream anyway: wait for it regardless and close what comes back,
-                    // or that tuner input stays taken until Jellyfin restarts (four were, 2026-10-06).
-                    val p = kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) { Jdvr.liveTv.startLive(channelId) }
-                    if (!isActive) {
-                        Timber.i("Channel %s opened after its player left; closing it", channelId)
-                        p.liveStreamId?.let { id -> kotlinx.coroutines.MainScope().launch { runCatching { Jdvr.liveTv.closeLiveStream(id) } } }
-                        return@launch
-                    }
-                    current = p
-                    playback = p
-                    Jdvr.session.lastChannelId = channelId.toString()
-                    Jdvr.session.pushRecentChannel(channelId.toString())
-                    player.setMediaItem(MediaItem.fromUri(p.url))
-                    player.playWhenReady = true // a new channel plays even if the last was paused
-                    player.prepare()
-                    directStartedAt = android.os.SystemClock.elapsedRealtime()
-                    onHls = p.hlsUrl == p.url
-                    copyUrl = p.hlsUrl
-                    hlsStartedAt = null
-                    p.hlsUrl?.takeIf { !onHls }?.let { hls ->
-                        launch {
-                            hlsStartedAt = android.os.SystemClock.elapsedRealtime()
-                            Jdvr.liveTv.warmHls(hls)
-                        }
-                    }
-                    if (p.hlsUrl == null && Jdvr.liveTv.liveCopyIsFile) launch { findCopy(p) }
-                    Jdvr.liveTv.reportStart(p)
-                    while (true) {
-                        delay(10_000)
-                        Jdvr.liveTv.reportProgress(p, paused = !player.isPlaying)
-                    }
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    Timber.w(e, "Couldn't start channel %s", channelId)
-                    if (attempt == 0 || !reconnect("the server couldn't start it")) {
-                        error = "The server couldn't start this channel. It may be off the air, or its tuner may be busy or not working."
-                        tuning = false
-                    }
-                }
-            }
-        onDispose {
-            job.cancel()
-            player.stop()
-            current?.let { p ->
-                // Closing the live stream frees the tuner: finished in the background even as the
-                // screen goes away (waiting for it here froze the screen for ~2 s).
-                kotlinx.coroutines.MainScope().launch { runCatching { Jdvr.liveTv.reportStopped(p) } }
-            }
-        }
+    // Start the channel; stop it when leaving (or trying again).
+    DisposableEffect(stream, stream.attempt) {
+        val job = stream.start()
+        onDispose { stream.stopPlaying(job) }
     }
+    LaunchedEffect(stream, stream.attempt) { stream.watchForStalls() }
+    LaunchedEffect(stream.tuning, stream.attempt) {
+        if (!stream.tuning && ui.note?.startsWith("Reconnecting") == true) ui.note = null
+    }
+    LaunchedEffect(stream.attempt) { stream.forgiveReconnects() }
 
-    // A stream that freezes without an error (no new picture while it should be playing): after
-    // 12 s, a fresh start. Paused (live TV pause), tuning or showing an error doesn't count.
-    LaunchedEffect(channelId, attempt) {
-        var lastPos = -1L
-        var stillSince = 0L
-        while (true) {
-            delay(2000)
-            val playing = player.playWhenReady && pausedAt == null && !tuning && error == null && busy == null
-            val pos = player.currentPosition
-            val now = android.os.SystemClock.elapsedRealtime()
-            if (!playing || pos != lastPos) {
-                lastPos = pos
-                stillSince = now
-            } else if (now - stillSince >= STALL_MS) {
-                if (!reconnect("no new picture for ${STALL_MS / 1000} s")) {
-                    player.stop()
-                    error = "The channel stopped sending a picture and reconnecting didn't help. It may be having trouble at the source."
-                    tuning = false
-                }
-                return@LaunchedEffect
-            }
-        }
-    }
-    LaunchedEffect(tuning, attempt) {
-        if (!tuning && note?.startsWith("Reconnecting") == true) note = null
-    }
-    LaunchedEffect(attempt) {
-        delay(GOOD_SPELL_MS)
-        if (error == null && !tuning) reconnects = 0
-    }
-
-    // JellyDVR Live's buffer (from tune-in) and, if the programme is a real recording, the recording.
-    LaunchedEffect(channelId, actionsOpen) {
-        buffers = Jdvr.liveTv.buffers(channelId)
-        bufferIds = Jdvr.liveTv.bufferPrograms()
-        fromStart = channels.firstOrNull { it.id == channelId }?.now?.takeIf { it.isRecording }?.let { Jdvr.liveTv.recordingOfProgram(it.id) }
-    }
-    LaunchedEffect(actionsOpen) {
-        if (actionsOpen) {
-            osdUntil = Long.MAX_VALUE
+    LaunchedEffect(channelId, ui.actionsOpen) { info.loadRecording(channelId) }
+    LaunchedEffect(ui.actionsOpen) {
+        if (ui.actionsOpen) {
+            ui.osdUntil = Long.MAX_VALUE
             delay(50)
-            runCatching { playFocus.requestFocus() }
+            playFocus.tryFocus()
         } else {
-            osdUntil = System.currentTimeMillis() + 3000
-            runCatching { focus.requestFocus() }
+            ui.showOsd(3000)
+            focus.tryFocus()
         }
     }
     // The controls tuck away after 8 s untouched.
-    LaunchedEffect(actionsOpen, lastKeyAt, pausedAt) {
-        if (!actionsOpen || pausedAt != null) return@LaunchedEffect
+    LaunchedEffect(ui.actionsOpen, ui.lastKeyAt, stream.pausedAt) {
+        if (!ui.actionsOpen || stream.pausedAt != null) return@LaunchedEffect
         delay(8000)
-        actionsOpen = false
+        ui.actionsOpen = false
     }
-    if (actionsOpen) androidx.activity.compose.BackHandler { actionsOpen = false }
-    if (miniOpen) androidx.activity.compose.BackHandler { miniOpen = false }
-    // The programme's full panel (Info): details plus Record, series, favourites, watched…
-    var infoOpen by remember { mutableStateOf(false) }
-    if (infoOpen) androidx.activity.compose.BackHandler { infoOpen = false }
-    LaunchedEffect(infoOpen) { if (!infoOpen) runCatching { focus.requestFocus() } }
-    // The top info box's extras for the programme on now: ratings, genres, and what's next.
-    var nowDetails by remember { mutableStateOf<LiveTvRepository.ItemDetails?>(null) }
-    var nextUp by remember { mutableStateOf<com.mackandall.jdvr.data.Program?>(null) }
-    val nowId = channels.firstOrNull { it.id == channelId }?.now?.id
-    LaunchedEffect(channelId, nowId) {
-        nowDetails = null
-        nextUp = null
-        val now = channels.firstOrNull { it.id == channelId }?.now ?: return@LaunchedEffect
-        nowDetails = runCatching { Jdvr.liveTv.details(now.id) }.getOrNull()
-        nextUp = runCatching { Jdvr.liveTv.programs(listOf(channelId), now.end, now.end.plusHours(3)) }.getOrNull()?.firstOrNull { !it.start.isBefore(now.end) }
-    }
-    LaunchedEffect(miniOpen) { if (!miniOpen) runCatching { focus.requestFocus() } }
-
-    fun showOsd() {
-        osdUntil = System.currentTimeMillis() + 5000
-    }
-
-    // Where a moment of the direct stream is in the HLS copy: both began at the live stream's edge
-    // (or its start, for a fresh tune), the HLS copy this much later.
-    fun hlsPositionOf(directMs: Long): Long = (directMs - ((hlsStartedAt ?: directStartedAt) - directStartedAt)).coerceAtLeast(0)
-
-    val canHls = copyUrl != null && hlsStartedAt != null
-
-    // How far behind live the picture is. Jellyfin's live HLS has no programme date-times, so the
-    // player's own live offset is unknown: the copy's end (its duration so far) is live instead.
-    fun behindLiveMs(): Long =
-        if (onHls && Jdvr.liveTv.liveCopyIsFile) {
-            // A buffer file from tune-in: its position is the time since then.
-            (android.os.SystemClock.elapsedRealtime() - directStartedAt - player.currentPosition).coerceAtLeast(0)
-        } else if (onHls) {
-            player.currentLiveOffset.takeIf { it != androidx.media3.common.C.TIME_UNSET }
-                ?: player.duration.takeIf { it != androidx.media3.common.C.TIME_UNSET }?.let { (it - player.currentPosition).coerceAtLeast(0) }
-                ?: 0L
-        } else {
-            // The direct stream paused (before the HLS copy takes over).
-            pausedAt?.let { Duration.between(it, Instant.now()).toMillis() } ?: 0L
-        }
-
-    // Where rewinding can go back to: the start of the HLS copy (about when you tuned in).
-    fun bufferFrom(behind: Long): LocalDateTime? =
-        when {
-            onHls -> LocalDateTime.now().minusNanos((behind + player.currentPosition) * 1_000_000)
-            hlsStartedAt != null -> LocalDateTime.now().minusNanos((android.os.SystemClock.elapsedRealtime() - hlsStartedAt!!) * 1_000_000)
-            else -> null
-        }
-
-    fun switchToHls(
-        positionMs: Long,
-        play: Boolean,
-    ) {
-        val url = copyUrl ?: return
-        // Leaving the live stream: it stays open (NextPVR would drop the buffer with it).
-        if (!onHls) Jdvr.liveTv.holdLive(true)
-        player.setMediaItem(MediaItem.fromUri(Jdvr.liveTv.liveCopyOpenUrl(url)), positionMs)
-        player.playWhenReady = play
-        player.prepare()
-        onHls = true
-    }
-
-    fun rewind() {
-        when {
-            onHls -> player.seekTo((player.currentPosition - 10_000).coerceAtLeast(0))
-            canHls -> switchToHls(hlsPositionOf(player.currentPosition - 10_000), play = pausedAt == null)
-            else -> {
-                scope.launch {
-                    note = "Rewind isn't available on this channel."
-                    delay(3000)
-                    note = null
-                }
-            }
-        }
-        showOsd()
-    }
-
-    // Back to live: the direct stream again (truly live, not the HLS copy's few seconds behind).
-    fun toLive() {
-        val p = playback ?: return
-        if (onHls && copyUrl != p.url) {
-            // NextPVR: a fresh live stream starts a fresh buffer (the old one goes with the held stream).
-            Jdvr.liveTv.holdLive(false)
-            player.setMediaItem(MediaItem.fromUri(p.url))
-            player.playWhenReady = true
-            player.prepare()
-            directStartedAt = android.os.SystemClock.elapsedRealtime()
-            onHls = false
-            if (Jdvr.liveTv.liveCopyIsFile) {
-                // The old buffer is still listed for a few seconds before NextPVR deletes it.
-                val old = copyUrl
-                copyUrl = null
-                hlsStartedAt = null
-                scope.launch { findCopy(p, notThis = old) }
-            }
-        } else {
-            player.seekToDefaultPosition()
-            player.play()
-        }
-        pausedAt = null
-        showOsd()
-    }
-
-    // The buffer file was opened at its size then: at that end, open it again (or, within 10 s of
-    // live, go live; further back, going live would skip programme).
-    // If it ends again at the same spot, it has stopped growing (the server let the tuner go): live again.
-    DisposableEffect(player) {
-        var lastEnd = -1L
-        val ended =
-            object : Player.Listener {
-                override fun onPlaybackStateChanged(state: Int) {
-                    if (state != Player.STATE_ENDED || !onHls || !Jdvr.liveTv.liveCopyIsFile) return
-                    val at = player.currentPosition
-                    val stuck = lastEnd >= 0 && at - lastEnd < 1000
-                    lastEnd = at
-                    if (stuck || behindLiveMs() <= 10_000) {
-                        lastEnd = -1L
-                        toLive()
-                    } else {
-                        switchToHls(at, play = pausedAt == null)
-                    }
-                }
-            }
-        player.addListener(ended)
-        onDispose {
-            player.removeListener(ended)
-            Jdvr.liveTv.holdLive(false)
-        }
-    }
-
-    fun forward() {
-        if (!onHls) return
-        // No further than live: within 30 s of it, back to the live stream itself.
-        if (behindLiveMs() <= 30_000) toLive() else player.seekTo(player.currentPosition + 30_000)
-        showOsd()
-    }
-
-    // ● Record the programme on now: keep the buffer (so it's recorded from tune-in), or schedule it
-    // if there's no buffer yet. On a programme already recording, a second press stops it.
-    fun record() {
-        val now = channels.firstOrNull { it.id == channelId }?.now ?: return
-        val b = buffers.currentBuffer()
-        val realTimer = now.timerId?.takeIf { now.id.toString().plainId() !in bufferIds }
-        scope.launch {
-            note =
-                runCatching {
-                    when {
-                        b?.kept == true -> {
-                            Jdvr.liveTv.keepBuffer(b.id, false)
-                            "Won't record ${now.name} (back to a buffer)"
-                        }
-                        realTimer != null && System.currentTimeMillis() < recordArmedUntil -> {
-                            recordArmedUntil = 0L
-                            Jdvr.liveTv.cancelRecording(realTimer)
-                            "Stopped recording ${now.name}"
-                        }
-                        realTimer != null -> {
-                            recordArmedUntil = System.currentTimeMillis() + 4000
-                            "Already recording ${now.name}: press ● again to stop it"
-                        }
-                        b != null -> {
-                            Jdvr.liveTv.keepBuffer(b.id, true)
-                            "Recording ${now.name}" + (b.startedUtc?.let { s -> runCatching { " from " + LocalDateTime.ofInstant(Instant.parse(s), ZoneId.systemDefault()).time() + " (when you tuned in)" }.getOrNull() } ?: "")
-                        }
-                        else -> {
-                            Jdvr.liveTv.record(now.id, series = false)
-                            "Recording ${now.name}"
-                        }
-                    }
-                }.getOrElse { "Couldn't change the recording: ${it.message}" }
-            buffers = Jdvr.liveTv.buffers(channelId)
-            bufferIds = Jdvr.liveTv.bufferPrograms()
-            runCatching { channels = Jdvr.liveTv.channels() }
-            delay(4000)
-            note = null
-        }
-    }
-
-    // Stop: done with this channel, so its tuner input is freed now rather than after the grace.
-    fun stop() {
-        Jdvr.liveTv.stopBuffering(channelId)
-        onExit()
-    }
-
-    // Back to where you tuned in: the start of the HLS copy.
-    fun backToTuneIn() {
-        if (onHls) player.seekTo(0) else if (canHls) switchToHls(0, play = pausedAt == null)
-        showOsd()
-    }
-
-    // Pause freezes the direct stream at once; once the HLS copy has caught up to that frame (it
-    // runs ~10 s behind), it takes over, still paused, so Play is instant however long the pause.
-    fun pause() {
-        if (pausedAt != null) return
-        pausedAt = Instant.now()
-        player.pause()
-        if (!onHls && canHls) {
-            val at = player.currentPosition
-            swapJob?.cancel()
-            swapJob =
-                scope.launch {
-                    delay(12_000)
-                    if (pausedAt != null && !onHls) switchToHls(hlsPositionOf(at), play = false)
-                }
-        }
-    }
-
-    fun resume() {
-        if (pausedAt == null) return
-        pausedAt = null
-        swapJob?.cancel()
-        player.play()
-        showOsd()
-    }
-
-    fun playPause() = if (pausedAt == null) pause() else resume()
+    if (ui.actionsOpen) androidx.activity.compose.BackHandler { ui.actionsOpen = false }
+    if (ui.miniOpen) androidx.activity.compose.BackHandler { ui.miniOpen = false }
+    if (ui.infoOpen) androidx.activity.compose.BackHandler { ui.infoOpen = false }
+    LaunchedEffect(ui.infoOpen) { if (!ui.infoOpen) focus.tryFocus() }
+    LaunchedEffect(ui.miniOpen) { if (!ui.miniOpen) focus.tryFocus() }
+    LaunchedEffect(channelId, info.channel(channelId)?.now?.id) { info.loadNow(channelId) }
 
     // A typed channel number goes after 2 s without another digit.
-    LaunchedEffect(typedAt) {
-        if (typed.isEmpty()) return@LaunchedEffect
+    LaunchedEffect(ui.typedAt) {
+        if (ui.typed.isEmpty()) return@LaunchedEffect
         delay(2000)
-        channels.firstOrNull { it.number == typed }?.let { onChannelChange(it.id) }
-        typed = ""
+        info.channels.firstOrNull { it.number == ui.typed }?.let { onChannelChange(it.id) }
+        ui.typed = ""
     }
-
     LaunchedEffect(Unit) {
         while (true) {
             delay(1000)
@@ -569,11 +191,37 @@ fun PlayerScreen(
         }
     }
 
+    // The controls' handlers stay the same between key down and key up: rebuilt (every key press
+    // recomposes the screen), the row's buttons lost their clicks.
+    val exit by androidx.compose.runtime.rememberUpdatedState(onExit)
+    val playRecording by androidx.compose.runtime.rememberUpdatedState(onPlayRecording)
+    val record: () -> Unit =
+        remember(channelId) {
+            {
+                scope.launch {
+                    val said = info.record(channelId) ?: return@launch
+                    ui.flash(said, 4000)
+                    info.loadBuffers(channelId)
+                    info.loadChannels()
+                }
+            }
+        }
+
+    // Stop: done with this channel, so its tuner input is freed now rather than after the grace.
+    val stop: () -> Unit =
+        remember(channelId) {
+            {
+                Jdvr.backend.stopBuffering(channelId)
+                exit()
+            }
+        }
+    val fromStart: (UUID) -> Unit = remember(channelId) { { rec -> playRecording(com.mackandall.jdvr.PlayRecording(rec, startMs = 0L, liveChannelId = channelId)) } }
+
     fun step(delta: Int) {
+        val channels = info.channels
         if (channels.isEmpty()) return
         val i = channels.indexOfFirst { it.id == channelId }
-        val next = channels[((if (i < 0) 0 else i) + delta).mod(channels.size)]
-        onChannelChange(next.id)
+        onChannelChange(channels[((if (i < 0) 0 else i) + delta).mod(channels.size)].id)
     }
 
     Box(
@@ -583,228 +231,265 @@ fun PlayerScreen(
             .focusRequester(focus)
             .focusable()
             .onPreviewKeyEvent { e ->
-                lastKeyAt = System.currentTimeMillis()
-                if (e.type != KeyEventType.KeyDown || busy != null || error != null) return@onPreviewKeyEvent false
+                ui.lastKeyAt = System.currentTimeMillis()
+                if (e.type != KeyEventType.KeyDown || !stream.showing) return@onPreviewKeyEvent false
                 // The mini guide uses ⏩ ⏪ to jump two hours.
-                if (miniOpen && e.key.nativeKeyCode in setOf(AndroidKeyEvent.KEYCODE_MEDIA_FAST_FORWARD, AndroidKeyEvent.KEYCODE_MEDIA_REWIND)) return@onPreviewKeyEvent false
-                // The remote's media keys work whether or not the controls are showing.
-                when (e.key.nativeKeyCode) {
-                    AndroidKeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> playPause()
-                    AndroidKeyEvent.KEYCODE_MEDIA_PAUSE -> pause()
-                    AndroidKeyEvent.KEYCODE_MEDIA_PLAY -> resume()
-                    AndroidKeyEvent.KEYCODE_MEDIA_REWIND -> rewind()
-                    AndroidKeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> forward()
-                    AndroidKeyEvent.KEYCODE_MEDIA_NEXT -> toLive()
-                    AndroidKeyEvent.KEYCODE_MEDIA_RECORD -> record()
-                    AndroidKeyEvent.KEYCODE_MEDIA_PREVIOUS -> backToTuneIn()
-                    AndroidKeyEvent.KEYCODE_MEDIA_STOP -> stop()
-                    else -> return@onPreviewKeyEvent false
-                }
-                true
+                if (ui.miniOpen && e.key.nativeKeyCode in setOf(AndroidKeyEvent.KEYCODE_MEDIA_FAST_FORWARD, AndroidKeyEvent.KEYCODE_MEDIA_REWIND)) return@onPreviewKeyEvent false
+                stream.onMediaKey(e.key.nativeKeyCode, record = record, stop = stop)
             }
             .onKeyEvent { e ->
-                // ▼ from the controls row (nothing below it) or Guide: the mini guide, as the hints say.
-                if (e.type == KeyEventType.KeyDown && actionsOpen && !miniOpen && !infoOpen && busy == null && error == null &&
-                    e.key.nativeKeyCode in setOf(AndroidKeyEvent.KEYCODE_DPAD_DOWN, AndroidKeyEvent.KEYCODE_GUIDE)
-                ) {
-                    actionsOpen = false
-                    miniOpen = true
-                    return@onKeyEvent true
-                }
-                // A dialog (tuners busy, error) or the actions row has the remote.
-                if (e.type != KeyEventType.KeyDown || busy != null || error != null || actionsOpen || miniOpen || infoOpen) return@onKeyEvent false
-                when (val code = e.key.nativeKeyCode) {
-                    AndroidKeyEvent.KEYCODE_DPAD_UP, AndroidKeyEvent.KEYCODE_CHANNEL_UP -> {
-                        step(1)
-                        true
-                    }
-                    AndroidKeyEvent.KEYCODE_CHANNEL_DOWN -> {
-                        step(-1)
-                        true
-                    }
-                    AndroidKeyEvent.KEYCODE_DPAD_DOWN, AndroidKeyEvent.KEYCODE_GUIDE -> {
-                        miniOpen = true
-                        true
-                    }
-                    AndroidKeyEvent.KEYCODE_DPAD_CENTER, AndroidKeyEvent.KEYCODE_ENTER -> {
-                        if (typed.isNotEmpty()) {
-                            channels.firstOrNull { it.number == typed }?.let { onChannelChange(it.id) }
-                            typed = ""
-                        } else if (pausedAt != null) {
-                            resume()
-                        } else {
-                            actionsOpen = true
-                        }
-                        true
-                    }
-                    AndroidKeyEvent.KEYCODE_INFO -> {
-                        infoOpen = true
-                        true
-                    }
-                    AndroidKeyEvent.KEYCODE_DPAD_LEFT -> {
-                        rewind()
-                        true
-                    }
-                    AndroidKeyEvent.KEYCODE_DPAD_RIGHT -> {
-                        forward()
-                        true
-                    }
-                    in AndroidKeyEvent.KEYCODE_0..AndroidKeyEvent.KEYCODE_9 -> {
-                        typed = (typed + (code - AndroidKeyEvent.KEYCODE_0)).takeLast(4)
-                        typedAt = System.currentTimeMillis()
-                        true
-                    }
-                    else -> false
-                }
+                e.type == KeyEventType.KeyDown && stream.showing &&
+                    onRemoteKey(e.key.nativeKeyCode, stream, ui, step = ::step, onNumber = { n -> info.channels.firstOrNull { it.number == n }?.let { onChannelChange(it.id) } })
             },
     ) {
         AndroidView(
-            factory = { ctx -> PlayerView(ctx).apply {
+            factory = { ctx ->
+                PlayerView(ctx).apply {
                     useController = false
                     // Switching to the HLS copy keeps the last frame up instead of flashing black.
                     setShutterBackgroundColor(android.graphics.Color.TRANSPARENT)
                     setKeepContentOnPlayerReset(true)
                     this.player = player
-                } },
+                }
+            },
             modifier = Modifier.fillMaxSize(),
         )
 
-        val channel = channels.firstOrNull { it.id == channelId }
-        if (tuning && error == null && busy == null) TuningFiller(channel)
-        if (!miniOpen && !infoOpen && (tuning || System.currentTimeMillis() < osdUntil || actionsOpen || pausedAt != null) && error == null && busy == null) {
-            channel?.let { TopInfoBox(it, symbols, nowDetails, nextUp, Modifier.align(Alignment.TopCenter)) }
+        val channel = info.channel(channelId)
+        // Read every second: the info bars come and go with the time.
+        val osd = tick.let { stream.tuning || System.currentTimeMillis() < ui.osdUntil || ui.actionsOpen || stream.pausedAt != null }
+        if (stream.tuning && stream.showing) TuningFiller(channel)
+        if (!ui.miniOpen && !ui.infoOpen && osd && stream.showing) {
+            channel?.let { TopInfoBox(it, symbols, info.nowDetails, info.nextUp, Modifier.align(Alignment.TopCenter)) }
         }
-        if (!miniOpen && (tuning || System.currentTimeMillis() < osdUntil || error != null || actionsOpen || pausedAt != null)) {
-            tick.let {
-                val offset = behindLiveMs()
-                val realRecording = buffers.currentBuffer()?.kept == true || channel?.now?.let { it.timerId != null && it.id.toString().plainId() !in bufferIds } == true
-                // Paused: behind from the first second, never "● LIVE" beside the Paused line.
-                InfoBar(channel, symbols, Modifier.align(Alignment.BottomCenter), behindMs = if (offset > 15_000) offset else if (pausedAt != null) offset.coerceAtLeast(1_000) else 0L, recording = realRecording, formats = formats, watchingAt = LocalDateTime.now().minusNanos(offset * 1_000_000), bufferFrom = bufferFrom(offset), pausedAt = pausedAt) {
-                    if (actionsOpen) {
-                        val b = buffers.currentBuffer()
-                        val behind = onHls
-                        TransportBar(
-                            previous = TransportAction(TransportIcon.Previous) { backToTuneIn() },
-                            rewind = TransportAction(TransportIcon.Rewind) { rewind() },
-                            stop = TransportAction(TransportIcon.Stop) { stop() },
-                            playPause = TransportAction(if (pausedAt == null) TransportIcon.Pause else TransportIcon.Play) { playPause() },
-                            forward = TransportAction(TransportIcon.Forward, behind) { forward() },
-                            // Next = back to live.
-                            next = TransportAction(TransportIcon.Next, behind) { toLive() },
-                            playFocus = playFocus,
-                            clock = false,
-                            record =
-                                channel?.now?.takeIf { com.mackandall.jdvr.ui.DeviceRights.info.record }?.let { now ->
-                                    val recording = b?.kept == true || (now.timerId != null && now.id.toString().plainId() !in bufferIds)
-                                    TransportAction(TransportIcon.Record, active = recording) { record() }
-                                },
-                        ) {
-                            Button("Info") {
-                                actionsOpen = false
-                                infoOpen = true
-                            }
-                            TrackButtons(player)
-                            fromStart?.let { rec ->
-                                Button("From start") { onPlayRecording(com.mackandall.jdvr.PlayRecording(rec, startMs = 0L, liveChannelId = channelId)) }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        // In the bar when it shows; up here only behind the mini guide.
-        pausedAt?.takeIf { miniOpen }?.let { at ->
-            Text(
-                "❚❚  Paused at " + LocalDateTime.ofInstant(at, ZoneId.systemDefault()).time() + "  ·  ▶ or OK to resume",
-                color = Jc.Text,
-                fontSize = 18.sp,
-                modifier = Modifier.align(Alignment.TopStart).padding(28.dp).background(Jc.Ink.copy(alpha = 0.8f), RoundedCornerShape(10.dp)).padding(horizontal = 16.dp, vertical = 10.dp),
+        if (!ui.miniOpen && (osd || stream.error != null)) {
+            LiveControls(
+                channel, symbols, stream, info, ui, formats, player, playFocus, Modifier.align(Alignment.BottomCenter),
+                onRecord = record,
+                onStop = stop,
+                onFromStart = fromStart,
             )
         }
-        note?.let {
-            Text(it, color = Jc.Text, fontSize = 16.sp, modifier = Modifier.align(Alignment.TopCenter).padding(28.dp).background(Jc.Ink.copy(alpha = 0.8f), RoundedCornerShape(10.dp)).padding(14.dp))
-        }
-        if (typed.isNotEmpty()) {
-            Text(
-                typed,
-                color = Jc.Text,
-                fontSize = 48.sp,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.align(Alignment.TopEnd).padding(32.dp).background(Jc.Ink.copy(alpha = 0.8f), RoundedCornerShape(12.dp)).padding(horizontal = 22.dp, vertical = 8.dp),
-            )
-        }
-        error?.let {
-            Column(
-                Modifier.align(Alignment.Center).background(Jc.Sheet, RoundedCornerShape(14.dp)).padding(24.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                Text(it, color = Jc.Amber, fontSize = 18.sp)
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Button("Try again", primary = true) {
-                        error = null
-                        reconnects = 0
-                        attempt++
-                    }
-                    Button("Back", onClick = onExit)
-                }
-            }
-        }
+        LiveMessages(stream, ui, onExit)
         // Info: the guide's programme panel on the right, with all its options.
-        if (infoOpen) {
+        if (ui.infoOpen) {
             channel?.now?.let { now ->
-                ProgramActionsHost(onDismiss = { infoOpen = false }) {
+                ProgramActionsHost(onDismiss = { ui.infoOpen = false }) {
                     com.mackandall.jdvr.ui.ProgramPanel(
                         program = now,
                         channel = channel,
                         symbols = symbols,
-                        onWatch = { infoOpen = false },
+                        onWatch = { ui.infoOpen = false },
                         onWatchFromStart = { id ->
-                            infoOpen = false
+                            ui.infoOpen = false
                             onPlayRecording(com.mackandall.jdvr.PlayRecording(id, startMs = 0L, liveChannelId = channelId))
                         },
                         onPlayItem = {
-                            infoOpen = false
+                            ui.infoOpen = false
                             onPlayRecording(it)
                         },
                         onChanged = {},
-                        onClose = { infoOpen = false },
+                        onClose = { ui.infoOpen = false },
                         onActed = { msg ->
-                            infoOpen = false
+                            ui.infoOpen = false
+                            msg?.let { ui.flash(it, 4000) }
                             scope.launch {
-                                note = msg
                                 delay(1500)
-                                runCatching { channels = Jdvr.liveTv.channels() }
-                                buffers = Jdvr.liveTv.buffers(channelId)
-                                bufferIds = Jdvr.liveTv.bufferPrograms()
-                                delay(2500)
-                                note = null
+                                info.loadChannels()
+                                info.loadBuffers(channelId)
                             }
                         },
                         modifier = Modifier.width(400.dp),
                     )
                 }
-            } ?: run { infoOpen = false }
+            } ?: run { ui.infoOpen = false }
         }
-        if (miniOpen && channels.isNotEmpty()) {
+        if (ui.miniOpen && info.channels.isNotEmpty()) {
             MiniGuide(
-                channels = channels,
+                channels = info.channels,
                 currentChannelId = channelId,
                 symbols = symbols,
                 onWatch = {
-                    miniOpen = false
+                    ui.miniOpen = false
                     if (it != channelId) onChannelChange(it)
                 },
-                onClose = { miniOpen = false },
+                onClose = { ui.miniOpen = false },
                 modifier = Modifier.fillMaxSize(),
-                buffers = bufferIds,
+                buffers = info.bufferIds,
                 onPlayRecording = {
-                    miniOpen = false
+                    ui.miniOpen = false
                     onPlayRecording(it)
                 },
             )
         }
-        busy?.let { status ->
+        stream.busy?.let { status ->
             TunersBusy(status, channel, onWatch = { onChannelChange(it) }, onCancel = onExit, modifier = Modifier.align(Alignment.Center))
+        }
+    }
+}
+
+@OptIn(UnstableApi::class)
+private fun livePlayer(context: android.content.Context): ExoPlayer {
+    val extractors = DefaultExtractorsFactory().setTsExtractorTimestampSearchBytes(TS_SEARCH_BYTES)
+    return ExoPlayer
+        .Builder(context, renderersFactory(context))
+        .setMediaSourceFactory(
+            DefaultMediaSourceFactory(OkHttpDataSource.Factory(Jdvr.http), extractors)
+                .setLoadErrorHandlingPolicy(NoRetryOnServerError),
+        )
+        .build()
+        .apply {
+            playWhenReady = true
+            applySubtitlePreference(this)
+        }
+}
+
+/** The remote's media keys: they work whether or not the controls are showing. */
+private fun LiveStream.onMediaKey(
+    code: Int,
+    record: () -> Unit,
+    stop: () -> Unit,
+): Boolean {
+    when (code) {
+        AndroidKeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> playPause()
+        AndroidKeyEvent.KEYCODE_MEDIA_PAUSE -> pause()
+        AndroidKeyEvent.KEYCODE_MEDIA_PLAY -> resume()
+        AndroidKeyEvent.KEYCODE_MEDIA_REWIND -> rewind()
+        AndroidKeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> forward()
+        AndroidKeyEvent.KEYCODE_MEDIA_NEXT -> toLive()
+        AndroidKeyEvent.KEYCODE_MEDIA_RECORD -> record()
+        AndroidKeyEvent.KEYCODE_MEDIA_PREVIOUS -> backToTuneIn()
+        AndroidKeyEvent.KEYCODE_MEDIA_STOP -> stop()
+        else -> return false
+    }
+    return true
+}
+
+/** The remote over the bare picture: channels, the mini guide, the controls, rewind and digits. */
+private fun onRemoteKey(
+    code: Int,
+    stream: LiveStream,
+    ui: LiveOverlays,
+    step: (Int) -> Unit,
+    onNumber: (String) -> Unit,
+): Boolean {
+    // ▼ from the controls row (nothing below it) or Guide: the mini guide, as the hints say.
+    if (ui.actionsOpen && !ui.miniOpen && !ui.infoOpen && code in setOf(AndroidKeyEvent.KEYCODE_DPAD_DOWN, AndroidKeyEvent.KEYCODE_GUIDE)) {
+        ui.actionsOpen = false
+        ui.miniOpen = true
+        return true
+    }
+    // A panel has the remote.
+    if (ui.anyPanel) return false
+    when (code) {
+        AndroidKeyEvent.KEYCODE_DPAD_UP, AndroidKeyEvent.KEYCODE_CHANNEL_UP -> step(1)
+        AndroidKeyEvent.KEYCODE_CHANNEL_DOWN -> step(-1)
+        AndroidKeyEvent.KEYCODE_DPAD_DOWN, AndroidKeyEvent.KEYCODE_GUIDE -> ui.miniOpen = true
+        AndroidKeyEvent.KEYCODE_DPAD_CENTER, AndroidKeyEvent.KEYCODE_ENTER ->
+            if (ui.typed.isNotEmpty()) {
+                onNumber(ui.typed)
+                ui.typed = ""
+            } else if (stream.pausedAt != null) {
+                stream.resume()
+            } else {
+                ui.actionsOpen = true
+            }
+        AndroidKeyEvent.KEYCODE_INFO -> ui.infoOpen = true
+        AndroidKeyEvent.KEYCODE_DPAD_LEFT -> stream.rewind()
+        AndroidKeyEvent.KEYCODE_DPAD_RIGHT -> stream.forward()
+        in AndroidKeyEvent.KEYCODE_0..AndroidKeyEvent.KEYCODE_9 -> {
+            ui.typed = (ui.typed + (code - AndroidKeyEvent.KEYCODE_0)).takeLast(4)
+            ui.typedAt = System.currentTimeMillis()
+        }
+        else -> return false
+    }
+    return true
+}
+
+/** The bottom info bar, and with OK the transport row and buttons in it. */
+@Composable
+private fun LiveControls(
+    channel: Channel?,
+    symbols: MarkSymbols?,
+    stream: LiveStream,
+    info: LiveInfo,
+    ui: LiveOverlays,
+    formats: PlayingFormats?,
+    player: ExoPlayer,
+    playFocus: FocusRequester,
+    modifier: Modifier,
+    onRecord: () -> Unit,
+    onStop: () -> Unit,
+    onFromStart: (UUID) -> Unit,
+) {
+    val offset = stream.behindLiveMs()
+    val paused = stream.pausedAt
+    // Paused: behind from the first second, never "● LIVE" beside the Paused line.
+    val behind = if (offset > 15_000) offset else if (paused != null) offset.coerceAtLeast(1_000) else 0L
+    val recording = info.realRecording(stream.channelId)
+    InfoBar(channel, symbols, modifier, behindMs = behind, recording = recording, formats = formats, watchingAt = LocalDateTime.now().minusNanos(offset * 1_000_000), bufferFrom = stream.bufferFrom(offset), pausedAt = paused) {
+        if (!ui.actionsOpen) return@InfoBar
+        val rewound = stream.onHls
+        TransportBar(
+            previous = TransportAction(TransportIcon.Previous) { stream.backToTuneIn() },
+            rewind = TransportAction(TransportIcon.Rewind) { stream.rewind() },
+            stop = TransportAction(TransportIcon.Stop) { onStop() },
+            playPause = TransportAction(if (paused == null) TransportIcon.Pause else TransportIcon.Play) { stream.playPause() },
+            forward = TransportAction(TransportIcon.Forward, rewound) { stream.forward() },
+            // Next = back to live.
+            next = TransportAction(TransportIcon.Next, rewound) { stream.toLive() },
+            playFocus = playFocus,
+            clock = false,
+            record = channel?.now?.takeIf { com.mackandall.jdvr.ui.TvRights.info.record }?.let { TransportAction(TransportIcon.Record, active = recording) { onRecord() } },
+        ) {
+            Button("Info") {
+                ui.actionsOpen = false
+                ui.infoOpen = true
+            }
+            TrackButtons(player)
+            info.fromStart?.let { rec -> Button("From start") { onFromStart(rec) } }
+        }
+    }
+}
+
+/** Messages over the picture: paused (behind the mini guide), notes, typed digits, and errors. */
+@Composable
+private fun androidx.compose.foundation.layout.BoxScope.LiveMessages(
+    stream: LiveStream,
+    ui: LiveOverlays,
+    onExit: () -> Unit,
+) {
+    // In the bar when it shows; up here only behind the mini guide.
+    stream.pausedAt?.takeIf { ui.miniOpen }?.let { at ->
+        Text(
+            "❚❚  Paused at " + LocalDateTime.ofInstant(at, ZoneId.systemDefault()).time() + "  ·  ▶ or OK to resume",
+            color = Jc.Text,
+            fontSize = 18.sp,
+            modifier = Modifier.align(Alignment.TopStart).padding(28.dp).background(Jc.Ink.copy(alpha = 0.8f), RoundedCornerShape(10.dp)).padding(horizontal = 16.dp, vertical = 10.dp),
+        )
+    }
+    ui.note?.let {
+        Text(it, color = Jc.Text, fontSize = 16.sp, modifier = Modifier.align(Alignment.TopCenter).padding(28.dp).background(Jc.Ink.copy(alpha = 0.8f), RoundedCornerShape(10.dp)).padding(14.dp))
+    }
+    if (ui.typed.isNotEmpty()) {
+        Text(
+            ui.typed,
+            color = Jc.Text,
+            fontSize = 48.sp,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.align(Alignment.TopEnd).padding(32.dp).background(Jc.Ink.copy(alpha = 0.8f), RoundedCornerShape(12.dp)).padding(horizontal = 22.dp, vertical = 8.dp),
+        )
+    }
+    stream.error?.let {
+        Column(
+            Modifier.align(Alignment.Center).background(Jc.Sheet, RoundedCornerShape(14.dp)).padding(24.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(it, color = Jc.Amber, fontSize = 18.sp)
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Button("Try again", primary = true) { stream.retry() }
+                Button("Back", onClick = onExit)
+            }
         }
     }
 }
@@ -818,7 +503,7 @@ private fun TuningFiller(channel: Channel?) {
     var artFailed by remember(channel?.now?.id) { mutableStateOf(false) }
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         val now = channel?.now
-        val art = now?.let { Jdvr.liveTv.imageUrl(it.id, 720) }
+        val art = now?.let { Jdvr.backend.imageUrl(it.id, 720) }
         if (art != null && !artFailed) {
             coil3.compose.AsyncImage(
                 model = art,
@@ -868,8 +553,8 @@ private fun Spinner() {
 @Composable
 private fun TopInfoBox(
     channel: Channel,
-    symbols: LiveTvRepository.MarkSymbols?,
-    details: LiveTvRepository.ItemDetails?,
+    symbols: MarkSymbols?,
+    details: ItemDetails?,
     next: com.mackandall.jdvr.data.Program?,
     modifier: Modifier,
 ) {
@@ -919,7 +604,7 @@ private fun TopInfoBox(
 @Composable
 private fun InfoBar(
     channel: Channel?,
-    symbols: LiveTvRepository.MarkSymbols?,
+    symbols: MarkSymbols?,
     modifier: Modifier,
     behindMs: Long = 0L,
     recording: Boolean = false,
@@ -1085,14 +770,14 @@ private fun LiveTimeline(
 /** Every tuner input is busy: what each is doing, and Watch for the ones that share an input. */
 @Composable
 private fun TunersBusy(
-    status: LiveTvRepository.TunerStatus,
+    status: TunerStatus,
     channel: Channel?,
     onWatch: (UUID) -> Unit,
     onCancel: () -> Unit,
     modifier: Modifier,
 ) {
     val first = remember { FocusRequester() }
-    LaunchedEffect(Unit) { runCatching { first.requestFocus() } }
+    LaunchedEffect(Unit) { first.tryFocus() }
     Column(
         modifier.width(640.dp).background(Jc.Sheet, RoundedCornerShape(16.dp)).padding(24.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -1139,11 +824,6 @@ private fun TunersBusy(
  * better by asking again a few seconds later, so the player gives up at once and says so, instead
  * of retrying for half a minute behind the tuning spinner. Other errors keep the usual retries.
  */
-private const val MAX_RECONNECTS = 3
-private val RECONNECT_DELAYS_MS = longArrayOf(2000, 4000, 8000)
-private const val STALL_MS = 12_000L
-private const val GOOD_SPELL_MS = 90_000L
-
 private object NoRetryOnServerError : androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy() {
     override fun getRetryDelayMsFor(info: androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy.LoadErrorInfo): Long {
         val e = info.exception

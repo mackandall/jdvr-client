@@ -15,8 +15,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
@@ -58,7 +56,6 @@ import androidx.tv.material3.Text
 import coil3.compose.AsyncImage
 import com.mackandall.jdvr.PlayRecording
 import com.mackandall.jdvr.data.Jdvr
-import com.mackandall.jdvr.data.LiveTvRepository
 import com.mackandall.jdvr.data.letterOf
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -66,6 +63,10 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.util.UUID
+import com.mackandall.jdvr.data.ItemDetails
+import com.mackandall.jdvr.data.LibItem
+import com.mackandall.jdvr.data.Library
+import com.mackandall.jdvr.data.attempt
 
 private const val PAGE = 120
 
@@ -74,7 +75,7 @@ private fun clockOf(ms: Long): String {
     return if (m >= 60) "${m / 60} h ${m % 60} min" else "$m min"
 }
 
-/** Where [LiveTvRepository.ItemDetails.location] says a file is in the live recordings folder. */
+/** Where [ItemDetails.location] says a file is in the live recordings folder. */
 const val LIVE_FOLDER = "Live recordings folder"
 
 /**
@@ -86,16 +87,16 @@ const val LIVE_FOLDER = "Live recordings folder"
  */
 @Composable
 fun LibraryScreen(
-    library: LiveTvRepository.Library,
+    library: Library,
     entry: FocusRequester,
     refresh: Int,
     onPlay: (PlayRecording) -> Unit,
-    openItem: LiveTvRepository.LibItem? = null,
+    openItem: LibItem? = null,
     onItemOpened: () -> Unit = {},
     onLeave: () -> Unit = {},
 ) {
-    var show by remember { mutableStateOf<LiveTvRepository.LibItem?>(null) }
-    var movie by remember { mutableStateOf<LiveTvRepository.LibItem?>(null) }
+    var show by remember { mutableStateOf<LibItem?>(null) }
+    var movie by remember { mutableStateOf<LibItem?>(null) }
     // Opened from elsewhere (Home's rows): Back from its page goes back there, not to the grid.
     var cameForItem by remember { mutableStateOf(false) }
     LaunchedEffect(openItem) {
@@ -108,7 +109,7 @@ fun LibraryScreen(
     var lastItem by remember { mutableStateOf<UUID?>(null) }
     var lastIndex by remember { mutableIntStateOf(0) }
     // Hold OK on a poster: its quick actions; a change there (watched, deleted) reloads the grid.
-    var quick by remember { mutableStateOf<LiveTvRepository.LibItem?>(null) }
+    var quick by remember { mutableStateOf<LibItem?>(null) }
     var changed by remember { mutableIntStateOf(0) }
 
     val m = movie
@@ -164,17 +165,17 @@ fun LibraryScreen(
 
 @Composable
 private fun LibraryGrid(
-    library: LiveTvRepository.Library,
+    library: Library,
     entry: FocusRequester,
     restore: UUID?,
     restoreIndex: Int,
     refresh: Int,
-    onHold: (LiveTvRepository.LibItem, Int) -> Unit,
-    onOpen: (LiveTvRepository.LibItem, Int) -> Unit,
+    onHold: (LibItem, Int) -> Unit,
+    onOpen: (LibItem, Int) -> Unit,
 ) {
     // Remembered per library, so it opens the way it was left.
     val newest = library.id.toString() in Jdvr.prefs.newestLibraries
-    var items by remember(newest) { mutableStateOf<List<LiveTvRepository.LibItem>>(emptyList()) }
+    var items by remember(newest) { mutableStateOf<List<LibItem>>(emptyList()) }
     var total by remember(newest) { mutableIntStateOf(-1) }
     // Bumped on every reload, so a page still arriving for the old list is dropped.
     var generation by remember { mutableIntStateOf(0) }
@@ -198,7 +199,7 @@ private fun LibraryGrid(
         loadLock.withLock {
             val gen = generation
             while (items.size <= through && (total < 0 || items.size < total)) {
-                val (page, t) = runCatching { Jdvr.liveTv.libraryItems(library.id, newest, items.size, PAGE) }.getOrNull() ?: break
+                val (page, t) = attempt { Jdvr.backend.libraryItems(library.id, newest, items.size, PAGE) } ?: break
                 if (gen != generation) break
                 items = items + page
                 total = t
@@ -217,9 +218,9 @@ private fun LibraryGrid(
         // Back from an item far down the list: load up to it and scroll there, so its poster can take focus.
         fetch(restoreIndex + 21)
         if (restore != null && restoreIndex > 0) runCatching { grid.scrollToItem(restoreIndex) }
-        letters = if (newest) emptyList() else runCatching { Jdvr.liveTv.libraryLetters(library.id) }.getOrDefault(emptyList())
+        letters = if (newest) emptyList() else attempt { Jdvr.backend.libraryLetters(library.id) } ?: emptyList()
     }
-    LaunchedEffect(items.isNotEmpty()) { if (items.isNotEmpty() && restore == null) runCatching { first.requestFocus() } }
+    LaunchedEffect(items.isNotEmpty()) { if (items.isNotEmpty() && restore == null) first.tryFocus() }
 
     var jumpJob by remember { mutableStateOf<Job?>(null) }
     // Scrolls the grid to the letter's first item; with [focus], puts the cursor on it.
@@ -237,7 +238,7 @@ private fun LibraryGrid(
                     repeat(20) {
                         delay(40)
                         val r = itemReqs[idx] ?: return@repeat
-                        if (runCatching { r.requestFocus() }.isSuccess) return@launch
+                        if (r.tryFocus()) return@launch
                     }
                 }
             }
@@ -245,7 +246,7 @@ private fun LibraryGrid(
 
     Column(Modifier.fillMaxSize().padding(start = 28.dp, top = 20.dp, end = 28.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            Text(library.name, color = Jc.Text, fontSize = 26.sp, fontWeight = FontWeight.SemiBold)
+            Text(library.name, color = Jc.Title, fontSize = 26.sp, fontWeight = FontWeight.SemiBold)
             if (total >= 0) Text("$total", color = Jc.Muted, fontSize = 15.sp)
             Box(Modifier.weight(1f))
             Button(if (newest) "Recently added" else "A–Z") { Jdvr.prefs.changeLibraryNewest(library.id.toString(), !newest) }
@@ -266,7 +267,7 @@ private fun LibraryGrid(
                             onEnter = { l ->
                                 // Back to the poster it came from when the letter hasn't changed.
                                 val back = itemReqs[focusedIndex].takeIf { l == currentLetter }
-                                if (back == null || runCatching { back.requestFocus() }.isFailure) jump(l, focus = true)
+                                if (back == null || !back.tryFocus()) jump(l, focus = true)
                             },
                         )
                     }
@@ -284,7 +285,7 @@ private fun LibraryGrid(
                                 itemReqs[i] = back
                                 onDispose { if (itemReqs[i] === back) itemReqs.remove(i) }
                             }
-                            LaunchedEffect(Unit) { if (it.id == restore) runCatching { back.requestFocus() } }
+                            LaunchedEffect(Unit) { if (it.id == restore) back.tryFocus() }
                             val letter = letters.getOrNull(i) ?: letterOf(it.name)
                             Poster(
                                 it,
@@ -368,7 +369,7 @@ private fun LetterStrip(
 
 @Composable
 internal fun Poster(
-    item: LiveTvRepository.LibItem,
+    item: LibItem,
     modifier: Modifier,
     onHold: (() -> Unit)? = null,
     onClick: () -> Unit,
@@ -384,7 +385,7 @@ internal fun Poster(
             scale = ClickableSurfaceDefaults.scale(focusedScale = 1.06f),
         ) {
             Box(Modifier.fillMaxSize()) {
-                AsyncImage(model = Jdvr.liveTv.imageUrl(item.id, 360), contentDescription = item.name, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+                AsyncImage(model = Jdvr.backend.imageUrl(item.id, 360), contentDescription = item.name, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
                 movingFor(item.id.toString())?.let { MovingOverlay(it) } ?: cuttingFor(item.id.toString())?.let { CuttingOverlay(it) }
                 Row(Modifier.align(Alignment.BottomStart).padding(5.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     when {
@@ -414,7 +415,7 @@ private fun Tag(
 /** A show: all its episodes in the episode browser (list with details, or tiles by season). */
 @Composable
 internal fun ShowPage(
-    show: LiveTvRepository.LibItem,
+    show: LibItem,
     refresh: Int,
     onPlay: (PlayRecording) -> Unit,
 ) {
@@ -425,7 +426,7 @@ internal fun ShowPage(
     val scope = rememberCoroutineScope()
     LaunchedEffect(show.id, refresh, reload) {
         episodes =
-            runCatching { Jdvr.liveTv.episodes(show.id, null) }.getOrNull()?.map {
+            attempt { Jdvr.backend.episodes(show.id, null) }?.map {
                 EpisodeEntry(it.id, it.name, it.season, it.episode, it.played, it.resumeMs, it.runtimeMin, it.overview)
             }?.let { withCommercialBadges(it) } ?: emptyList()
     }
@@ -453,7 +454,7 @@ internal fun ShowPage(
         onShowChanged = { reload++ },
         onToggleWatched = { e ->
             scope.launch {
-                runCatching { Jdvr.liveTv.setPlayed(e.id, !e.played) }
+                attempt { Jdvr.backend.setPlayed(e.id, !e.played) }
                 reload++
             }
         },

@@ -51,8 +51,8 @@ import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
 import coil3.compose.AsyncImage
 import com.mackandall.jdvr.data.Jdvr
-import com.mackandall.jdvr.data.LiveTvRepository.DateChannel
-import com.mackandall.jdvr.data.LiveTvRepository.DateRecording
+import com.mackandall.jdvr.data.DateChannel
+import com.mackandall.jdvr.data.DateRecording
 import com.mackandall.jdvr.data.toUuid
 import kotlinx.coroutines.delay
 import java.time.Instant
@@ -114,7 +114,7 @@ fun RecordingsByDate(
     var logoRight by remember { mutableStateOf(false) }
     var focused by remember { mutableStateOf<DateRecording?>(null) }
     LaunchedEffect(filter, reload) {
-        val data = Jdvr.liveTv.recordingsByDate(filter)
+        val data = Jdvr.backend.recordingsByDate(filter)
         if (data == null) {
             onUnavailable()
             return@LaunchedEffect
@@ -147,10 +147,7 @@ fun RecordingsByDate(
 
     // Focus the first line the first time the list is there (the rail hands focus over with [entry]).
     LaunchedEffect(Unit) {
-        repeat(40) {
-            if (runCatching { entry.requestFocus() }.isSuccess) return@LaunchedEffect
-            delay(50)
-        }
+        entry.focusSoon(withinMs = 2000)
     }
 
     val firstItem = lines.indexOfFirst { it is DateLine.Item }
@@ -282,7 +279,7 @@ internal fun ChannelTile(
         ) {
             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                 if (ch != null) {
-                    val logo = if (ch.hasLogo) Jdvr.liveTv.imageUrl(ch.id, 120) else null
+                    val logo = if (ch.hasLogo) Jdvr.backend.imageUrl(ch.id, 120) else null
                     if (logo != null) {
                         AsyncImage(model = logo, contentDescription = ch.name, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize())
                     } else {
@@ -331,13 +328,13 @@ private fun Chip(
 private fun DateDetails(r: DateRecording) {
     val at = localTime(r.recordedUtc)
     Column(Modifier.fillMaxSize().padding(top = 6.dp, bottom = 10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        val image = (r.imageId ?: r.id).let { Jdvr.liveTv.imageUrl(it, 360) }
+        val image = (r.imageId ?: r.id).let { Jdvr.backend.imageUrl(it, 360) }
         Box(Modifier.weight(1f, fill = false).aspectRatio(16f / 9f, matchHeightConstraintsFirst = true).background(Jc.Panel2, RoundedCornerShape(12.dp))) {
             if (image != null) {
                 AsyncImage(model = image, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize().background(Jc.Panel2, RoundedCornerShape(12.dp)))
             }
         }
-        Text(r.title, color = Jc.Text, fontSize = 24.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        Text(r.title, color = Jc.Title, fontSize = 24.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
         r.episodeTitle?.let { Text(it, color = Jc.Text, fontSize = 19.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             r.channel?.let { ChannelTile(it, numberInside = false, width = 84, height = 46) }

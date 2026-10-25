@@ -1,7 +1,6 @@
 package com.mackandall.jdvr.ui
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
@@ -14,8 +13,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -44,33 +41,26 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.tv.material3.Border
-import androidx.tv.material3.ClickableSurfaceDefaults
-import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
 import coil3.compose.AsyncImage
 import com.mackandall.jdvr.Screen
 import com.mackandall.jdvr.data.Channel
 import com.mackandall.jdvr.data.Jdvr
-import com.mackandall.jdvr.data.LiveTvRepository
 import com.mackandall.jdvr.data.Prefs
 import com.mackandall.jdvr.data.toUuid
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
-import java.time.Duration
-import java.time.Instant
 import java.time.LocalDateTime
 import java.time.LocalTime
-import java.time.ZoneId
 import java.util.UUID
+import com.mackandall.jdvr.data.LibItem
+import com.mackandall.jdvr.data.Library
+import com.mackandall.jdvr.data.Upcoming
 
 /** Where SageTV's menu was left, so coming back to Home lands on the same entry. */
 private object SageMenuState {
     var main by mutableIntStateOf(0)
 }
 
-/** The same menu drawn in Gemstone's look: fanart behind black glass, one gem colour. */
-private val LocalGemLook = androidx.compose.runtime.compositionLocalOf { false }
 
 private class SageEntry(
     val key: String,
@@ -80,23 +70,6 @@ private class SageEntry(
     val open: (() -> Unit)? = null,
 )
 
-private val SageBlue = Color(0xFF4F86D8)
-private val SageBox = Color(0xFF06122F).copy(alpha = 0.55f)
-private val SageLabel = Color(0xFF8FB4E8)
-private val GemLine = Color(0xFF2C3038)
-private val GemBox = Color(0xFF08090C).copy(alpha = 0.6f)
-private val GemGrey = Color(0xFF9AA0AA)
-
-@Composable
-private fun panelBorder() = if (LocalGemLook.current) GemLine else SageBlue
-
-@Composable
-private fun panelFill() = if (LocalGemLook.current) GemBox else SageBox
-
-@Composable
-private fun panelLabel() = if (LocalGemLook.current) Jc.Focus else SageLabel
-
-private fun localOf(iso: String?): LocalDateTime? = iso?.let { runCatching { LocalDateTime.ofInstant(Instant.parse(it), ZoneId.systemDefault()) }.getOrNull() }
 
 /**
  * Home in the SageTV themes: SageTV's main menu. ▲▼ move the selection (round from the bottom to
@@ -107,7 +80,7 @@ private fun localOf(iso: String?): LocalDateTime? = iso?.let { runCatching { Loc
 @Composable
 fun SageHome(
     entry: FocusRequester,
-    libraries: List<LiveTvRepository.Library>,
+    libraries: List<Library>,
     showRecorded: Boolean,
     showTrash: Boolean,
     onOpenScreen: (Screen) -> Unit,
@@ -122,12 +95,13 @@ fun SageHome(
 ) {
     val prefs = Jdvr.prefs
     val gem = Jc.Style == UiStyle.Gem
-    var recordings by remember { mutableStateOf<List<LiveTvRepository.RecordingCard>>(emptyList()) }
-    var channels by remember { mutableStateOf<List<Channel>>(emptyList()) }
-    var upcoming by remember { mutableStateOf<List<LiveTvRepository.Upcoming>?>(null) }
-    var newCount by remember { mutableStateOf<Int?>(null) }
-    var tuners by remember { mutableStateOf<LiveTvRepository.TunerStatus?>(null) }
-    var drive by remember { mutableStateOf<LiveTvRepository.Drive?>(null) }
+    val data = rememberHomeData()
+    val recordings = data.shows.orEmpty()
+    val channels = data.channels.orEmpty()
+    val upcoming = data.schedule
+    val newCount = data.shows?.sumOf { it.unplayedCount }
+    val tuners = data.tuners
+    val drive = data.extras?.drive
     var now by remember { mutableStateOf(LocalDateTime.now()) }
     var picking by remember { mutableStateOf(false) }
     var signOutArmed by remember { mutableStateOf(false) }
@@ -143,26 +117,7 @@ fun SageHome(
             delay(5_000)
         }
     }
-    LaunchedEffect(Unit) {
-        while (true) {
-            // All at once: the channel list is slow on a small box, and the other panels needn't wait for it.
-            kotlinx.coroutines.coroutineScope {
-                launch { runCatching { Jdvr.liveTv.channels() }.getOrNull()?.let { channels = it } }
-                launch { upcoming = Jdvr.liveTv.schedule().orEmpty() }
-                launch {
-                    Jdvr.liveTv.recordedShows()?.let { cards ->
-                        recordings = cards
-                        newCount = cards.sumOf { it.unplayedCount }
-                    }
-                }
-                launch { tuners = Jdvr.liveTv.tuners(null) }
-                launch { drive = runCatching { Jdvr.liveTv.homeExtras() }.getOrNull()?.drive }
-            }
-            // No channels yet (the server didn't answer, say just after the TV woke): try again soon.
-            delay(if (channels.isEmpty()) 5_000 else 60_000)
-        }
-    }
-    val last = channels.firstOrNull { it.id.toString() == Jdvr.session.lastChannelId } ?: channels.firstOrNull()
+    val last = data.lastChannel
     val recent =
         Jdvr.session.recentChannels.mapNotNull { id -> channels.firstOrNull { it.id.toString() == id } }
             .filter { it.id != last?.id }
@@ -260,8 +215,8 @@ fun SageHome(
 
     // The library the Libraries panel shows (the one picked in the submenu, else the first).
     val panelLibrary = if (current.key == "libraries") libs.getOrNull(subIndex ?: 0) else null
-    var libraryItems by remember(panelLibrary?.id) { mutableStateOf<List<LiveTvRepository.LibItem>?>(null) }
-    LaunchedEffect(panelLibrary?.id) { panelLibrary?.let { libraryItems = Jdvr.liveTv.latestIn(it.id, 6) } }
+    var libraryItems by remember(panelLibrary?.id) { mutableStateOf<List<LibItem>?>(null) }
+    LaunchedEffect(panelLibrary?.id) { panelLibrary?.let { libraryItems = Jdvr.backend.latestIn(it.id, 6) } }
 
     // Gemstone: the fanart for the entry.
     val fanart: String? =
@@ -269,10 +224,10 @@ fun SageHome(
             null
         } else {
             when (current.key) {
-                "livetv", "guide" -> last?.now?.let { Jdvr.liveTv.imageUrl(it.id, 1080) }
-                "recorded" -> recordings.firstOrNull()?.id?.toUuid()?.let { Jdvr.liveTv.backdropUrl(it) }
-                "scheduled" -> upcoming.orEmpty().firstNotNullOfOrNull { it.programId?.toUuid() }?.let { Jdvr.liveTv.imageUrl(it, 1080) }
-                "libraries" -> libraryItems?.firstOrNull()?.let { Jdvr.liveTv.backdropUrl(it.seriesId ?: it.id) }
+                "livetv", "guide" -> last?.now?.let { Jdvr.backend.imageUrl(it.id, 1080) }
+                "recorded" -> recordings.firstOrNull()?.id?.toUuid()?.let { Jdvr.backend.backdropUrl(it) }
+                "scheduled" -> upcoming.orEmpty().firstNotNullOfOrNull { it.programId?.toUuid() }?.let { Jdvr.backend.imageUrl(it, 1080) }
+                "libraries" -> libraryItems?.firstOrNull()?.let { Jdvr.backend.backdropUrl(it.seriesId ?: it.id) }
                 else -> null
             }
         }
@@ -535,196 +490,11 @@ fun SageHome(
         BackHandler {
             picking = false
             // The picker's row had focus; give it back to the menu.
-            runCatching { entry.requestFocus() }
+            entry.tryFocus()
         }
         ChannelPicker(channels, last?.id, onPick = {
             picking = false
             onOpenGuide(null, it)
         })
-    }
-}
-
-@Composable
-private fun SagePanel(
-    label: String,
-    content: @Composable () -> Unit,
-) {
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .background(panelFill(), RoundedCornerShape(if (LocalGemLook.current) 4.dp else 8.dp))
-            .border(1.dp, panelBorder(), RoundedCornerShape(if (LocalGemLook.current) 4.dp else 8.dp))
-            .padding(horizontal = 12.dp, vertical = 9.dp),
-        verticalArrangement = Arrangement.spacedBy(5.dp),
-    ) {
-        Text(label, color = panelLabel(), fontSize = 11.sp, letterSpacing = if (LocalGemLook.current) 2.sp else 1.sp)
-        content()
-    }
-}
-
-@Composable
-private fun PanelLine(
-    left: String,
-    right: String,
-    bold: Boolean = false,
-    red: Boolean = false,
-) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(left, color = if (red) Jc.Recording else Color.White, fontSize = 14.sp, fontWeight = if (bold) FontWeight.Bold else FontWeight.Normal, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-        if (right.isNotEmpty()) Text(right, color = Jc.Muted, fontSize = 13.sp, maxLines = 1, modifier = Modifier.padding(start = 8.dp))
-    }
-}
-
-/** The last channel: its programme's picture (no tuner is used), what's on, how far in. */
-@Composable
-private fun LivePanel(
-    c: Channel,
-    now: LocalDateTime,
-    label: String,
-    symbols: LiveTvRepository.MarkSymbols?,
-) {
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(if (LocalGemLook.current) 4.dp else 8.dp))
-            .background(panelFill())
-            .border(1.dp, panelBorder(), RoundedCornerShape(if (LocalGemLook.current) 4.dp else 8.dp)),
-    ) {
-        Box(Modifier.fillMaxWidth().height(150.dp).background(if (LocalGemLook.current) Color(0xFF14161B) else Color(0xFF050B1C)), contentAlignment = Alignment.Center) {
-            val p = c.now
-            val image = p?.let { Jdvr.liveTv.imageUrl(it.id, 360) } ?: c.logoUrl
-            if (image != null) AsyncImage(model = image, contentDescription = null, contentScale = if (p != null) ContentScale.Crop else ContentScale.Fit, modifier = Modifier.fillMaxSize())
-        }
-        Column(Modifier.padding(horizontal = 12.dp, vertical = 9.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            Text("$label · ${c.number} ${c.name}".uppercase(), color = panelLabel(), fontSize = 11.sp, letterSpacing = 1.sp, maxLines = 1)
-            val p = c.now
-            Text(p?.name ?: c.name, color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            val marks = Marks.parse(p?.rawEpisodeTitle, symbols)
-            listOfNotNull(p?.seasonEpisode, marks.title).joinToString(" · ").ifEmpty { null }?.let { Text(it, color = Jc.Muted, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
-            if (p != null) {
-                val total = Duration.between(p.start, p.end).toMinutes().coerceAtLeast(1)
-                val done = Duration.between(p.start, now).toMinutes().coerceIn(0, total)
-                Box(Modifier.padding(top = 4.dp).fillMaxWidth().height(if (LocalGemLook.current) 3.dp else 5.dp).background(if (LocalGemLook.current) GemLine else Color(0xFF1B3566), RoundedCornerShape(3.dp))) {
-                    Box(Modifier.fillMaxWidth(done.toFloat() / total).height(if (LocalGemLook.current) 3.dp else 5.dp).background(if (LocalGemLook.current) Jc.Focus else Color(0xFF5FB0FF), RoundedCornerShape(3.dp)))
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun NextPanel(
-    // Null until the first answer: "Nothing scheduled" only once that's known.
-    upcoming: List<LiveTvRepository.Upcoming>?,
-    now: LocalDateTime,
-    count: Int,
-) {
-    val next = upcoming.orEmpty().filter { !it.recordingNow }.take(count)
-    SagePanel("RECORDING NEXT") {
-        if (upcoming == null) Text("Loading…", color = Jc.Muted, fontSize = 14.sp) else if (next.isEmpty()) Text("Nothing scheduled.", color = Jc.Muted, fontSize = 14.sp)
-        next.forEach { u ->
-            val start = localOf(u.start)
-            val time = start?.let { if (it.toLocalDate() == now.toLocalDate()) it.time() else it.dayOfWeek.name.take(3).lowercase().replaceFirstChar { c -> c.uppercase() } + " " + it.time() } ?: ""
-            PanelLine("● " + u.name + (u.episodeTitle?.let { " · $it" } ?: ""), time)
-        }
-    }
-}
-
-/** Gemstone's Recorded Shows panel: the newest recordings' posters. */
-@Composable
-private fun NewRecordingsPanel(cards: List<LiveTvRepository.RecordingCard>) {
-    SagePanel("NEW RECORDINGS") {
-        val fresh = cards.filter { it.unplayedCount > 0 }.ifEmpty { cards }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            fresh.take(3).forEach { c ->
-                AsyncImage(
-                    model = Jdvr.liveTv.imageUrl(c.imageId ?: c.id, 240),
-                    contentDescription = c.name,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.width(90.dp).height(135.dp).clip(RoundedCornerShape(4.dp)).background(Color(0xFF14161B)),
-                )
-            }
-        }
-        fresh.take(3).forEach { PanelLine(it.name, if (it.unplayedCount > 1) "${it.unplayedCount} new" else "") }
-    }
-}
-
-@Composable
-private fun LibraryPanel(
-    lib: LiveTvRepository.Library,
-    items: List<LiveTvRepository.LibItem>?,
-) {
-    SagePanel("RECENTLY ADDED · ${lib.name.uppercase()}") {
-        val list = items
-        if (list == null) {
-            Text("Loading…", color = Jc.Muted, fontSize = 14.sp)
-        } else {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                list.take(3).forEach { it ->
-                    AsyncImage(
-                        model = Jdvr.liveTv.imageUrl(it.seriesId ?: it.id, 240),
-                        contentDescription = it.seriesName ?: it.name,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.width(90.dp).height(135.dp).clip(RoundedCornerShape(5.dp)).background(panelFill()),
-                    )
-                }
-            }
-            list.forEach { PanelLine(it.seriesName ?: it.name, it.seasonEpisode ?: it.year?.toString() ?: "") }
-        }
-    }
-}
-
-/** SageTV's channel list for "Jump to a channel": OK opens the guide there. */
-@Composable
-private fun ChannelPicker(
-    channels: List<Channel>,
-    current: UUID?,
-    onPick: (UUID) -> Unit,
-) {
-    val first = remember { FocusRequester() }
-    val gem = Jc.Style == UiStyle.Gem
-    val start = channels.indexOfFirst { it.id == current }.coerceAtLeast(0)
-    val state = androidx.compose.foundation.lazy.rememberLazyListState((start - 3).coerceAtLeast(0))
-    LaunchedEffect(channels.isNotEmpty()) {
-        repeat(30) {
-            if (runCatching { first.requestFocus() }.isSuccess) return@LaunchedEffect
-            delay(50)
-        }
-    }
-    Box(Modifier.fillMaxSize().background(Color(0xFF040C20).copy(alpha = 0.7f)), contentAlignment = Alignment.Center) {
-        Column(
-            Modifier
-                .width(440.dp)
-                .height(420.dp)
-                .background(Jc.Sheet, RoundedCornerShape(10.dp))
-                .border(1.dp, if (gem) GemLine else SageBlue, RoundedCornerShape(10.dp))
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            Text("Jump to a channel", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-            LazyColumn(state = state, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                itemsIndexed(channels, key = { _, c -> c.id }) { i, c ->
-                    var focused by remember { mutableStateOf(false) }
-                    Surface(
-                        onClick = { onPick(c.id) },
-                        modifier = Modifier.fillMaxWidth().then(if (i == start) Modifier.focusRequester(first) else Modifier).onFocusChangedCompat { focused = it },
-                        shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(6.dp)),
-                        colors = ClickableSurfaceDefaults.colors(containerColor = Color.Transparent, focusedContainerColor = Color.Transparent, contentColor = Color.White, focusedContentColor = Color.White),
-                        border = ClickableSurfaceDefaults.border(focusedBorder = Border(BorderStroke(1.dp, if (gem) Jc.Focus else Color(0xFF9CD0FF)))),
-                        scale = ClickableSurfaceDefaults.scale(focusedScale = 1f),
-                    ) {
-                        Row(
-                            (if (focused && gem) Modifier.background(Jc.Focus.copy(alpha = 0.18f)) else if (focused) Modifier.sageGloss() else Modifier).fillMaxWidth().padding(horizontal = 12.dp, vertical = 7.dp),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text(c.number, fontSize = 17.sp, fontWeight = FontWeight.Bold, modifier = Modifier.width(56.dp))
-                            Text(c.name, fontSize = 15.sp, color = if (focused) Color.White else Color(0xFFC9DAF2), modifier = Modifier.width(120.dp), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text(c.now?.name ?: "", fontSize = 14.sp, color = if (focused) Color.White else Jc.Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        }
-                    }
-                }
-            }
-        }
     }
 }

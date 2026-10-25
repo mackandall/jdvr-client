@@ -42,7 +42,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.tv.material3.Text
 import com.mackandall.jdvr.data.Jdvr
-import com.mackandall.jdvr.data.LiveTvRepository
 import com.mackandall.jdvr.data.plainId
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -50,6 +49,11 @@ import org.jellyfin.sdk.model.api.SeriesTimerInfoDto
 import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneId
+import com.mackandall.jdvr.data.FavouriteEntry
+import com.mackandall.jdvr.data.FavouritesList
+import com.mackandall.jdvr.data.SeriesScheduled
+import com.mackandall.jdvr.data.attempt
+import com.mackandall.jdvr.data.attemptResult
 
 /**
  * Series recordings (Jellyfin's, tied to the guide's series id) beside Recording Favourites
@@ -58,7 +62,7 @@ import java.time.ZoneId
 @Composable
 fun SeriesScreen(entry: FocusRequester) {
     var series by remember { mutableStateOf<List<SeriesTimerInfoDto>?>(null) }
-    var favourites by remember { mutableStateOf<LiveTvRepository.FavouritesList?>(null) }
+    var favourites by remember { mutableStateOf<FavouritesList?>(null) }
     var reload by remember { mutableIntStateOf(0) }
     var note by remember { mutableStateOf<String?>(null) }
     var newTitle by remember { mutableStateOf("") }
@@ -66,24 +70,21 @@ fun SeriesScreen(entry: FocusRequester) {
     // A series recording being edited (its options), in place of the lists.
     var editing by remember { mutableStateOf<SeriesTimerInfoDto?>(null) }
     // What each one has scheduled (shown on its row).
-    var scheduled by remember { mutableStateOf<Map<String, LiveTvRepository.SeriesScheduled>>(emptyMap()) }
+    var scheduled by remember { mutableStateOf<Map<String, SeriesScheduled>>(emptyMap()) }
     val scope = rememberCoroutineScope()
 
     // Recording Favourites answered (or didn't: the JellyDVR Schedule plugin isn't on this server).
     var favouritesLoaded by remember { mutableStateOf(false) }
     LaunchedEffect(reload) {
-        series = runCatching { Jdvr.liveTv.seriesTimers() }.getOrNull()
-        scheduled = runCatching { Jdvr.liveTv.seriesScheduled() }.getOrDefault(emptyMap())
-        favourites = Jdvr.liveTv.favourites()
+        series = attempt { Jdvr.backend.seriesTimers() }
+        scheduled = attempt { Jdvr.backend.seriesScheduled() } ?: emptyMap()
+        favourites = Jdvr.backend.favourites()
         favouritesLoaded = true
     }
 
     fun act(block: suspend () -> String?) {
         scope.launch {
-            note = runCatching { block() }.getOrElse {
-                android.util.Log.w("JDVR", "series action failed", it)
-                "Didn't work: ${it.message ?: it.javaClass.simpleName}"
-            }
+            note = attemptResult { block() }.getOrElse { "Didn't work: ${it.message ?: it.javaClass.simpleName}" }
             delay(1500) // the server schedules in the background
             reload++
         }
@@ -98,7 +99,7 @@ fun SeriesScreen(entry: FocusRequester) {
     ) {
         scope.launch {
             note = runCatching { Jdvr.nextPvrBackend?.moveSeries(s.id!!, higher); null }.getOrElse { "Didn't work: ${it.message ?: it.javaClass.simpleName}" }
-            series = runCatching { Jdvr.liveTv.seriesTimers() }.getOrNull() ?: series
+            series = attempt { Jdvr.backend.seriesTimers() } ?: series
             // Keep the moved series on screen (the top row can scroll off above).
             series?.indexOfFirst { it.id == s.id }?.takeIf { it >= 0 }?.let { i ->
                 if (seriesList.layoutInfo.visibleItemsInfo.none { it.index == i && it.offset >= 0 }) seriesList.animateScrollToItem(i)
@@ -128,7 +129,7 @@ fun SeriesScreen(entry: FocusRequester) {
             onSave = { changed ->
                 editing = null
                 act {
-                    Jdvr.liveTv.updateSeriesTimer(changed)
+                    Jdvr.backend.updateSeriesTimer(changed)
                     "Saved: ${changed.name}"
                 }
             },
@@ -139,7 +140,7 @@ fun SeriesScreen(entry: FocusRequester) {
 
     Column(Modifier.fillMaxSize().padding(start = 28.dp, top = 24.dp, end = 28.dp)) {
         Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            Text("Series", color = Jc.Text, fontSize = 28.sp, fontWeight = FontWeight.SemiBold)
+            Text("Series", color = Jc.Title, fontSize = 28.sp, fontWeight = FontWeight.SemiBold)
             note?.let { Text(it, color = Jc.Muted, fontSize = 15.sp, modifier = Modifier.padding(bottom = 4.dp)) }
         }
         Spacer(12)
@@ -166,7 +167,7 @@ fun SeriesScreen(entry: FocusRequester) {
                                     onMove = if (Jdvr.isNextPvr) ({ higher -> move(s, higher) }) else null,
                                 ) {
                                     act {
-                                        Jdvr.liveTv.cancelSeries(s.id!!)
+                                        Jdvr.backend.cancelSeries(s.id!!)
                                         (if (s.serviceName == "keyword" || s.serviceName == "manual") "Removed: " else "Series recording cancelled: ") + s.name
                                     }
                                 }
@@ -216,7 +217,7 @@ fun SeriesScreen(entry: FocusRequester) {
                             val t = newTitle.trim()
                             if (t.isNotEmpty()) {
                                 newTitle = ""
-                                act { Jdvr.liveTv.addFavouriteByTitle(t, keyword)?.message }
+                                act { Jdvr.backend.addFavouriteByTitle(t, keyword)?.message }
                             }
                         }
                     }
@@ -233,8 +234,8 @@ fun SeriesScreen(entry: FocusRequester) {
                                     f = f,
                                     canManage = fav.canManage,
                                     modifier = if (series.isNullOrEmpty() && f == fav.favourites.minByOrNull { it.title.lowercase() }) Modifier.focusRequester(entry) else Modifier,
-                                    onToggle = { act { Jdvr.liveTv.setFavouriteEnabled(f.id, !f.enabled)?.message } },
-                                    onRemove = { act { Jdvr.liveTv.removeFavourite(f.id)?.message } },
+                                    onToggle = { act { Jdvr.backend.setFavouriteEnabled(f.id, !f.enabled)?.message } },
+                                    onRemove = { act { Jdvr.backend.removeFavourite(f.id)?.message } },
                                 )
                             }
                         }
@@ -247,7 +248,7 @@ fun SeriesScreen(entry: FocusRequester) {
 @Composable
 private fun SeriesRow(
     s: SeriesTimerInfoDto,
-    next: LiveTvRepository.SeriesScheduled?,
+    next: SeriesScheduled?,
     modifier: Modifier,
     onEdit: () -> Unit,
     rank: Int? = null,
@@ -312,7 +313,7 @@ private fun SeriesRow(
 
 @Composable
 private fun FavouriteRow(
-    f: LiveTvRepository.FavouriteEntry,
+    f: FavouriteEntry,
     canManage: Boolean,
     modifier: Modifier,
     onToggle: () -> Unit,
@@ -392,12 +393,12 @@ private fun SeriesEditor(
 ) {
     var t by remember { mutableStateOf(timer) }
     val first = remember { FocusRequester() }
-    LaunchedEffect(Unit) { runCatching { first.requestFocus() } }
+    LaunchedEffect(Unit) { first.tryFocus() }
     Column(
         Modifier.fillMaxSize().verticalScroll(androidx.compose.foundation.rememberScrollState()).padding(start = 28.dp, top = 24.dp, end = 28.dp, bottom = 32.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Text(t.name ?: "Series recording", color = Jc.Text, fontSize = 28.sp, fontWeight = FontWeight.SemiBold)
+        Text(t.name ?: "Series recording", color = Jc.Title, fontSize = 28.sp, fontWeight = FontWeight.SemiBold)
         Text("Series recording options · OK changes a row · Back cancels", color = Jc.Muted, fontSize = 14.sp)
         Spacer(4)
         SeriesTimerRows(t, first) { t = it }

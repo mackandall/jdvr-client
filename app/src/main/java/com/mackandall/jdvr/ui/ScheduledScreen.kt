@@ -34,7 +34,6 @@ import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
 import com.mackandall.jdvr.data.Jdvr
-import com.mackandall.jdvr.data.LiveTvRepository
 import com.mackandall.jdvr.data.plainId
 import com.mackandall.jdvr.data.toUuid
 import kotlinx.coroutines.delay
@@ -42,6 +41,9 @@ import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneId
+import com.mackandall.jdvr.data.Upcoming
+import com.mackandall.jdvr.data.attemptResult
+import com.mackandall.jdvr.data.attempt
 
 private fun localTime(iso: String): LocalDateTime? = runCatching { LocalDateTime.ofInstant(Instant.parse(iso), ZoneId.systemDefault()) }.getOrNull()
 
@@ -56,7 +58,7 @@ fun ScheduledScreen(
     onPlayRecording: (com.mackandall.jdvr.PlayRecording) -> Unit = {},
 ) {
     val watchLive = LocalWatchLive.current
-    var items by remember { mutableStateOf<List<LiveTvRepository.Upcoming>?>(null) }
+    var items by remember { mutableStateOf<List<Upcoming>?>(null) }
     var loaded by remember { mutableStateOf(false) }
     var reload by remember { mutableIntStateOf(0) }
     var open by remember { mutableStateOf<String?>(null) }
@@ -65,14 +67,14 @@ fun ScheduledScreen(
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(reload) {
-        items = Jdvr.liveTv.schedule()
-        bufferIds = Jdvr.liveTv.bufferPrograms()
+        items = Jdvr.backend.schedule()
+        bufferIds = Jdvr.backend.bufferPrograms()
         loaded = true
     }
 
     Column(Modifier.fillMaxSize().padding(start = 28.dp, top = 24.dp, end = 28.dp)) {
         Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            Text("Scheduled", color = Jc.Text, fontSize = 28.sp, fontWeight = FontWeight.SemiBold)
+            Text("Scheduled", color = Jc.Title, fontSize = 28.sp, fontWeight = FontWeight.SemiBold)
             items?.let { Text("${it.size} recording" + (if (it.size == 1) "" else "s"), color = Jc.Muted, fontSize = 15.sp, modifier = Modifier.padding(bottom = 4.dp)) }
             note?.let { Text(it, color = Jc.Muted, fontSize = 15.sp, modifier = Modifier.padding(bottom = 4.dp)) }
         }
@@ -112,8 +114,8 @@ fun ScheduledScreen(
                                 // Recording now: its file so far (Back to live in the player), or its channel.
                                 onWatch = { fromStart ->
                                     scope.launch {
-                                        val program = r.programId?.toUuid()?.let { runCatching { Jdvr.liveTv.program(it) }.getOrNull() }
-                                        val item = if (fromStart) program?.id?.let { runCatching { Jdvr.liveTv.recordingOfProgram(it) }.getOrNull() } else null
+                                        val program = r.programId?.toUuid()?.let { attempt { Jdvr.backend.program(it) } }
+                                        val item = if (fromStart) program?.id?.let { attempt { Jdvr.backend.recordingOfProgram(it) } } else null
                                         when {
                                             fromStart && item != null -> onPlayRecording(com.mackandall.jdvr.PlayRecording(item, startMs = 0L, liveChannelId = program?.channelId))
                                             !fromStart && program != null && watchLive != null -> watchLive(program.channelId)
@@ -124,8 +126,8 @@ fun ScheduledScreen(
                                 onCancel = {
                                     scope.launch {
                                         note =
-                                            runCatching {
-                                                Jdvr.liveTv.cancelRecording(r.timerId)
+                                            attemptResult {
+                                                Jdvr.backend.cancelRecording(r.timerId)
                                                 "Won't record ${r.name} at ${localTime(r.start)?.time()}."
                                             }.getOrElse { "Couldn't cancel: ${it.message}" }
                                         open = null
@@ -144,7 +146,7 @@ fun ScheduledScreen(
 
 @Composable
 private fun ScheduleRow(
-    r: LiveTvRepository.Upcoming,
+    r: Upcoming,
     expanded: Boolean,
     buffer: Boolean,
     modifier: Modifier,

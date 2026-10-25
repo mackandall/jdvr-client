@@ -38,11 +38,13 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.tv.material3.Text
 import com.mackandall.jdvr.data.Jdvr
-import com.mackandall.jdvr.data.LiveTvRepository
 import com.mackandall.jdvr.data.Prefs
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.UUID
+import com.mackandall.jdvr.data.ItemDetails
+import com.mackandall.jdvr.data.LibItem
+import com.mackandall.jdvr.data.attemptResult
 
 /** Holding OK does something of its own (Settings › Remote); off, a hold is just a press. */
 val holdEnabled: Boolean get() = Jdvr.prefs.holdOk != Prefs.HOLD_OFF
@@ -83,11 +85,11 @@ fun QuickActions(
     onDismiss: () -> Unit,
     // A show: Open show instead of play and details.
     onOpenShow: (() -> Unit)? = null,
-    extra: (@Composable (LiveTvRepository.ItemDetails, (String) -> Unit, () -> Unit) -> Unit)? = null,
+    extra: (@Composable (ItemDetails, (String) -> Unit, () -> Unit) -> Unit)? = null,
     // Opened from the show's own page (its Show actions button): no Open show.
     onShowPage: Boolean = false,
 ) {
-    var d by remember(itemId) { mutableStateOf<LiveTvRepository.ItemDetails?>(null) }
+    var d by remember(itemId) { mutableStateOf<ItemDetails?>(null) }
     var failed by remember(itemId) { mutableStateOf(false) }
     var note by remember { mutableStateOf<String?>(null) }
     // Close comes first in the dialog and would take focus by default: focus goes on to Play.
@@ -98,7 +100,7 @@ fun QuickActions(
     val first = remember { FocusRequester() }
     val scope = rememberCoroutineScope()
     LaunchedEffect(itemId) {
-        runCatching { Jdvr.liveTv.details(itemId) }.onSuccess { d = it }.onFailure { failed = true }
+        attemptResult { Jdvr.backend.details(itemId) }.onSuccess { d = it }.onFailure { failed = true }
     }
     LaunchedEffect(note) {
         if (note != null) {
@@ -145,7 +147,7 @@ fun QuickActions(
             // Close at the top right, as in the Other airings popup; focus still starts on Play.
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text(item?.let { titleOf(it) } ?: if (failed) "Couldn't load this item" else "Loading…", color = Jc.Text, fontSize = 24.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Text(item?.let { titleOf(it) } ?: if (failed) "Couldn't load this item" else "Loading…", color = Jc.Title, fontSize = 24.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     item?.let { subtitleOf(it, det) }?.let { Text(it, color = Jc.Muted, fontSize = 15.sp) }
                 }
                 Button("Close", modifier = if (failed) Modifier.focusRequester(first).onFocusChanged { if (it.isFocused) firstFocused = true } else Modifier, onClick = onDismiss)
@@ -182,7 +184,7 @@ fun QuickActions(
                     val all = if (item.type == "Series") " (all episodes)" else ""
                     Button(if (item.played) "Mark unwatched$all" else "Mark watched$all", modifier = if (onShowPage) firstMod else Modifier.fillMaxWidth()) {
                         scope.launch {
-                            runCatching { Jdvr.liveTv.setPlayed(item.id, !item.played) }
+                            attemptResult { Jdvr.backend.setPlayed(item.id, !item.played) }
                                 .onSuccess {
                                     note = if (item.played) "Marked unwatched" else "Marked watched"
                                     d = det.copy(item = item.copy(played = !item.played, resumeMs = if (item.played) item.resumeMs else 0L))
@@ -214,18 +216,18 @@ fun QuickActions(
         // early requestFocus silently does nothing: retry until it lands.
         repeat(40) {
             if (firstFocused) return@LaunchedEffect
-            runCatching { first.requestFocus() }
+            first.tryFocus()
             delay(50)
         }
     }
 }
 
-private fun titleOf(i: LiveTvRepository.LibItem): String =
+private fun titleOf(i: LibItem): String =
     if (i.seriesName != null && i.type == "Episode") "${i.seriesName}: ${i.name}" else i.name
 
 private fun subtitleOf(
-    i: LiveTvRepository.LibItem,
-    d: LiveTvRepository.ItemDetails?,
+    i: LibItem,
+    d: ItemDetails?,
 ): String? =
     listOfNotNull(
         if (i.season != null && i.episode != null) "S${i.season}:E${i.episode}" else null,

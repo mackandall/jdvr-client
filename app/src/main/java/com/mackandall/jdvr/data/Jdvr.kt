@@ -35,12 +35,12 @@ object Jdvr {
     val userId: UUID? get() = session.userId?.let { runCatching { UUID.fromString(it) }.getOrNull() }
 
     // Made afresh for each server (it keeps a few answers).
-    private var jellyfinTvMade: LiveTvRepository? = null
-    private val jellyfinTv: LiveTvRepository get() = jellyfinTvMade ?: LiveTvRepository().also { jellyfinTvMade = it }
+    private var jellyfinBackendMade: JellyfinBackend? = null
+    private val jellyfinBackend: JellyfinBackend get() = jellyfinBackendMade ?: JellyfinBackend().also { jellyfinBackendMade = it }
     private var nextPvr: NextPvrBackend? = null
 
     /** The signed-in server's calls: Jellyfin's, or NextPVR's. */
-    val liveTv: TvBackend get() = nextPvr ?: jellyfinTv
+    val backend: TvBackend get() = nextPvr ?: jellyfinBackend
 
     val isNextPvr: Boolean get() = nextPvr != null
     /** NextPVR's own calls (series options), when signed in to one. */
@@ -130,7 +130,7 @@ object Jdvr {
             nextPvr = null
             api = jellyfin.createApi(baseUrl = s.url, accessToken = s.token)
         }
-        jellyfinTvMade = null
+        jellyfinBackendMade = null
     }
 
     /** Signs out of this server: it's forgotten too, so getting back in needs a sign-in. */
