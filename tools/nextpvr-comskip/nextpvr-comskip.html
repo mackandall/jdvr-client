@@ -33,7 +33,11 @@ header p { color: var(--muted); font-size: 14px; overflow-wrap: anywhere; }
 input, select { font: inherit; color: var(--text); background: var(--panel2); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; min-height: 40px; }
 input:focus-visible, select:focus-visible, button:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
 button { font: inherit; min-height: 40px; padding: 8px 16px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel2); color: var(--text); cursor: pointer; }
+button:hover:not(:disabled) { border-color: #4a5d7a; background: #263142; }
+button:active:not(:disabled) { transform: translateY(1px); background: #2d3a4f; }
 button.primary { background: var(--accent); border-color: var(--accent); color: var(--onaccent); font-weight: 600; }
+button.primary:hover:not(:disabled) { background: #52e09c; border-color: #52e09c; }
+button.busy { border-color: var(--chipline); color: #cfe6ff; }
 button.warn { border-color: #6b3a3a; }
 button:disabled { opacity: 0.45; cursor: not-allowed; }
 .big { font-size: 20px; font-weight: 700; }
@@ -116,6 +120,14 @@ fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
       </select>
     </div>
     <div id="history"></div>
+  </section>
+
+  <section class="card">
+    <div class="head">
+      <h2>Transcoding</h2>
+      <span class="muted small">Converts finished recordings to a smaller format and switches NextPVR to the new file</span>
+    </div>
+    <div id="transcode"></div>
   </section>
 
   <section class="card">
@@ -283,6 +295,18 @@ function renderSoFar() {
     <div><span class="n">${c.failed}</span><span class="muted small">failed</span></div></div>`;
 }
 
+// The Scanned list's transcode button: what's happening to that recording, or Transcode.
+function tbutton(r) {
+  const t = data.transcode.states[r.file] || {};
+  if (t.state === "transcoding") return `<button type="button" class="busy" disabled>Transcoding${t.pct != null ? " " + t.pct + "%" : "…"}</button>`;
+  if (t.state === "queued") return `<button type="button" class="busy" disabled>Queued to transcode</button>`;
+  if (t.state === "done") return `<span class="muted small">Transcoded</span>`;
+  if (!r.file.endsWith(".ts") || !data.transcode.encoder) return "";
+  const tip = !data.unlocked ? "Unlock with the NextPVR PIN to transcode" : !data.transcode.pin_saved ? "Save the PIN under Transcoding first" : "Transcode it next";
+  return `<button type="button" class="tcnow" data-file="${esc(r.file)}" ${data.unlocked && data.transcode.pin_saved ? "" : "disabled"} title="${tip}">Transcode</button>`;
+}
+
+let historyHtml = "";
 function renderHistory() {
   const f = $("filter").value;
   const rows = data.history.filter((r) => f === "all" || r.state === f || (f === "problem" && (r.state === "failed" || r.state === "retry")));
@@ -291,15 +315,29 @@ function renderHistory() {
     return;
   }
   const lockedTip = data.unlocked ? "" : ' title="Unlock with the NextPVR PIN to rescan"';
-  $("history").innerHTML = `<table><thead><tr><th>Recording</th><th>Channel</th><th>Result</th><th>Scanned</th><th>Took</th><th><span style="position:absolute;left:-9999px">Actions</span></th></tr></thead><tbody>
+  const html = `<table><thead><tr><th>Recording</th><th>Channel</th><th>Result</th><th>Scanned</th><th>Took</th><th><span style="position:absolute;left:-9999px">Actions</span></th></tr></thead><tbody>
     ${rows.map((r) => `<tr>
       <td><strong>${esc(r.show)}</strong><span class="ep">${esc(r.episode)}</span></td>
       <td data-label="Channel">${esc(r.channel)}</td>
       <td>${result(r)}</td>
       <td data-label="Scanned">${esc(clock(r.finished))}</td>
       <td data-label="Took">${esc(minsec(r.took))}</td>
-      <td><button type="button" class="rescan" data-file="${esc(r.file)}" ${data.unlocked && r.state !== "queued" ? "" : "disabled"}${lockedTip}>Rescan</button></td>
+      <td><button type="button" class="rescan" data-file="${esc(r.file)}" ${data.unlocked && r.state !== "queued" ? "" : "disabled"}${lockedTip}>Rescan</button>
+        ${tbutton(r)}</td>
     </tr>`).join("")}</tbody></table>`;
+  // Unchanged: left alone, so a button isn't swapped out from under the pointer.
+  if (html === historyHtml) return;
+  historyHtml = html;
+  $("history").innerHTML = html;
+  for (const b of document.querySelectorAll(".tcnow")) {
+    b.onclick = async () => {
+      b.disabled = true;
+      b.classList.add("busy");
+      b.textContent = "Queued to transcode";
+      try { const r = await api("/api/transcode", { file: b.dataset.file }); $("histNote").textContent = r.queued ? "" : r.reason || ""; } catch (e) { $("histNote").textContent = e.message; }
+      refresh();
+    };
+  }
   for (const b of document.querySelectorAll(".rescan")) {
     b.onclick = async () => {
       b.disabled = true;
@@ -457,18 +495,154 @@ function renderComskip() {
   if ($("iniCancel")) $("iniCancel").onclick = () => { iniPending = null; renderComskip(); };
 }
 
+// ---- Transcoding ----
+let tdraft = null;
+let tmessage = "";
+const QUALITY = [["smaller", "Smaller files"], ["balanced", "Balanced"], ["better", "Better picture"]];
+const HEIGHT = [[0, "Keep the size"], [1080, "1080p at most"], [720, "720p at most"], [480, "480p at most"]];
+const KEEP = [[0, "Delete it straight away"], [1, "1 day"], [2, "2 days"], [7, "7 days"], [14, "14 days"]];
+const WAIT = [[0, "Straight after Comskip"], [1, "1 hour later"], [6, "6 hours later"], [24, "A day later"]];
+const CODECS = [["hevc", "HEVC (H.265)"], ["h264", "H.264"], ["av1", "AV1"]];
+function pick(choices, value) {
+  const all = choices.some(([c]) => String(c) === String(value)) ? choices : [...choices, [value, String(value)]];
+  return all.map(([c, label]) => `<option value="${esc(c)}" ${String(c) === String(value) ? "selected" : ""}>${esc(label)}</option>`).join("");
+}
+
+function tresult(r) {
+  switch (r.state) {
+    case "done": return `<span class="result found">${gb(r.from_bytes)} → ${gb(r.to_bytes)}</span> <span class="muted small">${esc(r.encoder || "")}</span>`;
+    case "skipped": return `<span class="result">Left as it is: ${esc(r.reason || "")}</span>`;
+    case "queued": return `<span class="result queued">Queued</span>`;
+    case "failed": return `<span class="result failed" title="${esc(r.error)}">Failed${r.error ? ": " + esc(r.error) : ""}</span>`;
+    case "retry": return `<span class="result retry" title="${esc(r.error)}">Will retry (tried ${r.attempts})${r.error ? ": " + esc(r.error) : ""}</span>`;
+    default: return esc(r.state);
+  }
+}
+
+function renderTranscode() {
+  const t = data.transcode;
+  const s = tdraft || data.settings;
+  const locked = !data.unlocked;
+  const res = (t.encoders && t.encoders.results) || {};
+  const status = !t.on ? `<span class="muted">Off.</span>`
+    : !t.pin_saved ? `<span class="note">On, but waiting for the NextPVR PIN (below): switching NextPVR to the new file needs a sign-in.</span>`
+    : !t.encoder ? `<span class="note">On, but ${esc(t.encoder_problem)}.</span>`
+    : `<span class="ok">On</span> · ${esc(t.encoder)}${t.in_hours ? "" : ` · <span class="muted">waiting for ${esc(s.transcode_hours)}h</span>`}`;
+  const n = t.now;
+  const pct = n && n.duration ? Math.min(99, Math.round((n.pos / n.duration) * 100)) : null;
+  const nowHtml = n ? `<div class="block" style="margin-top:12px"><span>Transcoding now</span>
+      <div class="big">${esc(n.show)}</div><div class="muted">${esc([n.episode, n.channel, n.codec && `${n.codec} ${n.height}p`, gb(n.from_bytes)].filter(Boolean).join(" · "))}</div>
+      <div class="bar"><div style="width:${pct ?? 3}%"></div></div>
+      <div class="row muted small"><span>${pct != null ? pct + "%" : "starting"}</span><span>${minsec(Math.max(0, Date.now() / 1000 - n.since))} so far</span></div></div>` : "";
+  const rows = t.history;
+  const table = rows.length ? `<table style="margin-top:14px"><thead><tr><th>Recording</th><th>Result</th><th>When</th><th>Took</th><th>Original</th></tr></thead><tbody>
+      ${rows.map((r) => `<tr><td><strong>${esc(r.show)}</strong><span class="ep">${esc(r.episode)}</span></td>
+        <td>${tresult(r)}</td><td data-label="When">${esc(clock(r.finished))}</td><td data-label="Took">${esc(minsec(r.took))}</td>
+        <td data-label="Original">${r.state === "done" ? (r.kept_until ? "kept until " + esc(clock(r.kept_until)) : "deleted") : ""}</td></tr>`).join("")}</tbody></table>` : `<p class="muted" style="margin-top:12px">Nothing transcoded yet.</p>`;
+  const encs = t.choices.filter((c) => c.codec === s.transcode_codec);
+  const off = new Set(list(s.transcode_skip_channels).map((x) => x.toLowerCase()));
+  const shows = list(s.transcode_skip_shows);
+  $("transcode").innerHTML = `
+    <p>${status}</p>
+    <p class="muted small" style="margin-top:4px">${t.queue.length} waiting${t.queue.length ? ": " + esc(t.queue.slice(0, 3).map((q) => q.show).join(", ")) + (t.queue.length > 3 ? "…" : "") : ""} · ${t.saved ? gb(t.saved) + " saved so far" : "nothing saved yet"}${t.originals ? ` · ${t.originals} original${t.originals === 1 ? "" : "s"} kept` : ""}</p>
+    ${nowHtml}
+    ${table}
+    <fieldset id="tsettings" ${locked ? "disabled" : ""}>
+      <label class="check"><input type="checkbox" id="tOn" ${s.transcode === "true" ? "checked" : ""}>Transcode recordings once Comskip has done them</label>
+      <div class="fields">
+        <div><label for="tCodec">Format</label><select id="tCodec">${pick(CODECS, s.transcode_codec)}</select></div>
+        <div><label for="tEnc">Encoder</label><select id="tEnc"><option value="auto" ${s.transcode_encoder === "auto" ? "selected" : ""}>Automatic${t.encoder ? " (" + esc(t.encoder) + ")" : ""}</option>
+          ${encs.map((c) => `<option value="${esc(c.encoder)}" ${s.transcode_encoder === c.encoder ? "selected" : ""}>${esc(c.encoder)} · ${c.kind === "vaapi" ? "graphics chip" : "CPU"}${res[c.encoder] === "ok" ? "" : " (doesn't work here)"}</option>`).join("")}</select></div>
+        <div><label for="tQ">Quality</label><select id="tQ">${pick(QUALITY, s.transcode_quality)}</select></div>
+        <div><label for="tH">Picture size</label><select id="tH">${pick(HEIGHT, s.transcode_max_height)}</select></div>
+        <div><label for="tC">File type</label><select id="tC">${pick([["mkv", "MKV"], ["mp4", "MP4"]], s.transcode_container)}</select></div>
+        <div><label for="tA">Sound</label><select id="tA">${pick([["copy", "As recorded"], ["aac", "AAC"]], s.transcode_audio)}</select></div>
+        <div><label for="tK">Keep the original</label><select id="tK">${pick(KEEP, s.transcode_keep_days)}</select></div>
+        <div><label for="tW">When</label><select id="tW">${pick(WAIT, s.transcode_wait_hours)}</select></div>
+        <div><label for="tHours">Only between (hours)</label><input id="tHours" value="${esc(s.transcode_hours)}" placeholder="any time, or e.g. 1-6"></div>
+      </div>
+      <label class="check"><input type="checkbox" id="tOld" ${s.transcode_backfill === "true" ? "checked" : ""}>Also recordings made before transcoding was switched on</label>
+      <div class="block"><span>Channels to transcode</span><span class="muted small">Off: left as recorded.</span>
+        <div class="chips">${data.channels.map((c) => `<button type="button" class="chip tchip" data-ch="${esc(c)}" aria-pressed="${!off.has(c.toLowerCase())}">${esc(c)}${off.has(c.toLowerCase()) ? " · off" : ""}</button>`).join("") || `<span class="muted">The channel list comes from NextPVR when you unlock.</span>`}</div></div>
+      <div class="block"><span>Shows never transcoded</span>
+        <div class="chips">${shows.map((x) => `<span class="tag">${esc(x)}<button type="button" class="tunshow" data-show="${esc(x)}" aria-label="Remove ${esc(x)}">×</button></span>`).join("")}
+          <input id="tNewShow" list="showList" placeholder="Show title" style="width:200px"><button type="button" id="tAddShow">+ Add</button></div></div>
+      <div class="actions">
+        <button type="button" class="primary" id="tSave" ${tdraft ? "" : "disabled"}>Save transcoding settings</button>
+        ${tdraft ? `<button type="button" id="tUndo">Undo changes</button>` : ""}
+        <span class="${tmessage.startsWith("Saved") || tmessage.startsWith("PIN saved") || tmessage.startsWith("Tested") ? "ok" : "note"}">${esc(tmessage)}</span>
+      </div>
+      <div class="block"><span>NextPVR PIN for transcoding</span>
+        <span class="muted small">${t.pin_saved ? "Saved. " : ""}Switching NextPVR's recording to the new file needs a NextPVR sign-in, with nobody there to type the PIN. Its hash is kept in nextpvr-comskip.conf (made private to the scanner's user); it signs in as well as the PIN would.</span>
+        <div class="chips"><input id="tPin" type="password" inputmode="numeric" autocomplete="off" size="8" placeholder="NextPVR PIN"><button type="button" id="tPinSave">${t.pin_saved ? "Save again" : "Save PIN"}</button></div></div>
+    </fieldset>
+    <div class="block"><span>Encoders here</span>
+      <div class="chips">${t.choices.map((c) => `<span class="tag" style="padding-right:12px" title="${esc(res[c.encoder] || "not tested")}">${res[c.encoder] === "ok" ? "✓" : "✗"} ${esc(c.encoder)}</span>`).join("")}</div>
+      <p class="muted small" style="margin-top:6px">${esc(t.encoders.ffmpeg || "")}${t.encoders.checked ? " · tested " + esc(clock(t.encoders.checked)) : ""}
+        <button type="button" id="tTest" ${locked ? "disabled" : ""} style="margin-left:8px">Test again</button></p></div>
+    ${locked ? `<p class="note" style="margin-top:12px">Unlock above to change these.</p>` : ""}`;
+  if (locked) return;
+  const change = (k, v) => { tdraft = { ...(tdraft || data.settings), [k]: v }; renderTranscode(); };
+  $("tOn").onchange = (e) => change("transcode", e.target.checked ? "true" : "false");
+  $("tOld").onchange = (e) => change("transcode_backfill", e.target.checked ? "true" : "false");
+  for (const [id, key] of [["tCodec", "transcode_codec"], ["tEnc", "transcode_encoder"], ["tQ", "transcode_quality"], ["tH", "transcode_max_height"], ["tC", "transcode_container"], ["tA", "transcode_audio"], ["tK", "transcode_keep_days"], ["tW", "transcode_wait_hours"], ["tHours", "transcode_hours"]]) {
+    $(id).onchange = (e) => change(key, e.target.value);
+  }
+  $("tCodec").onchange = (e) => { tdraft = { ...(tdraft || data.settings), transcode_codec: e.target.value, transcode_encoder: "auto" }; renderTranscode(); };
+  for (const b of document.querySelectorAll(".tchip")) {
+    b.onclick = () => {
+      const name = b.dataset.ch, cur = list(s.transcode_skip_channels);
+      change("transcode_skip_channels", (off.has(name.toLowerCase()) ? cur.filter((x) => x.toLowerCase() !== name.toLowerCase()) : [...cur, name]).join(", "));
+    };
+  }
+  for (const b of document.querySelectorAll(".tunshow")) b.onclick = () => change("transcode_skip_shows", shows.filter((x) => x !== b.dataset.show).join(", "));
+  const addShow = () => { const v = $("tNewShow").value.replace(/,/g, " ").trim(); if (v && !shows.includes(v)) change("transcode_skip_shows", [...shows, v].join(", ")); };
+  $("tAddShow").onclick = addShow;
+  $("tNewShow").onkeydown = (e) => { if (e.key === "Enter") addShow(); };
+  $("tSave").onclick = async () => {
+    try { await api("/api/settings", tdraft); tdraft = null; tmessage = "Saved."; } catch (e) { tmessage = e.message; }
+    document.activeElement.blur();
+    refresh();
+  };
+  if ($("tUndo")) $("tUndo").onclick = () => { tdraft = null; tmessage = ""; renderTranscode(); };
+  const savePin = async () => {
+    const pin = $("tPin").value;
+    if (!pin) return;
+    $("tPinSave").disabled = true;
+    $("tPinSave").textContent = "Checking…";
+    try { await api("/api/transcode-pin", { md5: md5(pin) }); tmessage = "PIN saved: NextPVR accepted it."; } catch (e) { tmessage = e.message; }
+    document.activeElement.blur();
+    refresh();
+  };
+  $("tPinSave").onclick = savePin;
+  $("tPin").onkeydown = (e) => { if (e.key === "Enter") savePin(); };
+  $("tTest").onclick = async () => {
+    $("tTest").disabled = true;
+    $("tTest").textContent = "Testing…";
+    try { await api("/api/encoders", {}); tmessage = "Tested the encoders."; } catch (e) { tmessage = e.message; }
+    refresh();
+  };
+}
+
+function using(id) {
+  const el = document.activeElement;
+  return $(id).contains(el) && el.tagName !== "BUTTON" && !(el.tagName === "INPUT" && el.type === "checkbox");
+}
+
 function render() {
   $("where").textContent = `${data.host} · recordings in ${data.dirs.join(", ") || "(none found)"}`;
   $("alive").className = "dot";
-  $("aliveText").textContent = data.now ? "Scanning" : `Running · looks every ${data.interval} s`;
+  $("aliveText").textContent = data.now ? "Scanning" : data.transcode.now ? "Transcoding" : `Running · looks every ${data.interval} s`;
   renderLock();
   renderNow();
   renderWaiting();
   renderSoFar();
   renderHistory();
-  if (!$("comskip").contains(document.activeElement)) renderComskip();
-  // Not while something in the form has focus (it would lose what's being typed or picked).
-  if (!$("settings").contains(document.activeElement)) renderSettings();
+  // Not while a field or menu in the section is being used (it would lose what's typed or picked);
+  // a pressed button doesn't hold it back, so its result shows.
+  if (!using("comskip")) renderComskip();
+  if (!using("transcode")) renderTranscode();
+  if (!using("settings")) renderSettings();
 }
 
 let timer = null;
@@ -479,13 +653,13 @@ async function refresh() {
     data = await api("/api/overview");
     // The token ran out (or the scanner restarted).
     if (token && !data.unlocked) setToken(null);
-    if (was && !data.unlocked) draft = null;
+    if (was && !data.unlocked) { draft = null; tdraft = null; }
     render();
   } catch (e) {
     $("alive").className = "dot off";
     $("aliveText").textContent = "Not answering";
   }
-  timer = setTimeout(refresh, data && data.now ? 2000 : 5000);
+  timer = setTimeout(refresh, data && (data.now || data.transcode.now) ? 2000 : 5000);
 }
 $("filter").onchange = () => data && renderHistory();
 refresh();

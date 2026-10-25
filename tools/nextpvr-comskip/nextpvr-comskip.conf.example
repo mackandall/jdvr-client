@@ -24,3 +24,30 @@
 #port = 8867
 # NextPVR, for checking the PIN when the page unlocks.
 #nextpvr_url = http://127.0.0.1:8866
+
+# Transcoding (also on the page). Converts recordings once they have their marks and switches
+# NextPVR to the new file; the PIN is saved from the page.
+#transcode = false
+# hevc, h264 or av1.
+#transcode_codec = hevc
+# auto, or an encoder by name: hevc_vaapi, libx265, h264_vaapi, libx264, av1_vaapi, libsvtav1.
+#transcode_encoder = auto
+# smaller, balanced or better.
+#transcode_quality = balanced
+# Shrink taller pictures to this height; 0 keeps the size.
+#transcode_max_height = 0
+# mkv or mp4.
+#transcode_container = mkv
+# copy (as recorded) or aac.
+#transcode_audio = copy
+# Days the original is kept in .originals; 0 deletes it straight away.
+#transcode_keep_days = 2
+# Only between these hours, e.g. 1-6; empty: any time.
+#transcode_hours =
+# Hours after a recording ends before it's transcoded.
+#transcode_wait_hours = 0
+# Also recordings made before transcoding was switched on.
+#transcode_backfill = false
+#transcode_skip_channels =
+#transcode_skip_shows =
+#vaapi_device = /dev/dri/renderD128

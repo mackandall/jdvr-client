@@ -1,13 +1,14 @@
 # Comskip for NextPVR
 
-Finds commercials in finished NextPVR recordings and writes an `.edl` beside each one. NextPVR
-serves the `.edl` to clients, and JDVR uses it for the coloured marks on the seek bar, the Skip
-prompt and the ✂ badges. NextPVR deletes the `.edl` along with the recording.
+Finds commercials in finished NextPVR recordings and writes an `.edl` beside each one, and can
+transcode recordings to a smaller format afterwards. NextPVR serves the `.edl` to clients, and
+JDVR uses it for the coloured marks on the seek bar, the Skip prompt and the ✂ badges. NextPVR
+deletes the `.edl` along with the recording.
 
-> **Already running Comskip from PostProcessing (or ParallelProcessing)? You don't need this.**
-> JDVR uses whatever `.edl` sits beside a recording, whoever wrote it. Make sure your
+> **Already running Comskip from PostProcessing (or ParallelProcessing)? You don't need this for
+> the marks.** JDVR uses whatever `.edl` sits beside a recording, whoever wrote it. Make sure your
 > `comskip.ini` has `output_edl=1`. The scanner leaves recordings that already have an `.edl`
-> alone, so the two can run side by side.
+> alone, so the two can run side by side, for example if you only want its transcoding.
 
 ## What it adds over a PostProcessing script
 
@@ -28,8 +29,35 @@ prompt and the ✂ badges. NextPVR deletes the `.edl` along with the recording.
 - **No script in NextPVR's `scripts` folder.** NextPVR switches off its own auto transcoding when
   a PostProcessing script exists. This runs beside NextPVR and leaves that alone.
 
-It works from the files alone: the `.xml` NextPVR writes beside each recording says when it's
-finished, plus its channel and genres. Scanning needs no NextPVR PIN.
+## Transcoding (optional, off by default)
+
+Once a recording has its marks, the scanner can convert it to a smaller format, HEVC by default,
+and switch NextPVR's recording to the new file. It's the same recording in NextPVR: title, times,
+channel, series, watched and resume point stay, and the `.edl` marks keep working. A 2 GB
+MPEG-2 recording comes out around 450 MB in about 2 minutes on an Intel graphics chip.
+
+- **One at a time, after Comskip,** oldest first (the newest are the likeliest to be watched).
+- **Checked before anything changes.** The new file is written under a hidden name, its length
+  compared with the recording's, and it has to be smaller. Only then is NextPVR switched to it.
+  If anything goes wrong, the original stays as it was.
+- **The original is kept** in `.originals` inside the recording folder for 2 days (you choose,
+  or delete it straight away), then deleted.
+- **Encoders are tested on the machine.** The page lists which work (graphics chip or CPU), and
+  Automatic uses the first that does. Recordings already in HEVC or AV1 are left alone.
+- **Settings on the page:** format, encoder, quality, picture size, MKV or MP4, sound as recorded
+  or AAC, how long to keep originals, how long after a recording to wait, which hours, older
+  recordings too, and channels or shows to leave alone. **Transcode** in the Scanned list does one
+  straight away.
+
+It needs only NextPVR, ffmpeg (which NextPVR on Linux already uses) and the scanner. Switching
+NextPVR to the new file needs a NextPVR sign-in, so the page asks for the PIN once and keeps its
+hash in `nextpvr-comskip.conf`, readable only by the scanner's user. For the graphics chip, that
+user needs to be in the `render` group.
+
+Broadcast captions don't survive transcoding.
+
+Scanning works from the files alone: the `.xml` NextPVR writes beside each recording says when
+it's finished, plus its channel and genres. Scanning needs no NextPVR PIN.
 
 ## Install (Linux, on the NextPVR machine)
 
