@@ -68,7 +68,7 @@ fun LoginScreen(
     // Switching from a server still signed in to: Back returns to it.
     onCancel: (() -> Unit)? = null,
 ) {
-    var server by remember { mutableStateOf(if (onCancel != null) "" else Jdvr.session.serverUrl ?: "") }
+    var server by remember { mutableStateOf(if (onCancel != null || Jdvr.session.otherBackend) "" else Jdvr.session.serverUrl ?: "") }
     // Servers signed in to before: one press goes back to one (not the one in use).
     var saved by remember { mutableStateOf(Jdvr.servers.filter { it.backend == "jellyfin" }.filterNot { onCancel != null && Jdvr.isCurrent(it) }) }
     var forgetArmed by remember { mutableStateOf<SavedServer?>(null) }

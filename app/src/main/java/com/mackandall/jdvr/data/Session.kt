@@ -14,6 +14,10 @@ class Session(
         get() = prefs.getString("serverUrl", null)
         set(v) = prefs.edit().putString("serverUrl", v).remove("backend").apply()
 
+    /** Signed in to a NextPVR server by a NextPVR build: this build can't use it. */
+    val otherBackend: Boolean
+        get() = prefs.getString("backend", "jellyfin") != "jellyfin"
+
     var userId: String?
         get() = prefs.getString("userId", null)
         set(v) = prefs.edit().putString("userId", v).apply()

@@ -57,7 +57,8 @@ object Jdvr {
             }
         val url = session.serverUrl
         val token = session.accessToken
-        if (url != null && token != null) {
+        // A NextPVR build's sign-in is left alone (not taken for Jellyfin): this one signs in afresh.
+        if (url != null && token != null && !session.otherBackend) {
             api = jellyfin.createApi(baseUrl = url, accessToken = token)
             // Signed in before servers were remembered: this one is the first on the list.
             if (session.servers.none { isCurrent(it) }) {
