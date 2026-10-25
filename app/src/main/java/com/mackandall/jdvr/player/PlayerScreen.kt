@@ -184,20 +184,31 @@ fun PlayerScreen(
         }
     }
 
-    fun record() {
-        scope.launch {
-            val said = info.record(channelId) ?: return@launch
-            ui.flash(said, 4000)
-            info.loadBuffers(channelId)
-            info.loadChannels()
+    // The controls' handlers stay the same between key down and key up: rebuilt (every key press
+    // recomposes the screen), the row's buttons lost their clicks.
+    val exit by androidx.compose.runtime.rememberUpdatedState(onExit)
+    val playRecording by androidx.compose.runtime.rememberUpdatedState(onPlayRecording)
+    val record: () -> Unit =
+        remember(channelId) {
+            {
+                scope.launch {
+                    val said = info.record(channelId) ?: return@launch
+                    ui.flash(said, 4000)
+                    info.loadBuffers(channelId)
+                    info.loadChannels()
+                }
+            }
         }
-    }
 
     // Stop: done with this channel, so its tuner input is freed now rather than after the grace.
-    fun stop() {
-        Jdvr.backend.stopBuffering(channelId)
-        onExit()
-    }
+    val stop: () -> Unit =
+        remember(channelId) {
+            {
+                Jdvr.backend.stopBuffering(channelId)
+                exit()
+            }
+        }
+    val fromStart: (UUID) -> Unit = remember(channelId) { { rec -> playRecording(com.mackandall.jdvr.PlayRecording(rec, startMs = 0L, liveChannelId = channelId)) } }
 
     fun step(delta: Int) {
         val channels = info.channels
@@ -217,7 +228,7 @@ fun PlayerScreen(
                 if (e.type != KeyEventType.KeyDown || !stream.showing) return@onPreviewKeyEvent false
                 // The mini guide uses ⏩ ⏪ to jump two hours.
                 if (ui.miniOpen && e.key.nativeKeyCode in setOf(AndroidKeyEvent.KEYCODE_MEDIA_FAST_FORWARD, AndroidKeyEvent.KEYCODE_MEDIA_REWIND)) return@onPreviewKeyEvent false
-                stream.onMediaKey(e.key.nativeKeyCode, record = ::record, stop = ::stop)
+                stream.onMediaKey(e.key.nativeKeyCode, record = record, stop = stop)
             }
             .onKeyEvent { e ->
                 e.type == KeyEventType.KeyDown && stream.showing &&
@@ -247,9 +258,9 @@ fun PlayerScreen(
         if (!ui.miniOpen && (osd || stream.error != null)) {
             LiveControls(
                 channel, symbols, stream, info, ui, formats, player, playFocus, Modifier.align(Alignment.BottomCenter),
-                onRecord = ::record,
-                onStop = ::stop,
-                onFromStart = { rec -> onPlayRecording(com.mackandall.jdvr.PlayRecording(rec, startMs = 0L, liveChannelId = channelId)) },
+                onRecord = record,
+                onStop = stop,
+                onFromStart = fromStart,
             )
         }
         LiveMessages(stream, ui, onExit)
