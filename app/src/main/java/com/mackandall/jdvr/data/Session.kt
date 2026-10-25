@@ -8,9 +8,11 @@ class Session(
 ) {
     private val prefs = context.getSharedPreferences("session", Context.MODE_PRIVATE)
 
+    // This build only signs in to Jellyfin: it drops the "backend" a NextPVR build may have left,
+    // or that build would take this Jellyfin address for a NextPVR server.
     var serverUrl: String?
         get() = prefs.getString("serverUrl", null)
-        set(v) = prefs.edit().putString("serverUrl", v).apply()
+        set(v) = prefs.edit().putString("serverUrl", v).remove("backend").apply()
 
     var userId: String?
         get() = prefs.getString("userId", null)
