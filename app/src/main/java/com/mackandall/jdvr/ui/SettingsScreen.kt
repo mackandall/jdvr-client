@@ -42,6 +42,7 @@ import androidx.tv.material3.Text
 import com.mackandall.jdvr.BuildConfig
 import com.mackandall.jdvr.data.Jdvr
 import com.mackandall.jdvr.data.Prefs
+import com.mackandall.jdvr.data.Library
 
 /**
  * Settings: things set once for the whole app. Actions that belong to what's on screen (Record,
@@ -50,7 +51,7 @@ import com.mackandall.jdvr.data.Prefs
 @Composable
 fun SettingsScreen(
     entry: FocusRequester,
-    libraries: List<com.mackandall.jdvr.data.LiveTvRepository.Library> = emptyList(),
+    libraries: List<Library> = emptyList(),
     // Straight to the menu's page (SageTV's Setup › Menu order).
     openMenuPage: Boolean = false,
     onSwitchServer: () -> Unit = {},
@@ -395,7 +396,7 @@ private fun TownRow() {
  * and each library within it.
  */
 @Composable
-private fun MenuSettings(libraries: List<com.mackandall.jdvr.data.LiveTvRepository.Library>) {
+private fun MenuSettings(libraries: List<Library>) {
     val prefs = Jdvr.prefs
     val libs = libraries.inMenuOrder()
     data class MRow(

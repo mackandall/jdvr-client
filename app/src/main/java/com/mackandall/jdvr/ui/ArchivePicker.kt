@@ -38,8 +38,8 @@ import androidx.tv.material3.Border
 import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
-import com.mackandall.jdvr.data.LiveTvRepository.ArchiveChoice
-import com.mackandall.jdvr.data.LiveTvRepository.ArchiveChoices
+import com.mackandall.jdvr.data.ArchiveChoice
+import com.mackandall.jdvr.data.ArchiveChoices
 
 private const val GB = 1024.0 * 1024 * 1024
 private val UsedColour = Color(0xFF64748B)

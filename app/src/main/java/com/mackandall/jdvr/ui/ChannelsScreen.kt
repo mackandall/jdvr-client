@@ -39,18 +39,18 @@ import androidx.tv.material3.Text
 import coil3.compose.AsyncImage
 import com.mackandall.jdvr.data.Channel
 import com.mackandall.jdvr.data.Jdvr
-import com.mackandall.jdvr.data.LiveTvRepository
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import timber.log.Timber
 import java.time.Duration
 import java.time.LocalDateTime
 import java.util.UUID
+import com.mackandall.jdvr.data.MarkSymbols
 
 /** Episode History's mark symbols, fetched once (null without the plugin). */
 @Composable
-fun rememberMarkSymbols(): LiveTvRepository.MarkSymbols? {
-    val symbols by produceState<LiveTvRepository.MarkSymbols?>(null) { value = Jdvr.liveTv.markSymbols() }
+fun rememberMarkSymbols(): MarkSymbols? {
+    val symbols by produceState<MarkSymbols?>(null) { value = Jdvr.backend.markSymbols() }
     return symbols
 }
 
@@ -67,7 +67,7 @@ fun ChannelsScreen(
     LaunchedEffect(Unit) {
         while (true) {
             try {
-                channels = Jdvr.liveTv.channels()
+                channels = Jdvr.backend.channels()
                 error = null
             } catch (e: CancellationException) {
                 throw e
@@ -106,7 +106,7 @@ fun ChannelsScreen(
 @Composable
 private fun ChannelRow(
     ch: Channel,
-    symbols: LiveTvRepository.MarkSymbols?,
+    symbols: MarkSymbols?,
     modifier: Modifier,
     onClick: () -> Unit,
 ) {

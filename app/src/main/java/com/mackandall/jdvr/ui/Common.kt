@@ -19,9 +19,9 @@ import androidx.tv.material3.Border
 import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
-import com.mackandall.jdvr.data.LiveTvRepository
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
+import com.mackandall.jdvr.data.MarkSymbols
 
 /** Text on a coloured tag: dark on amber; on a light theme, white on the darker status colours. */
 fun badgeText(
@@ -150,7 +150,7 @@ data class Marks(
 
         fun parse(
             raw: String?,
-            symbols: LiveTvRepository.MarkSymbols?,
+            symbols: MarkSymbols?,
         ): Marks {
             if (raw.isNullOrEmpty() || symbols == null) return Marks(title = raw)
             val known =

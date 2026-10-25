@@ -38,11 +38,12 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.tv.material3.Text
 import com.mackandall.jdvr.data.Jdvr
-import com.mackandall.jdvr.data.LiveTvRepository
 import com.mackandall.jdvr.data.Prefs
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.UUID
+import com.mackandall.jdvr.data.ItemDetails
+import com.mackandall.jdvr.data.LibItem
 
 /** Holding OK does something of its own (Settings › Remote); off, a hold is just a press. */
 val holdEnabled: Boolean get() = Jdvr.prefs.holdOk != Prefs.HOLD_OFF
@@ -83,11 +84,11 @@ fun QuickActions(
     onDismiss: () -> Unit,
     // A show: Open show instead of play and details.
     onOpenShow: (() -> Unit)? = null,
-    extra: (@Composable (LiveTvRepository.ItemDetails, (String) -> Unit, () -> Unit) -> Unit)? = null,
+    extra: (@Composable (ItemDetails, (String) -> Unit, () -> Unit) -> Unit)? = null,
     // Opened from the show's own page (its Show actions button): no Open show.
     onShowPage: Boolean = false,
 ) {
-    var d by remember(itemId) { mutableStateOf<LiveTvRepository.ItemDetails?>(null) }
+    var d by remember(itemId) { mutableStateOf<ItemDetails?>(null) }
     var failed by remember(itemId) { mutableStateOf(false) }
     var note by remember { mutableStateOf<String?>(null) }
     // Close comes first in the dialog and would take focus by default: focus goes on to Play.
@@ -98,7 +99,7 @@ fun QuickActions(
     val first = remember { FocusRequester() }
     val scope = rememberCoroutineScope()
     LaunchedEffect(itemId) {
-        runCatching { Jdvr.liveTv.details(itemId) }.onSuccess { d = it }.onFailure { failed = true }
+        runCatching { Jdvr.backend.details(itemId) }.onSuccess { d = it }.onFailure { failed = true }
     }
     LaunchedEffect(note) {
         if (note != null) {
@@ -182,7 +183,7 @@ fun QuickActions(
                     val all = if (item.type == "Series") " (all episodes)" else ""
                     Button(if (item.played) "Mark unwatched$all" else "Mark watched$all", modifier = if (onShowPage) firstMod else Modifier.fillMaxWidth()) {
                         scope.launch {
-                            runCatching { Jdvr.liveTv.setPlayed(item.id, !item.played) }
+                            runCatching { Jdvr.backend.setPlayed(item.id, !item.played) }
                                 .onSuccess {
                                     note = if (item.played) "Marked unwatched" else "Marked watched"
                                     d = det.copy(item = item.copy(played = !item.played, resumeMs = if (item.played) item.resumeMs else 0L))
@@ -220,12 +221,12 @@ fun QuickActions(
     }
 }
 
-private fun titleOf(i: LiveTvRepository.LibItem): String =
+private fun titleOf(i: LibItem): String =
     if (i.seriesName != null && i.type == "Episode") "${i.seriesName}: ${i.name}" else i.name
 
 private fun subtitleOf(
-    i: LiveTvRepository.LibItem,
-    d: LiveTvRepository.ItemDetails?,
+    i: LibItem,
+    d: ItemDetails?,
 ): String? =
     listOfNotNull(
         if (i.season != null && i.episode != null) "S${i.season}:E${i.episode}" else null,

@@ -45,6 +45,8 @@ import com.mackandall.jdvr.ui.SeriesScreen
 import com.mackandall.jdvr.ui.SettingsScreen
 import kotlinx.coroutines.delay
 import java.util.UUID
+import com.mackandall.jdvr.data.LibItem
+import com.mackandall.jdvr.data.Library
 
 /** The sections in the left rail. */
 enum class Screen(
@@ -120,7 +122,7 @@ fun AppRoot(
     // A show for Recorded Shows to open straight away (from Home's New recordings).
     var openShow by remember { mutableStateOf<String?>(null) }
     // A library item for its library to open straight away (from Home's library rows).
-    var openLibItem by remember { mutableStateOf<com.mackandall.jdvr.data.LiveTvRepository.LibItem?>(null) }
+    var openLibItem by remember { mutableStateOf<LibItem?>(null) }
     // ...and that poster, for Home to focus again on the way back.
     var homePoster by remember { mutableStateOf<UUID?>(null) }
     // Screens reached from inside another (Home's Guide, Scheduled, a show): Back returns there.
@@ -158,7 +160,7 @@ fun AppRoot(
     var railKeepsRight by remember { mutableStateOf(false) }
     // The server's video libraries, each its own menu entry (minus the ones hidden in Settings);
     // re-read whenever the app comes back to the front, so new libraries appear by themselves.
-    var libraries by remember { mutableStateOf<List<com.mackandall.jdvr.data.LiveTvRepository.Library>>(emptyList()) }
+    var libraries by remember { mutableStateOf<List<Library>>(emptyList()) }
     var libraryId by remember { mutableStateOf<UUID?>(null) }
     var librariesLoad by remember { mutableIntStateOf(0) }
     val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
@@ -172,9 +174,9 @@ fun AppRoot(
     // Trash only where Episode History keeps one (or still holds something from when it did).
     var hasTrash by remember { mutableStateOf(false) }
     LaunchedEffect(signedIn, librariesLoad) {
-        if (signedIn) runCatching { Jdvr.liveTv.libraries() }.getOrNull()?.let { libraries = it }
-        if (signedIn) hasDvr = Jdvr.liveTv.hasDvr()
-        if (signedIn) hasTrash = runCatching { Jdvr.liveTv.trash() }.getOrNull()?.let { it.enabled || it.items.isNotEmpty() } == true
+        if (signedIn) runCatching { Jdvr.backend.libraries() }.getOrNull()?.let { libraries = it }
+        if (signedIn) hasDvr = Jdvr.backend.hasDvr()
+        if (signedIn) hasTrash = runCatching { Jdvr.backend.trash() }.getOrNull()?.let { it.enabled || it.items.isNotEmpty() } == true
     }
     val shownLibraries = libraries.filter { it.id.toString() !in Jdvr.prefs.hiddenLibraries }
     val currentLibrary = shownLibraries.firstOrNull { it.id == libraryId }

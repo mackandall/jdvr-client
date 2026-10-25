@@ -54,11 +54,12 @@ import androidx.tv.material3.Text
 import com.mackandall.jdvr.PlayRecording
 import com.mackandall.jdvr.data.Channel
 import com.mackandall.jdvr.data.Jdvr
-import com.mackandall.jdvr.data.LiveTvRepository
 import com.mackandall.jdvr.data.Program
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.UUID
+import com.mackandall.jdvr.data.LibItem
+import com.mackandall.jdvr.data.MarkSymbols
 
 /** What was last searched for, so Search opens with it again. */
 private object LastSearch {
@@ -78,14 +79,14 @@ fun SearchScreen(
     onPlay: (PlayRecording) -> Unit,
 ) {
     var text by remember { mutableStateOf(LastSearch.text) }
-    var library by remember { mutableStateOf<List<LiveTvRepository.LibItem>?>(null) }
+    var library by remember { mutableStateOf<List<LibItem>?>(null) }
     var guide by remember { mutableStateOf<List<Program>?>(null) }
     var reload by remember { mutableStateOf(0) }
-    var movie by remember { mutableStateOf<LiveTvRepository.LibItem?>(null) }
-    var show by remember { mutableStateOf<LiveTvRepository.LibItem?>(null) }
+    var movie by remember { mutableStateOf<LibItem?>(null) }
+    var show by remember { mutableStateOf<LibItem?>(null) }
     var program by remember { mutableStateOf<Program?>(null) }
     var note by remember { mutableStateOf<String?>(null) }
-    val channels by produceState<List<Channel>>(emptyList()) { value = runCatching { Jdvr.liveTv.allChannels() }.getOrDefault(emptyList()) }
+    val channels by produceState<List<Channel>>(emptyList()) { value = runCatching { Jdvr.backend.allChannels() }.getOrDefault(emptyList()) }
     val symbols = rememberMarkSymbols()
     val focusManager = LocalFocusManager.current
     var fieldFocused by remember { mutableStateOf(false) }
@@ -118,8 +119,8 @@ fun SearchScreen(
             return@LaunchedEffect
         }
         delay(400)
-        library = runCatching { Jdvr.liveTv.searchLibrary(q) }.getOrDefault(emptyList())
-        guide = runCatching { Jdvr.liveTv.searchGuide(q) }.getOrDefault(emptyList())
+        library = runCatching { Jdvr.backend.searchLibrary(q) }.getOrDefault(emptyList())
+        guide = runCatching { Jdvr.backend.searchGuide(q) }.getOrDefault(emptyList())
     }
     LaunchedEffect(note) {
         if (note != null) {
@@ -258,7 +259,7 @@ private fun Heading(
 private fun ProgramRow(
     p: Program,
     channel: Channel?,
-    symbols: LiveTvRepository.MarkSymbols?,
+    symbols: MarkSymbols?,
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {

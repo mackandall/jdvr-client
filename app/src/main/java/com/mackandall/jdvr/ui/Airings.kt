@@ -34,7 +34,6 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.tv.material3.Text
 import com.mackandall.jdvr.data.Jdvr
-import com.mackandall.jdvr.data.LiveTvRepository
 import com.mackandall.jdvr.data.toUuid
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -44,6 +43,10 @@ import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.ZoneOffset
 import java.util.UUID
+import com.mackandall.jdvr.data.Airing
+import com.mackandall.jdvr.data.AiringsResult
+import com.mackandall.jdvr.data.DateChannel
+import com.mackandall.jdvr.data.RerecordState
 
 private val Reasons = listOf("Partial", "Picture trouble", "Audio trouble", "Ads or edited version", "Other")
 
@@ -60,8 +63,8 @@ private fun dayWord(t: LocalDateTime): String =
  * guide, what the guide has of the show and how far it reaches.
  */
 private fun summary(
-    r: LiveTvRepository.AiringsResult,
-    airings: List<LiveTvRepository.Airing>,
+    r: AiringsResult,
+    airings: List<Airing>,
     rerecord: Boolean,
     fromGuide: Boolean,
 ): String {
@@ -123,7 +126,7 @@ fun AiringsDialog(
     onNote: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    var result by remember { mutableStateOf<LiveTvRepository.AiringsResult?>(null) }
+    var result by remember { mutableStateOf<AiringsResult?>(null) }
     var loaded by remember { mutableStateOf(false) }
     var reason by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
@@ -131,7 +134,7 @@ fun AiringsDialog(
     val scope = rememberCoroutineScope()
     val first = remember { FocusRequester() }
     LaunchedEffect(itemId, programId) {
-        result = runCatching { Jdvr.liveTv.airings(itemId, programId) }.getOrNull()
+        result = runCatching { Jdvr.backend.airings(itemId, programId) }.getOrNull()
         loaded = true
     }
     LaunchedEffect(loaded) {
@@ -146,19 +149,19 @@ fun AiringsDialog(
         if (busy) return
         busy = true
         scope.launch {
-            val r = runCatching { Jdvr.liveTv.rerecord(id, pid, reason) }.getOrNull()
+            val r = runCatching { Jdvr.backend.rerecord(id, pid, reason) }.getOrNull()
             onNote(r?.message?.ifEmpty { null } ?: "It couldn't be set to re-record.")
             busy = false
             onDismiss()
         }
     }
 
-    fun doRecord(a: LiveTvRepository.Airing) {
+    fun doRecord(a: Airing) {
         val pid = a.programId.toUuid() ?: return
         if (busy) return
         busy = true
         scope.launch {
-            val ok = runCatching { Jdvr.liveTv.record(pid, series = false) }.isSuccess
+            val ok = runCatching { Jdvr.backend.record(pid, series = false) }.isSuccess
             onNote(if (ok) "Recording ${a.name} ${localOf(a.start)?.let { "on " + it.day() + " at " + it.time() } ?: ""}" else "It couldn't be scheduled.")
             busy = false
             onDismiss()
@@ -225,7 +228,7 @@ fun AiringsDialog(
 
 @Composable
 private fun AiringRow(
-    a: LiveTvRepository.Airing,
+    a: Airing,
     action: String?,
     onAction: () -> Unit,
 ) {
@@ -236,7 +239,7 @@ private fun AiringRow(
         horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         ChannelTile(
-            a.channelId?.let { LiveTvRepository.DateChannel(id = it, name = a.channelName.orEmpty(), number = a.channelNumber, hasLogo = a.hasLogo) },
+            a.channelId?.let { DateChannel(id = it, name = a.channelName.orEmpty(), number = a.channelNumber, hasLogo = a.hasLogo) },
             numberInside = true,
             width = 96,
             height = 56,
@@ -278,13 +281,13 @@ fun RerecordButtons(
     itemId: UUID,
     onNote: (String) -> Unit,
 ) {
-    var state by remember(itemId) { mutableStateOf<LiveTvRepository.RerecordState?>(null) }
+    var state by remember(itemId) { mutableStateOf<RerecordState?>(null) }
     var check by remember(itemId) { mutableIntStateOf(0) }
     var dialog by remember(itemId) { mutableStateOf<Boolean?>(null) }
     var armedCancel by remember(itemId) { mutableStateOf(false) }
     val rights = deviceRights()
     val scope = rememberCoroutineScope()
-    LaunchedEffect(itemId, check) { state = runCatching { Jdvr.liveTv.rerecordState(itemId) }.getOrNull() }
+    LaunchedEffect(itemId, check) { state = runCatching { Jdvr.backend.rerecordState(itemId) }.getOrNull() }
     LaunchedEffect(armedCancel) {
         if (armedCancel) {
             delay(4000)
@@ -301,7 +304,7 @@ fun RerecordButtons(
                 } else {
                     armedCancel = false
                     scope.launch {
-                        onNote(if (Jdvr.liveTv.cancelRerecord(itemId)) "Re-record called off; this recording is kept as it is." else "Couldn't call it off.")
+                        onNote(if (Jdvr.backend.cancelRerecord(itemId)) "Re-record called off; this recording is kept as it is." else "Couldn't call it off.")
                         check++
                     }
                 }

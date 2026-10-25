@@ -57,11 +57,14 @@ import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
 import coil3.compose.AsyncImage
 import com.mackandall.jdvr.data.Jdvr
-import com.mackandall.jdvr.data.LiveTvRepository
+import com.mackandall.jdvr.data.plain
 import com.mackandall.jdvr.data.Prefs
 import java.time.LocalDateTime
 import java.util.UUID
 import kotlinx.coroutines.launch
+import com.mackandall.jdvr.data.ItemDetails
+import com.mackandall.jdvr.data.LibItem
+import com.mackandall.jdvr.data.Person
 
 /** One episode as both episode lists show it (a recording, or a library episode). */
 data class EpisodeEntry(
@@ -90,8 +93,8 @@ data class EpisodeEntry(
 
 /** The entries with Comskip's commercial badges added. */
 suspend fun withCommercialBadges(list: List<EpisodeEntry>): List<EpisodeEntry> {
-    val badges = runCatching { Jdvr.liveTv.commercialBadges(list.map { it.id }) }.getOrDefault(emptyMap())
-    return if (badges.isEmpty()) list else list.map { e -> badges[e.id.toString().replace("-", "")]?.let { e.copy(commercials = it.label, commercialState = it.state) } ?: e }
+    val badges = runCatching { Jdvr.backend.commercialBadges(list.map { it.id }) }.getOrDefault(emptyMap())
+    return if (badges.isEmpty()) list else list.map { e -> badges[e.id.plain()]?.let { e.copy(commercials = it.label, commercialState = it.state) } ?: e }
 }
 
 private fun seasonTitle(n: Int?) = when (n) {
@@ -145,13 +148,13 @@ fun EpisodeBrowser(
     var backdrop by remember { mutableStateOf<UUID?>(null) }
     var overview by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(seriesId) {
-        seriesId?.let { id -> runCatching { Jdvr.liveTv.details(id) }.getOrNull()?.let { backdrop = it.backdropOf; overview = it.item.overview } }
+        seriesId?.let { id -> runCatching { Jdvr.backend.details(id) }.getOrNull()?.let { backdrop = it.backdropOf; overview = it.item.overview } }
     }
 
     Box(Modifier.fillMaxSize()) {
         val list = entries
         if (!tiles || list.isNullOrEmpty()) {
-            backdrop?.let { Backdrop(Jdvr.liveTv.backdropUrl(it), null, strength = 0.6f) }
+            backdrop?.let { Backdrop(Jdvr.backend.backdropUrl(it), null, strength = 0.6f) }
         }
         androidx.compose.runtime.CompositionLocalProvider(LocalShowActions provides openShowMenu) {
         if (list == null || list.isEmpty()) {
@@ -263,9 +266,9 @@ private fun ListView(
         }
     }
     // Descriptions the list didn't come with (recordings), fetched as episodes get focus.
-    val more = remember { mutableStateMapOf<UUID, LiveTvRepository.LibItem>() }
+    val more = remember { mutableStateMapOf<UUID, LibItem>() }
     LaunchedEffect(focused.id) {
-        if (focused.overview == null && focused.id !in more) runCatching { Jdvr.liveTv.libItem(focused.id) }.getOrNull()?.let { more[focused.id] = it }
+        if (focused.overview == null && focused.id !in more) runCatching { Jdvr.backend.libItem(focused.id) }.getOrNull()?.let { more[focused.id] = it }
     }
 
     Column(Modifier.fillMaxSize().padding(start = 28.dp, top = 20.dp, end = 28.dp)) {
@@ -351,12 +354,12 @@ private fun ListView(
 @Composable
 private fun EpisodePane(
     e: EpisodeEntry,
-    more: LiveTvRepository.LibItem?,
+    more: LibItem?,
     modifier: Modifier,
 ) {
     Column(modifier.background(Jc.Panel.seeThrough(0.9f), RoundedCornerShape(12.dp)).padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         AsyncImage(
-            model = Jdvr.liveTv.imageUrl(e.id, 300),
+            model = Jdvr.backend.imageUrl(e.id, 300),
             contentDescription = null,
             contentScale = ContentScale.Crop,
             modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f).clip(RoundedCornerShape(8.dp)).background(Jc.Panel2),
@@ -452,11 +455,11 @@ private fun TilesView(
     val focused = shown.firstOrNull { it.id == focusedId } ?: shown.first()
     var rowHasFocus by remember { mutableStateOf(false) }
     // Full details (video, audio, credits, description) for episodes as they get focus.
-    val details = remember { mutableStateMapOf<UUID, LiveTvRepository.ItemDetails>() }
+    val details = remember { mutableStateMapOf<UUID, ItemDetails>() }
     LaunchedEffect(focusedId) {
         if (focusedId !in details) {
             kotlinx.coroutines.delay(200)
-            runCatching { Jdvr.liveTv.details(focusedId) }.getOrNull()?.let { details[focusedId] = it }
+            runCatching { Jdvr.backend.details(focusedId) }.getOrNull()?.let { details[focusedId] = it }
         }
     }
     val d = details[focused.id]
@@ -475,8 +478,8 @@ private fun TilesView(
     Box(Modifier.fillMaxSize()) {
         FadingBackdrop(
             artId,
-            artId?.let { Jdvr.liveTv.backdropUrl(it) },
-            artId?.takeIf { backdrop == null }?.let { Jdvr.liveTv.imageUrl(it, 720) },
+            artId?.let { Jdvr.backend.backdropUrl(it) },
+            artId?.takeIf { backdrop == null }?.let { Jdvr.backend.imageUrl(it, 720) },
             strength = 0.85f,
         )
         Column(
@@ -600,7 +603,7 @@ private fun EpisodeCard(
             scale = ClickableSurfaceDefaults.scale(focusedScale = 1.1f),
         ) {
             Box(Modifier.fillMaxSize()) {
-                AsyncImage(model = Jdvr.liveTv.imageUrl(e.id, 300), contentDescription = e.name, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+                AsyncImage(model = Jdvr.backend.imageUrl(e.id, 300), contentDescription = e.name, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
                 movingFor(e.id.toString())?.let { MovingOverlay(it) } ?: cuttingFor(e.id.toString())?.let { CuttingOverlay(it) }
                 e.episode?.let {
                     Text("E$it", color = Jc.Text, fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.align(Alignment.TopEnd).padding(6.dp).background(Jc.Ink.copy(alpha = 0.85f), RoundedCornerShape(5.dp)).padding(horizontal = 6.dp, vertical = 1.dp))
@@ -629,7 +632,7 @@ private fun EpisodeCard(
 @Composable
 private fun PeopleRow(
     title: String,
-    people: List<LiveTvRepository.Person>,
+    people: List<Person>,
 ) {
     Column(Modifier.padding(top = 6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(title, color = Jc.Text, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(horizontal = 36.dp))
@@ -646,7 +649,7 @@ private fun PeopleRow(
                     Column(Modifier.padding(6.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(3.dp)) {
                         Box(Modifier.width(70.dp).height(70.dp).clip(androidx.compose.foundation.shape.CircleShape).background(Jc.Panel2), contentAlignment = Alignment.Center) {
                             if (p.hasImage) {
-                                AsyncImage(model = Jdvr.liveTv.personImageUrl(p.id), contentDescription = p.name, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+                                AsyncImage(model = Jdvr.backend.personImageUrl(p.id), contentDescription = p.name, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
                             } else {
                                 Text(p.name.split(' ').mapNotNull { it.firstOrNull()?.toString() }.take(2).joinToString(""), color = Jc.Muted, fontSize = 18.sp)
                             }

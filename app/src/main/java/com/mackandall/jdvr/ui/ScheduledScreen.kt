@@ -34,7 +34,6 @@ import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
 import com.mackandall.jdvr.data.Jdvr
-import com.mackandall.jdvr.data.LiveTvRepository
 import com.mackandall.jdvr.data.plainId
 import com.mackandall.jdvr.data.toUuid
 import kotlinx.coroutines.delay
@@ -42,6 +41,7 @@ import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneId
+import com.mackandall.jdvr.data.Upcoming
 
 private fun localTime(iso: String): LocalDateTime? = runCatching { LocalDateTime.ofInstant(Instant.parse(iso), ZoneId.systemDefault()) }.getOrNull()
 
@@ -56,7 +56,7 @@ fun ScheduledScreen(
     onPlayRecording: (com.mackandall.jdvr.PlayRecording) -> Unit = {},
 ) {
     val watchLive = LocalWatchLive.current
-    var items by remember { mutableStateOf<List<LiveTvRepository.Upcoming>?>(null) }
+    var items by remember { mutableStateOf<List<Upcoming>?>(null) }
     var loaded by remember { mutableStateOf(false) }
     var reload by remember { mutableIntStateOf(0) }
     var open by remember { mutableStateOf<String?>(null) }
@@ -65,8 +65,8 @@ fun ScheduledScreen(
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(reload) {
-        items = Jdvr.liveTv.schedule()
-        bufferIds = Jdvr.liveTv.bufferPrograms()
+        items = Jdvr.backend.schedule()
+        bufferIds = Jdvr.backend.bufferPrograms()
         loaded = true
     }
 
@@ -112,8 +112,8 @@ fun ScheduledScreen(
                                 // Recording now: its file so far (Back to live in the player), or its channel.
                                 onWatch = { fromStart ->
                                     scope.launch {
-                                        val program = r.programId?.toUuid()?.let { runCatching { Jdvr.liveTv.program(it) }.getOrNull() }
-                                        val item = if (fromStart) program?.id?.let { runCatching { Jdvr.liveTv.recordingOfProgram(it) }.getOrNull() } else null
+                                        val program = r.programId?.toUuid()?.let { runCatching { Jdvr.backend.program(it) }.getOrNull() }
+                                        val item = if (fromStart) program?.id?.let { runCatching { Jdvr.backend.recordingOfProgram(it) }.getOrNull() } else null
                                         when {
                                             fromStart && item != null -> onPlayRecording(com.mackandall.jdvr.PlayRecording(item, startMs = 0L, liveChannelId = program?.channelId))
                                             !fromStart && program != null && watchLive != null -> watchLive(program.channelId)
@@ -125,7 +125,7 @@ fun ScheduledScreen(
                                     scope.launch {
                                         note =
                                             runCatching {
-                                                Jdvr.liveTv.cancelRecording(r.timerId)
+                                                Jdvr.backend.cancelRecording(r.timerId)
                                                 "Won't record ${r.name} at ${localTime(r.start)?.time()}."
                                             }.getOrElse { "Couldn't cancel: ${it.message}" }
                                         open = null
@@ -144,7 +144,7 @@ fun ScheduledScreen(
 
 @Composable
 private fun ScheduleRow(
-    r: LiveTvRepository.Upcoming,
+    r: Upcoming,
     expanded: Boolean,
     buffer: Boolean,
     modifier: Modifier,

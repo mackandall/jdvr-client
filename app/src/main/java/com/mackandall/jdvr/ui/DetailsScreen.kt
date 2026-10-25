@@ -51,10 +51,12 @@ import androidx.tv.material3.Text
 import coil3.compose.AsyncImage
 import com.mackandall.jdvr.PlayRecording
 import com.mackandall.jdvr.data.Jdvr
-import com.mackandall.jdvr.data.LiveTvRepository
 import kotlinx.coroutines.launch
 import java.time.format.DateTimeFormatter
 import java.util.UUID
+import com.mackandall.jdvr.data.CommercialBadge
+import com.mackandall.jdvr.data.ItemDetails
+import com.mackandall.jdvr.data.Person
 
 private val DateFormat = DateTimeFormatter.ofPattern("MMM d, yyyy")
 
@@ -70,12 +72,12 @@ fun DetailsPage(
     itemId: UUID,
     refresh: Int,
     onPlay: (PlayRecording) -> Unit,
-    actions: @Composable RowScope.(LiveTvRepository.ItemDetails, (String) -> Unit) -> Unit = { _, _ -> },
+    actions: @Composable RowScope.(ItemDetails, (String) -> Unit) -> Unit = { _, _ -> },
 ) {
-    var d by remember { mutableStateOf<LiveTvRepository.ItemDetails?>(null) }
+    var d by remember { mutableStateOf<ItemDetails?>(null) }
     var note by remember { mutableStateOf<String?>(null) }
-    var commercials by remember { mutableStateOf<LiveTvRepository.CommercialBadge?>(null) }
-    LaunchedEffect(itemId, refresh, CommercialMarks.changed) { commercials = runCatching { Jdvr.liveTv.commercialBadges(listOf(itemId)).values.firstOrNull() }.getOrNull() }
+    var commercials by remember { mutableStateOf<CommercialBadge?>(null) }
+    LaunchedEffect(itemId, refresh, CommercialMarks.changed) { commercials = runCatching { Jdvr.backend.commercialBadges(listOf(itemId)).values.firstOrNull() }.getOrNull() }
     LaunchedEffect(note) {
         if (note != null) {
             kotlinx.coroutines.delay(4000)
@@ -86,7 +88,7 @@ fun DetailsPage(
     val scope = rememberCoroutineScope()
     val play = remember { FocusRequester() }
     LaunchedEffect(itemId, refresh) {
-        runCatching { Jdvr.liveTv.details(itemId) }.onSuccess { d = it }.onFailure { error = it.message }
+        runCatching { Jdvr.backend.details(itemId) }.onSuccess { d = it }.onFailure { error = it.message }
     }
     LaunchedEffect(d != null) { if (d != null) runCatching { play.requestFocus() } }
 
@@ -98,7 +100,7 @@ fun DetailsPage(
         }
         val item = det.item
         // The backdrop at the top right, behind the text's right side; none: the poster, blurred.
-        Backdrop(det.backdropOf?.let { Jdvr.liveTv.backdropUrl(it) }, Jdvr.liveTv.imageUrl(item.id, 720), strength = 0.85f)
+        Backdrop(det.backdropOf?.let { Jdvr.backend.backdropUrl(it) }, Jdvr.backend.imageUrl(item.id, 720), strength = 0.85f)
 
         // TV's default scrolling pulls the focused button to ~30% down the screen, which cut off the
         // top of the page. Here it scrolls only as far as needed (to reach the cast), and back to
@@ -109,7 +111,7 @@ fun DetailsPage(
         Column(Modifier.fillMaxSize().verticalScroll(scroll).padding(start = 36.dp, top = 28.dp, end = 36.dp, bottom = 28.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(Modifier.onFocusChanged { if (it.hasFocus) scope.launch { scroll.animateScrollTo(0) } }, horizontalArrangement = Arrangement.spacedBy(24.dp)) {
                 AsyncImage(
-                    model = Jdvr.liveTv.imageUrl(item.id, 480),
+                    model = Jdvr.backend.imageUrl(item.id, 480),
                     contentDescription = item.name,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.width(150.dp).aspectRatio(2f / 3f).clip(RoundedCornerShape(10.dp)).background(Jc.Panel2),
@@ -138,8 +140,8 @@ fun DetailsPage(
                         if (resume) Button("Play from start") { onPlay(PlayRecording(item.id, startMs = 0L)) }
                         Button(if (item.played) "Mark unwatched" else "Mark watched") {
                             scope.launch {
-                                runCatching { Jdvr.liveTv.setPlayed(item.id, !item.played) }
-                                runCatching { d = Jdvr.liveTv.details(item.id) }
+                                runCatching { Jdvr.backend.setPlayed(item.id, !item.played) }
+                                runCatching { d = Jdvr.backend.details(item.id) }
                             }
                         }
                         actions(det) { note = it }
@@ -191,7 +193,7 @@ private fun Info(
 
 /** One cast member; focusable only so the row can be scrolled with the remote. */
 @Composable
-private fun CastCard(p: LiveTvRepository.Person) {
+private fun CastCard(p: Person) {
     Surface(
         onClick = {},
         modifier = Modifier.width(96.dp),
@@ -203,7 +205,7 @@ private fun CastCard(p: LiveTvRepository.Person) {
         Column(Modifier.padding(6.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Box(Modifier.size(72.dp).clip(CircleShape).background(Jc.Panel2), contentAlignment = Alignment.Center) {
                 if (p.hasImage) {
-                    AsyncImage(model = Jdvr.liveTv.personImageUrl(p.id), contentDescription = p.name, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+                    AsyncImage(model = Jdvr.backend.personImageUrl(p.id), contentDescription = p.name, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
                 } else {
                     Text(p.name.split(' ').mapNotNull { it.firstOrNull()?.toString() }.take(2).joinToString(""), color = Jc.Muted, fontSize = 20.sp)
                 }

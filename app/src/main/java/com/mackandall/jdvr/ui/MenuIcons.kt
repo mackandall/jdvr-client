@@ -18,8 +18,8 @@ import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.ui.unit.Dp
 import com.mackandall.jdvr.Screen
-import com.mackandall.jdvr.data.LiveTvRepository
 import com.mackandall.jdvr.data.Prefs
+import com.mackandall.jdvr.data.Library
 
 /**
  * The side menu's icons (Settings › Menu): what each entry shows, in sets of one look. A set is a
@@ -62,7 +62,7 @@ fun Screen.menuIcon(): MenuIcon =
     }
 
 /** A library's icon: by what it holds; an archive (by its name) as stored film, an old TV set, or a box. */
-fun LiveTvRepository.Library.menuIcon(): MenuIcon =
+fun Library.menuIcon(): MenuIcon =
     when {
         name.contains("archive", ignoreCase = true) ->
             when (kind) {

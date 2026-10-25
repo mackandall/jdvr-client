@@ -33,13 +33,14 @@ import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
 import com.mackandall.jdvr.data.Jdvr
-import com.mackandall.jdvr.data.LiveTvRepository
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.time.Duration
 import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneId
+import com.mackandall.jdvr.data.TrashItem
+import com.mackandall.jdvr.data.TrashList
 
 private fun utc(iso: String): Instant? = runCatching { Instant.parse(iso) }.getOrNull()
 
@@ -76,7 +77,7 @@ private fun until(i: Instant): String {
  */
 @Composable
 fun TrashScreen(entry: FocusRequester) {
-    var trash by remember { mutableStateOf<LiveTvRepository.TrashList?>(null) }
+    var trash by remember { mutableStateOf<TrashList?>(null) }
     var loaded by remember { mutableStateOf(false) }
     var reload by remember { mutableIntStateOf(0) }
     var open by remember { mutableStateOf<String?>(null) }
@@ -84,7 +85,7 @@ fun TrashScreen(entry: FocusRequester) {
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(reload) {
-        trash = Jdvr.liveTv.trash()
+        trash = Jdvr.backend.trash()
         loaded = true
     }
     // An entry goes by itself when its time is up: the list follows.
@@ -133,7 +134,7 @@ fun TrashScreen(entry: FocusRequester) {
                         } else {
                             armed = false
                             scope.launch {
-                                val n = runCatching { Jdvr.liveTv.emptyTrash() }.getOrNull()
+                                val n = runCatching { Jdvr.backend.emptyTrash() }.getOrNull()
                                 note = if (n == null) "Couldn't empty it." else "Deleted $n for good."
                                 reload++
                             }
@@ -152,7 +153,7 @@ fun TrashScreen(entry: FocusRequester) {
                             onToggle = { open = if (open == e.id) null else e.id },
                             onRestore = {
                                 scope.launch {
-                                    val ok = runCatching { Jdvr.liveTv.restoreFromTrash(e.id) }.getOrDefault(false)
+                                    val ok = runCatching { Jdvr.backend.restoreFromTrash(e.id) }.getOrDefault(false)
                                     note = if (ok) "Put back: ${e.title}. It's in its library again in a minute or so." else "Couldn't put it back: something may already be where it was."
                                     open = null
                                     reload++
@@ -160,7 +161,7 @@ fun TrashScreen(entry: FocusRequester) {
                             },
                             onDelete = {
                                 scope.launch {
-                                    val ok = runCatching { Jdvr.liveTv.deleteFromTrash(e.id) }.getOrDefault(false)
+                                    val ok = runCatching { Jdvr.backend.deleteFromTrash(e.id) }.getOrDefault(false)
                                     note = if (ok) "Deleted for good: ${e.title}." else "Couldn't delete it."
                                     open = null
                                     reload++
@@ -176,7 +177,7 @@ fun TrashScreen(entry: FocusRequester) {
 
 @Composable
 private fun TrashRow(
-    e: LiveTvRepository.TrashItem,
+    e: TrashItem,
     expanded: Boolean,
     canRestore: Boolean,
     canDelete: Boolean,

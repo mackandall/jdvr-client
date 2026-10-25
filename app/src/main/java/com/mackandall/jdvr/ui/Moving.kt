@@ -37,8 +37,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.tv.material3.Text
 import com.mackandall.jdvr.data.Jdvr
-import com.mackandall.jdvr.data.LiveTvRepository.CutJob
-import com.mackandall.jdvr.data.LiveTvRepository.MoveProgress
+import com.mackandall.jdvr.data.CutJob
+import com.mackandall.jdvr.data.MoveProgress
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -79,7 +79,7 @@ object MoveWatcher {
     /** Runs for the app's lifetime (from the root composable). */
     suspend fun run() {
         while (true) {
-            val list = runCatching { Jdvr.liveTv.moving() }.getOrNull().orEmpty()
+            val list = runCatching { Jdvr.backend.moving() }.getOrNull().orEmpty()
             val map = HashMap<String, MoveProgress>()
             list.forEach { m ->
                 map[m.itemId.plain()] = m
@@ -88,7 +88,7 @@ object MoveWatcher {
             val before = _moving.value.values.map { it.itemId }.toSet()
             if (before.any { id -> list.none { it.itemId == id } }) _finished.value++
             _moving.value = map
-            val cuts = runCatching { Jdvr.liveTv.cuts() }.getOrNull().orEmpty()
+            val cuts = runCatching { Jdvr.backend.cuts() }.getOrNull().orEmpty()
             _cutting.value = HashMap<String, CutJob>().apply {
                 cuts.forEach { c ->
                     put(c.itemId.plain(), c)

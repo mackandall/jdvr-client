@@ -46,7 +46,6 @@ import coil3.compose.AsyncImage
 import com.mackandall.jdvr.PlayRecording
 import com.mackandall.jdvr.data.Channel
 import com.mackandall.jdvr.data.Jdvr
-import com.mackandall.jdvr.data.LiveTvRepository
 import com.mackandall.jdvr.data.plainId
 import com.mackandall.jdvr.data.toUuid
 import kotlinx.coroutines.delay
@@ -56,6 +55,13 @@ import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneId
 import java.util.UUID
+import com.mackandall.jdvr.data.HomeExtras
+import com.mackandall.jdvr.data.LibItem
+import com.mackandall.jdvr.data.Library
+import com.mackandall.jdvr.data.MarkSymbols
+import com.mackandall.jdvr.data.RecordingCard
+import com.mackandall.jdvr.data.TunerStatus
+import com.mackandall.jdvr.data.Upcoming
 
 /** Home's panels: see-through over the weather sky, solid otherwise. */
 private val LocalSeeThrough = androidx.compose.runtime.compositionLocalOf { false }
@@ -79,21 +85,21 @@ fun HomeScreen(
     onPlayRecording: (PlayRecording) -> Unit,
     onOpenScreen: (com.mackandall.jdvr.Screen) -> Unit,
     onOpenShow: (String) -> Unit,
-    onOpenLibraryItem: (UUID, LiveTvRepository.LibItem) -> Unit = { _, _ -> },
+    onOpenLibraryItem: (UUID, LibItem) -> Unit = { _, _ -> },
     // The library poster opened from here: Back puts focus on it again, not on Watch live.
     returnPoster: UUID? = null,
     onReturned: () -> Unit = {},
 ) {
     var last by remember { mutableStateOf<Channel?>(null) }
     var fromStart by remember { mutableStateOf<UUID?>(null) }
-    var upcoming by remember { mutableStateOf<List<LiveTvRepository.Upcoming>>(emptyList()) }
-    var fresh by remember { mutableStateOf<List<LiveTvRepository.RecordingCard>?>(null) }
+    var upcoming by remember { mutableStateOf<List<Upcoming>>(emptyList()) }
+    var fresh by remember { mutableStateOf<List<RecordingCard>?>(null) }
     // Without Episode History, the new-recordings row is Jellyfin's "recently added" instead.
     var freshFromLibrary by remember { mutableStateOf(false) }
     // The first round has answered: until then, empty means "not yet", not "none".
     var loaded by remember { mutableStateOf(false) }
     var hasLiveTv by remember { mutableStateOf(true) }
-    var tuners by remember { mutableStateOf<LiveTvRepository.TunerStatus?>(null) }
+    var tuners by remember { mutableStateOf<TunerStatus?>(null) }
     var bufferIds by remember { mutableStateOf<Set<String>>(emptySet()) }
     var now by remember { mutableStateOf(LocalDateTime.now()) }
     // Today's weather (Settings › Weather on Home), refreshed every 15 minutes.
@@ -110,7 +116,7 @@ fun HomeScreen(
     }
     val scope = rememberCoroutineScope()
     val symbols = rememberMarkSymbols()
-    var extras by remember { mutableStateOf<LiveTvRepository.HomeExtras?>(null) }
+    var extras by remember { mutableStateOf<HomeExtras?>(null) }
 
     // The clock.
     LaunchedEffect(Unit) {
@@ -121,20 +127,20 @@ fun HomeScreen(
     }
     LaunchedEffect(Unit) {
         while (true) {
-            val channels = runCatching { Jdvr.liveTv.channels() }.getOrNull()
+            val channels = runCatching { Jdvr.backend.channels() }.getOrNull()
             // A failed call isn't "no Live TV": keep what was shown.
             if (channels != null) {
                 hasLiveTv = channels.isNotEmpty()
                 last = channels.firstOrNull { it.id.toString() == Jdvr.session.lastChannelId } ?: channels.firstOrNull()
             }
-            fromStart = last?.now?.takeIf { it.isRecording }?.let { Jdvr.liveTv.recordingOfProgram(it.id) }
-            upcoming = Jdvr.liveTv.schedule().orEmpty()
-            bufferIds = Jdvr.liveTv.bufferPrograms()
-            val shows = Jdvr.liveTv.recordedShows()
+            fromStart = last?.now?.takeIf { it.isRecording }?.let { Jdvr.backend.recordingOfProgram(it.id) }
+            upcoming = Jdvr.backend.schedule().orEmpty()
+            bufferIds = Jdvr.backend.bufferPrograms()
+            val shows = Jdvr.backend.recordedShows()
             freshFromLibrary = shows == null
-            fresh = shows?.filter { it.unplayedCount > 0 }?.take(6) ?: Jdvr.liveTv.recentlyAdded(6).orEmpty()
-            tuners = Jdvr.liveTv.tuners(null)
-            extras = runCatching { Jdvr.liveTv.homeExtras() }.getOrNull()
+            fresh = shows?.filter { it.unplayedCount > 0 }?.take(6) ?: Jdvr.backend.recentlyAdded(6).orEmpty()
+            tuners = Jdvr.backend.tuners(null)
+            extras = runCatching { Jdvr.backend.homeExtras() }.getOrNull()
             loaded = true
             delay(60_000)
         }
@@ -155,8 +161,8 @@ fun HomeScreen(
                 // Watch it from the start; Back to live in the player tunes its channel.
                 scope.launch {
                     val pid = r.programId?.toUuid() ?: return@launch
-                    val channel = runCatching { Jdvr.liveTv.program(pid)?.channelId }.getOrNull()
-                    Jdvr.liveTv.recordingOfProgram(pid)?.let { onPlayRecording(PlayRecording(it, startMs = 0L, liveChannelId = channel)) }
+                    val channel = runCatching { Jdvr.backend.program(pid)?.channelId }.getOrNull()
+                    Jdvr.backend.recordingOfProgram(pid)?.let { onPlayRecording(PlayRecording(it, startMs = 0L, liveChannelId = channel)) }
                 }
             }
         }
@@ -346,7 +352,7 @@ fun HomeScreen(
 }
 
 // With the server they came from (another server's rows aren't shown after switching).
-private var libraryRowsCache: Pair<String, List<Pair<LiveTvRepository.Library, List<LiveTvRepository.LibItem>>>> = "" to emptyList()
+private var libraryRowsCache: Pair<String, List<Pair<Library, List<LibItem>>>> = "" to emptyList()
 
 /**
  * "Recently added in …", one row per library (menu order, hidden ones left out), as on the web
@@ -354,7 +360,7 @@ private var libraryRowsCache: Pair<String, List<Pair<LiveTvRepository.Library, L
  */
 @Composable
 private fun LibraryRows(
-    onOpen: (UUID, LiveTvRepository.LibItem) -> Unit,
+    onOpen: (UUID, LibItem) -> Unit,
     returnPoster: UUID?,
     entry: FocusRequester,
     onReturned: () -> Unit,
@@ -365,10 +371,10 @@ private fun LibraryRows(
     var rows by remember { mutableStateOf(libraryRowsCache.takeIf { it.first == Jdvr.serverKey }?.second.orEmpty()) }
     LaunchedEffect(prefs.hiddenLibraries, prefs.homeHiddenLibraries, prefs.libraryOrder) {
         while (true) {
-            runCatching { Jdvr.liveTv.libraries() }.getOrNull()?.let { libs ->
+            runCatching { Jdvr.backend.libraries() }.getOrNull()?.let { libs ->
                 rows =
                     libs.filter { it.id.toString() !in prefs.hiddenLibraries && it.id.toString() !in prefs.homeHiddenLibraries }.inMenuOrder().mapNotNull { l ->
-                        Jdvr.liveTv.latestIn(l.id)?.takeIf { it.isNotEmpty() }?.let { l to it }
+                        Jdvr.backend.latestIn(l.id)?.takeIf { it.isNotEmpty() }?.let { l to it }
                     }
                 libraryRowsCache = Jdvr.serverKey to rows
                 // The poster is gone (deleted, or no longer among the latest): focus goes to Watch live.
@@ -404,7 +410,7 @@ private fun LibraryRows(
 /** A library poster: the show's for an episode; its name, and the episode or year under it. */
 @Composable
 private fun PosterCard(
-    item: LiveTvRepository.LibItem,
+    item: LibItem,
     modifier: Modifier,
     onClick: () -> Unit,
 ) {
@@ -418,7 +424,7 @@ private fun PosterCard(
             scale = ClickableSurfaceDefaults.scale(focusedScale = 1.06f),
         ) {
             Box(Modifier.fillMaxSize()) {
-                AsyncImage(model = Jdvr.liveTv.imageUrl(item.seriesId ?: item.id, 330), contentDescription = item.name, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+                AsyncImage(model = Jdvr.backend.imageUrl(item.seriesId ?: item.id, 330), contentDescription = item.name, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
                 val badge = item.unplayed?.takeIf { it > 0 && item.type == "Series" }?.toString()
                 badge?.let {
                     Text(
@@ -461,7 +467,7 @@ private fun LiveCard(
     fromStart: UUID?,
     // The programme's "recording" is only JellyDVR Live's buffer (kept from when someone tuned in).
     buffer: Boolean,
-    symbols: LiveTvRepository.MarkSymbols?,
+    symbols: MarkSymbols?,
     entry: FocusRequester,
     modifier: Modifier,
     onPlayChannel: (UUID) -> Unit,
@@ -564,7 +570,7 @@ private fun SmallRow(
 
 @Composable
 private fun NewCard(
-    c: LiveTvRepository.RecordingCard,
+    c: RecordingCard,
     modifier: Modifier,
     surfaceModifier: Modifier = Modifier,
     onClick: () -> Unit,
@@ -579,7 +585,7 @@ private fun NewCard(
             scale = ClickableSurfaceDefaults.scale(focusedScale = 1.05f),
         ) {
             Box(Modifier.fillMaxSize()) {
-                Jdvr.liveTv.imageUrl(c.imageId ?: c.id, 300)?.let { AsyncImage(model = it, contentDescription = c.name, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize()) }
+                Jdvr.backend.imageUrl(c.imageId ?: c.id, 300)?.let { AsyncImage(model = it, contentDescription = c.name, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize()) }
                 Text(
                     if (c.count > 1) "${c.unplayedCount} new" else "New",
                     color = Jc.Text,

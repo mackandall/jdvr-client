@@ -47,7 +47,7 @@ import androidx.compose.ui.unit.sp
 import androidx.tv.material3.Text
 import com.mackandall.jdvr.data.Channel
 import com.mackandall.jdvr.data.Jdvr
-import com.mackandall.jdvr.data.LiveTvRepository
+import com.mackandall.jdvr.data.plain
 import com.mackandall.jdvr.data.Program
 import com.mackandall.jdvr.ui.Jc
 import com.mackandall.jdvr.ui.seeThrough
@@ -59,6 +59,7 @@ import kotlinx.coroutines.launch
 import java.time.Duration
 import java.time.LocalDateTime
 import java.util.UUID
+import com.mackandall.jdvr.data.MarkSymbols
 
 private const val ROWS = 4
 private const val WINDOW_MIN = 90L
@@ -75,7 +76,7 @@ private fun floorHalfHour(t: LocalDateTime): LocalDateTime = t.withSecond(0).wit
 fun MiniGuide(
     channels: List<Channel>,
     currentChannelId: UUID,
-    symbols: LiveTvRepository.MarkSymbols?,
+    symbols: MarkSymbols?,
     onWatch: (UUID) -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
@@ -83,7 +84,7 @@ fun MiniGuide(
     buffers: Set<String> = emptySet(),
     onPlayRecording: (com.mackandall.jdvr.PlayRecording) -> Unit = {},
 ) {
-    fun recording(p: Program) = p.isRecording && p.id.toString().replace("-", "").lowercase() !in buffers
+    fun recording(p: Program) = p.isRecording && p.id.plain().lowercase() !in buffers
     val focus = remember { FocusRequester() }
     val scope = rememberCoroutineScope()
     val earliest = remember { floorHalfHour(LocalDateTime.now()) }
@@ -115,7 +116,7 @@ fun MiniGuide(
                 .filter { reload > 0 || fetchedTo[it]?.isBefore(need) != false }
         if (want.isEmpty()) return@LaunchedEffect
         val to = windowStart.plusHours(4)
-        runCatching { Jdvr.liveTv.programs(want, earliest, to) }.getOrNull()?.let { list ->
+        runCatching { Jdvr.backend.programs(want, earliest, to) }.getOrNull()?.let { list ->
             val byChannel = list.groupBy { it.channelId }
             want.forEach {
                 programs[it] = byChannel[it].orEmpty()

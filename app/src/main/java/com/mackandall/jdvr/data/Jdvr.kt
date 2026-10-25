@@ -35,11 +35,11 @@ object Jdvr {
     val userId: UUID? get() = session.userId?.let { runCatching { UUID.fromString(it) }.getOrNull() }
 
     // Made afresh for each server (it keeps a few answers).
-    private var jellyfinTvMade: LiveTvRepository? = null
-    private val jellyfinTv: LiveTvRepository get() = jellyfinTvMade ?: LiveTvRepository().also { jellyfinTvMade = it }
+    private var jellyfinBackendMade: JellyfinBackend? = null
+    private val jellyfinBackend: JellyfinBackend get() = jellyfinBackendMade ?: JellyfinBackend().also { jellyfinBackendMade = it }
 
     /** The signed-in server's calls. */
-    val liveTv: TvBackend get() = jellyfinTv
+    val backend: TvBackend get() = jellyfinBackend
 
     fun init(context: Context) {
         appContext = context.applicationContext
@@ -110,7 +110,7 @@ object Jdvr {
         session.userName = s.userName
         session.accessToken = s.token
         api = jellyfin.createApi(baseUrl = s.url, accessToken = s.token)
-        jellyfinTvMade = null
+        jellyfinBackendMade = null
     }
 
     /** Signs out of this server: it's forgotten too, so getting back in needs a sign-in. */

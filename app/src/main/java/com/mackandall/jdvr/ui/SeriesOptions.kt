@@ -53,7 +53,7 @@ fun SeriesOptions(
 
     LaunchedEffect(Unit) {
         try {
-            timer = Jdvr.liveTv.newSeriesTimer(programId) ?: error("This server doesn't offer series options")
+            timer = Jdvr.backend.newSeriesTimer(programId) ?: error("This server doesn't offer series options")
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -98,7 +98,7 @@ fun SeriesOptions(
                         saving = true
                         scope.launch {
                             try {
-                                Jdvr.liveTv.createSeriesTimer(t)
+                                Jdvr.backend.createSeriesTimer(t)
                                 onDone("Series recording set up.")
                             } catch (e: CancellationException) {
                                 throw e

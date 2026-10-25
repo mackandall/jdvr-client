@@ -54,13 +54,13 @@ import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
 import com.mackandall.jdvr.Screen
 import com.mackandall.jdvr.data.Jdvr
-import com.mackandall.jdvr.data.LiveTvRepository
 import com.mackandall.jdvr.data.Prefs
 import kotlinx.coroutines.launch
 import java.util.UUID
+import com.mackandall.jdvr.data.Library
 
 /** The libraries in their menu order (Settings › Menu); ones not placed yet follow, as the server lists them. */
-fun List<LiveTvRepository.Library>.inMenuOrder(): List<LiveTvRepository.Library> {
+fun List<Library>.inMenuOrder(): List<Library> {
     val order = Jdvr.prefs.libraryOrder
     return sortedBy { l -> order.indexOf(l.id.toString()).let { if (it < 0) Int.MAX_VALUE else it } }
 }
@@ -91,9 +91,9 @@ fun Rail(
     onSignOut: () -> Unit,
     onSwitchServer: () -> Unit = {},
     onExit: () -> Unit,
-    libraries: List<LiveTvRepository.Library> = emptyList(),
+    libraries: List<Library> = emptyList(),
     selectedLibrary: UUID? = null,
-    onSelectLibrary: (LiveTvRepository.Library) -> Unit = {},
+    onSelectLibrary: (Library) -> Unit = {},
     onDismiss: () -> Unit = {},
     // True while Right belongs to the rail (along the icon row, or opening Libraries).
     onKeepsRight: (Boolean) -> Unit = {},

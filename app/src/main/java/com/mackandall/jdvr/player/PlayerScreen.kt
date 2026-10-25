@@ -56,7 +56,6 @@ import androidx.tv.material3.Text
 import com.mackandall.jdvr.data.Channel
 import com.mackandall.jdvr.data.Jdvr
 import com.mackandall.jdvr.data.LivePlayback
-import com.mackandall.jdvr.data.LiveTvRepository
 import com.mackandall.jdvr.data.plainId
 import com.mackandall.jdvr.data.toUuid
 import com.mackandall.jdvr.ui.Button
@@ -79,9 +78,13 @@ import java.time.LocalDateTime
 import java.time.ZoneId
 import java.util.UUID
 import org.jellyfin.sdk.model.serializer.toUUIDOrNull
+import com.mackandall.jdvr.data.Buffer
+import com.mackandall.jdvr.data.ItemDetails
+import com.mackandall.jdvr.data.MarkSymbols
+import com.mackandall.jdvr.data.TunerStatus
 
 /** This visit's buffer: the one recording now (an older, finished one is the wrong place to land). */
-private fun List<LiveTvRepository.Buffer>.currentBuffer() = lastOrNull { it.recording && it.itemId != null }
+private fun List<Buffer>.currentBuffer() = lastOrNull { it.recording && it.itemId != null }
 
 /** Sparse-PCR recordings needed an 8 MB TS search window to seek (the Wholphin fix). */
 private const val TS_SEARCH_BYTES = 8 * 1024 * 1024
@@ -102,7 +105,7 @@ fun PlayerScreen(
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     var actionsOpen by remember { mutableStateOf(false) }
     var note by remember { mutableStateOf<String?>(null) }
-    var buffers by remember { mutableStateOf<List<LiveTvRepository.Buffer>>(emptyList()) }
+    var buffers by remember { mutableStateOf<List<Buffer>>(emptyList()) }
     var fromStart by remember { mutableStateOf<UUID?>(null) }
     val playFocus = remember { FocusRequester() }
     var lastKeyAt by remember { mutableStateOf(System.currentTimeMillis()) }
@@ -124,7 +127,7 @@ fun PlayerScreen(
     val symbols = rememberMarkSymbols()
     var channels by remember { mutableStateOf<List<Channel>>(emptyList()) }
     var playback by remember { mutableStateOf<LivePlayback?>(null) }
-    var busy by remember { mutableStateOf<LiveTvRepository.TunerStatus?>(null) }
+    var busy by remember { mutableStateOf<TunerStatus?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     // Try again: a fresh start of the same channel (a new stream from the server).
     var attempt by remember(channelId) { mutableIntStateOf(0) }
@@ -198,7 +201,7 @@ fun PlayerScreen(
     }
 
     LaunchedEffect(Unit) {
-        runCatching { channels = Jdvr.liveTv.channels() }
+        runCatching { channels = Jdvr.backend.channels() }
         focus.requestFocus()
     }
 
@@ -212,7 +215,7 @@ fun PlayerScreen(
                 tuning = true
                 osdUntil = System.currentTimeMillis() + 6000
                 try {
-                    val tuners = Jdvr.liveTv.tuners(channelId)
+                    val tuners = Jdvr.backend.tuners(channelId)
                     if (tuners != null && tuners.isChannel && tuners.full) {
                         tuning = false
                         busy = tuners
@@ -221,10 +224,10 @@ fun PlayerScreen(
                     // Opening takes 10+ s, and Back, Stop or a channel change meanwhile cancels this, but
                     // the server opens the stream anyway: wait for it regardless and close what comes back,
                     // or that tuner input stays taken until Jellyfin restarts (four were, 2026-10-06).
-                    val p = kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) { Jdvr.liveTv.startLive(channelId) }
+                    val p = kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) { Jdvr.backend.startLive(channelId) }
                     if (!isActive) {
                         Timber.i("Channel %s opened after its player left; closing it", channelId)
-                        p.liveStreamId?.let { id -> kotlinx.coroutines.MainScope().launch { runCatching { Jdvr.liveTv.closeLiveStream(id) } } }
+                        p.liveStreamId?.let { id -> kotlinx.coroutines.MainScope().launch { runCatching { Jdvr.backend.closeLiveStream(id) } } }
                         return@launch
                     }
                     current = p
@@ -239,13 +242,13 @@ fun PlayerScreen(
                     p.hlsUrl?.takeIf { !onHls }?.let { hls ->
                         launch {
                             hlsStartedAt = android.os.SystemClock.elapsedRealtime()
-                            Jdvr.liveTv.warmHls(hls)
+                            Jdvr.backend.warmHls(hls)
                         }
                     }
-                    Jdvr.liveTv.reportStart(p)
+                    Jdvr.backend.reportStart(p)
                     while (true) {
                         delay(10_000)
-                        Jdvr.liveTv.reportProgress(p, paused = !player.isPlaying)
+                        Jdvr.backend.reportProgress(p, paused = !player.isPlaying)
                     }
                 } catch (e: CancellationException) {
                     throw e
@@ -263,7 +266,7 @@ fun PlayerScreen(
             current?.let { p ->
                 // Closing the live stream frees the tuner: finished in the background even as the
                 // screen goes away (waiting for it here froze the screen for ~2 s).
-                kotlinx.coroutines.MainScope().launch { runCatching { Jdvr.liveTv.reportStopped(p) } }
+                kotlinx.coroutines.MainScope().launch { runCatching { Jdvr.backend.reportStopped(p) } }
             }
         }
     }
@@ -301,9 +304,9 @@ fun PlayerScreen(
 
     // JellyDVR Live's buffer (from tune-in) and, if the programme is a real recording, the recording.
     LaunchedEffect(channelId, actionsOpen) {
-        buffers = Jdvr.liveTv.buffers(channelId)
-        bufferIds = Jdvr.liveTv.bufferPrograms()
-        fromStart = channels.firstOrNull { it.id == channelId }?.now?.takeIf { it.isRecording }?.let { Jdvr.liveTv.recordingOfProgram(it.id) }
+        buffers = Jdvr.backend.buffers(channelId)
+        bufferIds = Jdvr.backend.bufferPrograms()
+        fromStart = channels.firstOrNull { it.id == channelId }?.now?.takeIf { it.isRecording }?.let { Jdvr.backend.recordingOfProgram(it.id) }
     }
     LaunchedEffect(actionsOpen) {
         if (actionsOpen) {
@@ -328,15 +331,15 @@ fun PlayerScreen(
     if (infoOpen) androidx.activity.compose.BackHandler { infoOpen = false }
     LaunchedEffect(infoOpen) { if (!infoOpen) runCatching { focus.requestFocus() } }
     // The top info box's extras for the programme on now: ratings, genres, and what's next.
-    var nowDetails by remember { mutableStateOf<LiveTvRepository.ItemDetails?>(null) }
+    var nowDetails by remember { mutableStateOf<ItemDetails?>(null) }
     var nextUp by remember { mutableStateOf<com.mackandall.jdvr.data.Program?>(null) }
     val nowId = channels.firstOrNull { it.id == channelId }?.now?.id
     LaunchedEffect(channelId, nowId) {
         nowDetails = null
         nextUp = null
         val now = channels.firstOrNull { it.id == channelId }?.now ?: return@LaunchedEffect
-        nowDetails = runCatching { Jdvr.liveTv.details(now.id) }.getOrNull()
-        nextUp = runCatching { Jdvr.liveTv.programs(listOf(channelId), now.end, now.end.plusHours(3)) }.getOrNull()?.firstOrNull { !it.start.isBefore(now.end) }
+        nowDetails = runCatching { Jdvr.backend.details(now.id) }.getOrNull()
+        nextUp = runCatching { Jdvr.backend.programs(listOf(channelId), now.end, now.end.plusHours(3)) }.getOrNull()?.firstOrNull { !it.start.isBefore(now.end) }
     }
     LaunchedEffect(miniOpen) { if (!miniOpen) runCatching { focus.requestFocus() } }
 
@@ -431,12 +434,12 @@ fun PlayerScreen(
                 runCatching {
                     when {
                         b?.kept == true -> {
-                            Jdvr.liveTv.keepBuffer(b.id, false)
+                            Jdvr.backend.keepBuffer(b.id, false)
                             "Won't record ${now.name} (back to a buffer)"
                         }
                         realTimer != null && System.currentTimeMillis() < recordArmedUntil -> {
                             recordArmedUntil = 0L
-                            Jdvr.liveTv.cancelRecording(realTimer)
+                            Jdvr.backend.cancelRecording(realTimer)
                             "Stopped recording ${now.name}"
                         }
                         realTimer != null -> {
@@ -444,18 +447,18 @@ fun PlayerScreen(
                             "Already recording ${now.name}: press ● again to stop it"
                         }
                         b != null -> {
-                            Jdvr.liveTv.keepBuffer(b.id, true)
+                            Jdvr.backend.keepBuffer(b.id, true)
                             "Recording ${now.name}" + (b.startedUtc?.let { s -> runCatching { " from " + LocalDateTime.ofInstant(Instant.parse(s), ZoneId.systemDefault()).time() + " (when you tuned in)" }.getOrNull() } ?: "")
                         }
                         else -> {
-                            Jdvr.liveTv.record(now.id, series = false)
+                            Jdvr.backend.record(now.id, series = false)
                             "Recording ${now.name}"
                         }
                     }
                 }.getOrElse { "Couldn't change the recording: ${it.message}" }
-            buffers = Jdvr.liveTv.buffers(channelId)
-            bufferIds = Jdvr.liveTv.bufferPrograms()
-            runCatching { channels = Jdvr.liveTv.channels() }
+            buffers = Jdvr.backend.buffers(channelId)
+            bufferIds = Jdvr.backend.bufferPrograms()
+            runCatching { channels = Jdvr.backend.channels() }
             delay(4000)
             note = null
         }
@@ -463,7 +466,7 @@ fun PlayerScreen(
 
     // Stop: done with this channel, so its tuner input is freed now rather than after the grace.
     fun stop() {
-        Jdvr.liveTv.stopBuffering(channelId)
+        Jdvr.backend.stopBuffering(channelId)
         onExit()
     }
 
@@ -640,7 +643,7 @@ fun PlayerScreen(
                             playFocus = playFocus,
                             clock = false,
                             record =
-                                channel?.now?.takeIf { com.mackandall.jdvr.ui.DeviceRights.info.record }?.let { now ->
+                                channel?.now?.takeIf { com.mackandall.jdvr.ui.TvRights.info.record }?.let { now ->
                                     val recording = b?.kept == true || (now.timerId != null && now.id.toString().plainId() !in bufferIds)
                                     TransportAction(TransportIcon.Record, active = recording) { record() }
                                 },
@@ -719,9 +722,9 @@ fun PlayerScreen(
                             scope.launch {
                                 note = msg
                                 delay(1500)
-                                runCatching { channels = Jdvr.liveTv.channels() }
-                                buffers = Jdvr.liveTv.buffers(channelId)
-                                bufferIds = Jdvr.liveTv.bufferPrograms()
+                                runCatching { channels = Jdvr.backend.channels() }
+                                buffers = Jdvr.backend.buffers(channelId)
+                                bufferIds = Jdvr.backend.bufferPrograms()
                                 delay(2500)
                                 note = null
                             }
@@ -764,7 +767,7 @@ private fun TuningFiller(channel: Channel?) {
     var artFailed by remember(channel?.now?.id) { mutableStateOf(false) }
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         val now = channel?.now
-        val art = now?.let { Jdvr.liveTv.imageUrl(it.id, 720) }
+        val art = now?.let { Jdvr.backend.imageUrl(it.id, 720) }
         if (art != null && !artFailed) {
             coil3.compose.AsyncImage(
                 model = art,
@@ -814,8 +817,8 @@ private fun Spinner() {
 @Composable
 private fun TopInfoBox(
     channel: Channel,
-    symbols: LiveTvRepository.MarkSymbols?,
-    details: LiveTvRepository.ItemDetails?,
+    symbols: MarkSymbols?,
+    details: ItemDetails?,
     next: com.mackandall.jdvr.data.Program?,
     modifier: Modifier,
 ) {
@@ -865,7 +868,7 @@ private fun TopInfoBox(
 @Composable
 private fun InfoBar(
     channel: Channel?,
-    symbols: LiveTvRepository.MarkSymbols?,
+    symbols: MarkSymbols?,
     modifier: Modifier,
     behindMs: Long = 0L,
     recording: Boolean = false,
@@ -1031,7 +1034,7 @@ private fun LiveTimeline(
 /** Every tuner input is busy: what each is doing, and Watch for the ones that share an input. */
 @Composable
 private fun TunersBusy(
-    status: LiveTvRepository.TunerStatus,
+    status: TunerStatus,
     channel: Channel?,
     onWatch: (UUID) -> Unit,
     onCancel: () -> Unit,

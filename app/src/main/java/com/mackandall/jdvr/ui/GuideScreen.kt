@@ -60,7 +60,6 @@ import com.mackandall.jdvr.data.Jdvr
 import androidx.compose.foundation.verticalScroll
 import com.mackandall.jdvr.data.toUuid
 import com.mackandall.jdvr.data.plainId
-import com.mackandall.jdvr.data.LiveTvRepository
 import com.mackandall.jdvr.data.Program
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
@@ -70,6 +69,11 @@ import java.time.Duration
 import java.time.LocalDateTime
 import java.time.temporal.ChronoUnit
 import java.util.UUID
+import com.mackandall.jdvr.data.Buffer
+import com.mackandall.jdvr.data.EhProgram
+import com.mackandall.jdvr.data.MarkSymbols
+import com.mackandall.jdvr.data.ScheduleState
+import com.mackandall.jdvr.data.ShowForget
 
 private const val WINDOW_MINUTES = 120L
 private const val STEP_MINUTES = 30L
@@ -163,11 +167,11 @@ fun GuideScreen(
         while (true) {
             val favourites =
                 if (Jc.Style == UiStyle.Sage) {
-                    Jdvr.liveTv.upcoming().orEmpty().filter { it.kind == "favourite" }.mapNotNull { it.programId?.plainId() }.toSet()
+                    Jdvr.backend.upcoming().orEmpty().filter { it.kind == "favourite" }.mapNotNull { it.programId?.plainId() }.toSet()
                 } else {
                     emptySet()
                 }
-            extras = GuideExtras(Jdvr.liveTv.bufferPrograms(), Jdvr.liveTv.guideScanning(), favourites)
+            extras = GuideExtras(Jdvr.backend.bufferPrograms(), Jdvr.backend.guideScanning(), favourites)
             delay(60_000)
         }
     }
@@ -175,11 +179,11 @@ fun GuideScreen(
     // Channel groups (all, favourites): a button by the title picks the one shown, and it's kept.
     var groups by remember { mutableStateOf<List<String>>(emptyList()) }
     val groupFocus = remember { FocusRequester() }
-    LaunchedEffect(Unit) { groups = runCatching { Jdvr.liveTv.channelGroups() }.getOrDefault(emptyList()) }
+    LaunchedEffect(Unit) { groups = runCatching { Jdvr.backend.channelGroups() }.getOrDefault(emptyList()) }
     val group = Jdvr.prefs.channelGroup
     LaunchedEffect(group) {
         try {
-            channels = Jdvr.liveTv.channels()
+            channels = Jdvr.backend.channels()
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -194,7 +198,7 @@ fun GuideScreen(
         val from = block
         val to = block.plusHours(FETCH_HOURS)
         try {
-            val fetched = Jdvr.liveTv.programs(list.map { it.id }, from, to).groupBy { it.channelId }
+            val fetched = Jdvr.backend.programs(list.map { it.id }, from, to).groupBy { it.channelId }
             // Keep what was loaded outside this block (moving back shows it at once); drop what has ended.
             val keepAfter = floorToHalfHour(LocalDateTime.now()).minusHours(1)
             programs =
@@ -560,7 +564,7 @@ private fun guidePanel(alpha: Float = 0.78f): Color = if (Jdvr.prefs.guideArtSec
 @Composable
 private fun GuideArt(program: Program?) {
     // Its picture: the guide's own, blurred when it's a poster.
-    val url = program?.let { Jdvr.liveTv.imageUrl(it.id, 1080) }
+    val url = program?.let { Jdvr.backend.imageUrl(it.id, 1080) }
     FadingBackdrop(program?.id, url, null)
 }
 
@@ -595,7 +599,7 @@ private fun relativeDay(t: LocalDateTime): String? =
 private fun InfoBand(
     p: Program,
     channel: Channel?,
-    symbols: LiveTvRepository.MarkSymbols?,
+    symbols: MarkSymbols?,
 ) {
     val marks = Marks.parse(p.rawEpisodeTitle, symbols)
     val now = LocalDateTime.now()
@@ -606,7 +610,7 @@ private fun InfoBand(
             Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f).background(Jc.Panel2, RoundedCornerShape(10.dp)), contentAlignment = Alignment.Center) {
                 channel?.logoUrl?.let { AsyncImage(model = it, contentDescription = null, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize(0.5f)) }
                 AsyncImage(
-                    model = Jdvr.liveTv.imageUrl(p.id, 300),
+                    model = Jdvr.backend.imageUrl(p.id, 300),
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(10.dp)),
@@ -677,7 +681,7 @@ private fun ChannelLogoTile(c: Channel) {
 private fun InfoPanel(
     p: Program,
     channel: Channel?,
-    symbols: LiveTvRepository.MarkSymbols?,
+    symbols: MarkSymbols?,
 ) {
     val marks = Marks.parse(p.rawEpisodeTitle, symbols)
     Column(Modifier.fillMaxSize().padding(22.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -736,7 +740,7 @@ private fun GuideRow(
     windowStart: LocalDateTime,
     perMinute: Dp,
     gridWidth: Dp,
-    symbols: LiveTvRepository.MarkSymbols?,
+    symbols: MarkSymbols?,
     pendingFocus: LocalDateTime?,
     onFocusTaken: () -> Unit,
     onSelect: (Program) -> Unit,
@@ -795,7 +799,7 @@ private fun GuideRow(
 private fun ProgramCell(
     program: Program,
     width: Dp,
-    symbols: LiveTvRepository.MarkSymbols?,
+    symbols: MarkSymbols?,
     requestFocus: Boolean,
     onFocusTaken: () -> Unit,
     onClick: () -> Unit,
@@ -891,7 +895,7 @@ private fun ProgramCell(
 internal fun ProgramPanel(
     program: Program,
     channel: Channel?,
-    symbols: LiveTvRepository.MarkSymbols?,
+    symbols: MarkSymbols?,
     onWatch: () -> Unit,
     onWatchFromStart: (UUID) -> Unit,
     onChanged: () -> Unit,
@@ -910,10 +914,10 @@ internal fun ProgramPanel(
     // Record series' options (Settings › Record series), shown over the panel.
     var seriesOptions by remember(program.id) { mutableStateOf(false) }
     // Episode History (watched mark, a copy to play, forget) and JellyDVR Live (is this only a buffer).
-    var eh by remember(program.id) { mutableStateOf<LiveTvRepository.EhProgram?>(null) }
+    var eh by remember(program.id) { mutableStateOf<EhProgram?>(null) }
     // What "Forget this show" would forget (administrators, a show with history).
-    var showForget by remember(program.id) { mutableStateOf<LiveTvRepository.ShowForget?>(null) }
-    var buffer by remember(program.id) { mutableStateOf<LiveTvRepository.Buffer?>(null) }
+    var showForget by remember(program.id) { mutableStateOf<ShowForget?>(null) }
+    var buffer by remember(program.id) { mutableStateOf<Buffer?>(null) }
     var isBuffer by remember(program.id) { mutableStateOf(false) }
     var armed by remember(program.id) { mutableStateOf<String?>(null) }
     LaunchedEffect(armed) {
@@ -925,9 +929,9 @@ internal fun ProgramPanel(
     // Being recorded now: the recording, to watch from the start (with commercial skipping).
     var recordingItem by remember(program.id) { mutableStateOf<UUID?>(null) }
     LaunchedEffect(program.id) {
-        if (program.isRecording && program.isOn()) recordingItem = Jdvr.liveTv.recordingOfProgram(program.id)
+        if (program.isRecording && program.isOn()) recordingItem = Jdvr.backend.recordingOfProgram(program.id)
     }
-    var schedule by remember(program.id) { mutableStateOf<LiveTvRepository.ScheduleState?>(null) }
+    var schedule by remember(program.id) { mutableStateOf<ScheduleState?>(null) }
     var note by remember(program.id) { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     val first = remember { FocusRequester() }
@@ -935,19 +939,19 @@ internal fun ProgramPanel(
     val marks = Marks.parse(p.rawEpisodeTitle, symbols)
 
     suspend fun refresh() {
-        Jdvr.liveTv.program(p.id)?.let { p = it }
-        schedule = Jdvr.liveTv.scheduleState(p.id)
-        eh = Jdvr.liveTv.ehProgram(p.id)
-        showForget = if (p.isSeries) Jdvr.liveTv.forgetShow(p.id, dryRun = true) else null
-        isBuffer = p.id.toString().plainId() in Jdvr.liveTv.bufferPrograms()
-        buffer = Jdvr.liveTv.buffers(p.channelId).lastOrNull { it.programId?.plainId() == p.id.toString().plainId() }
+        Jdvr.backend.program(p.id)?.let { p = it }
+        schedule = Jdvr.backend.scheduleState(p.id)
+        eh = Jdvr.backend.ehProgram(p.id)
+        showForget = if (p.isSeries) Jdvr.backend.forgetShow(p.id, dryRun = true) else null
+        isBuffer = p.id.toString().plainId() in Jdvr.backend.bufferPrograms()
+        buffer = Jdvr.backend.buffers(p.channelId).lastOrNull { it.programId?.plainId() == p.id.toString().plainId() }
     }
     LaunchedEffect(program.id) {
-        eh = Jdvr.liveTv.ehProgram(program.id)
-        if (program.isSeries) showForget = Jdvr.liveTv.forgetShow(program.id, dryRun = true)
-        isBuffer = program.id.toString().plainId() in Jdvr.liveTv.bufferPrograms()
-        if (isBuffer) buffer = Jdvr.liveTv.buffers(program.channelId).lastOrNull { it.programId?.plainId() == program.id.toString().plainId() }
-        schedule = Jdvr.liveTv.scheduleState(program.id)
+        eh = Jdvr.backend.ehProgram(program.id)
+        if (program.isSeries) showForget = Jdvr.backend.forgetShow(program.id, dryRun = true)
+        isBuffer = program.id.toString().plainId() in Jdvr.backend.bufferPrograms()
+        if (isBuffer) buffer = Jdvr.backend.buffers(program.channelId).lastOrNull { it.programId?.plainId() == program.id.toString().plainId() }
+        schedule = Jdvr.backend.scheduleState(program.id)
         // Opened as a floating dialog, its window needs a frame or two before focus can land.
         repeat(20) {
             if (inside) return@LaunchedEffect
@@ -1053,7 +1057,7 @@ internal fun ProgramPanel(
                             // Only a buffer so far: Record keeps it (recorded from when it started).
                             Button("Record (keep the live buffer)", modifier = recordModifier, leading = { Dot(Jc.Recording) }) {
                                 act {
-                                    Jdvr.liveTv.keepBuffer(bufferNow.id, true)
+                                    Jdvr.backend.keepBuffer(bufferNow.id, true)
                                     "Recording: the live TV buffer is kept."
                                 }
                             }
@@ -1061,14 +1065,14 @@ internal fun ProgramPanel(
                             // Under way it stops (what's recorded so far is kept); later, it won't record.
                             Button(if (p.isOn()) "Stop recording" else "Cancel recording", modifier = recordModifier, leading = { if (p.isOn()) Dot(Jc.Recording) else CancelDot() }) {
                                 act {
-                                    Jdvr.liveTv.cancelRecording(p.timerId!!)
+                                    Jdvr.backend.cancelRecording(p.timerId!!)
                                     if (p.isOn()) "Recording stopped: what was recorded so far is kept." else "Recording cancelled."
                                 }
                             }
                         } else {
                             Button("Record", modifier = recordModifier, leading = { Dot(Jc.Recording) }) {
                                 act {
-                                    Jdvr.liveTv.record(p.id, series = false)
+                                    Jdvr.backend.record(p.id, series = false)
                                     "Recording scheduled."
                                 }
                             }
@@ -1077,7 +1081,7 @@ internal fun ProgramPanel(
                             if (p.seriesTimerId != null) {
                                 Button("Cancel series recording", modifier = Modifier.fillMaxWidth(), leading = { SeriesDots(height = 14.dp, crossed = true) }) {
                                     act {
-                                        Jdvr.liveTv.cancelSeries(p.seriesTimerId!!)
+                                        Jdvr.backend.cancelSeries(p.seriesTimerId!!)
                                         "Series recording cancelled."
                                     }
                                 }
@@ -1088,7 +1092,7 @@ internal fun ProgramPanel(
                                         return@Button
                                     }
                                     act {
-                                        Jdvr.liveTv.record(p.id, series = true)
+                                        Jdvr.backend.record(p.id, series = true)
                                         "Series recording set up."
                                     }
                                 }
@@ -1096,7 +1100,7 @@ internal fun ProgramPanel(
                         }
                         if (schedule?.outcome != null && rights.record) {
                             Button("Record this instead", modifier = Modifier.fillMaxWidth(), leading = { Dot(Jc.Amber) }) {
-                                act { Jdvr.liveTv.recordInstead(p.id)?.message }
+                                act { Jdvr.backend.recordInstead(p.id)?.message }
                             }
                         }
                     },
@@ -1121,7 +1125,7 @@ internal fun ProgramPanel(
                                     armed = "fav"
                                 } else {
                                     armed = null
-                                    act { (if (fav == null) Jdvr.liveTv.addFavourite(p.id) else Jdvr.liveTv.removeFavourite(fav.id))?.message }
+                                    act { (if (fav == null) Jdvr.backend.addFavourite(p.id) else Jdvr.backend.removeFavourite(fav.id))?.message }
                                 }
                             }
                             if (armed == "fav") Text("Press again to remove it from Recording Favourites", color = Jc.Amber, fontSize = 13.sp)
@@ -1129,7 +1133,7 @@ internal fun ProgramPanel(
                         eh?.let { info ->
                             Button(if (info.markedWatched) "Unmark watched" else "Mark watched", modifier = Modifier.fillMaxWidth(), leading = { Text("✓", color = Jc.Green) }) {
                                 act {
-                                    Jdvr.liveTv.setProgramWatched(p.id, !info.markedWatched)
+                                    Jdvr.backend.setProgramWatched(p.id, !info.markedWatched)
                                     if (info.markedWatched) "No longer marked watched." else "Marked watched: every airing of this episode shows it."
                                 }
                             }
@@ -1140,7 +1144,7 @@ internal fun ProgramPanel(
                                     } else {
                                         armed = null
                                         act {
-                                            Jdvr.liveTv.forgetProgram(p.id)
+                                            Jdvr.backend.forgetProgram(p.id)
                                             "Forgotten: it can be recorded again."
                                         }
                                     }
@@ -1154,7 +1158,7 @@ internal fun ProgramPanel(
                                 } else {
                                     armed = null
                                     act {
-                                        val r = Jdvr.liveTv.forgetShow(p.id, dryRun = false)
+                                        val r = Jdvr.backend.forgetShow(p.id, dryRun = false)
                                         if (r == null) "Couldn't forget it." else "Forgot ${sf.show ?: "the show"}: its episodes can be recorded again" + if (r.keptInLibrary > 0) " (copies still in the library still count)." else "."
                                     }
                                 }

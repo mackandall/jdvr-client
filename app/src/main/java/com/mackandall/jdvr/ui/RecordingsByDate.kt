@@ -51,8 +51,8 @@ import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
 import coil3.compose.AsyncImage
 import com.mackandall.jdvr.data.Jdvr
-import com.mackandall.jdvr.data.LiveTvRepository.DateChannel
-import com.mackandall.jdvr.data.LiveTvRepository.DateRecording
+import com.mackandall.jdvr.data.DateChannel
+import com.mackandall.jdvr.data.DateRecording
 import com.mackandall.jdvr.data.toUuid
 import kotlinx.coroutines.delay
 import java.time.Instant
@@ -114,7 +114,7 @@ fun RecordingsByDate(
     var logoRight by remember { mutableStateOf(false) }
     var focused by remember { mutableStateOf<DateRecording?>(null) }
     LaunchedEffect(filter, reload) {
-        val data = Jdvr.liveTv.recordingsByDate(filter)
+        val data = Jdvr.backend.recordingsByDate(filter)
         if (data == null) {
             onUnavailable()
             return@LaunchedEffect
@@ -282,7 +282,7 @@ internal fun ChannelTile(
         ) {
             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                 if (ch != null) {
-                    val logo = if (ch.hasLogo) Jdvr.liveTv.imageUrl(ch.id, 120) else null
+                    val logo = if (ch.hasLogo) Jdvr.backend.imageUrl(ch.id, 120) else null
                     if (logo != null) {
                         AsyncImage(model = logo, contentDescription = ch.name, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize())
                     } else {
@@ -331,7 +331,7 @@ private fun Chip(
 private fun DateDetails(r: DateRecording) {
     val at = localTime(r.recordedUtc)
     Column(Modifier.fillMaxSize().padding(top = 6.dp, bottom = 10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        val image = (r.imageId ?: r.id).let { Jdvr.liveTv.imageUrl(it, 360) }
+        val image = (r.imageId ?: r.id).let { Jdvr.backend.imageUrl(it, 360) }
         Box(Modifier.weight(1f, fill = false).aspectRatio(16f / 9f, matchHeightConstraintsFirst = true).background(Jc.Panel2, RoundedCornerShape(12.dp))) {
             if (image != null) {
                 AsyncImage(model = image, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize().background(Jc.Panel2, RoundedCornerShape(12.dp)))

@@ -6,7 +6,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.mackandall.jdvr.data.Jdvr
-import com.mackandall.jdvr.data.LiveTvRepository
+import com.mackandall.jdvr.data.DeviceRights
 
 /**
  * What this TV may do (JellyDVR Space's settings page, "JDVR devices"). An answer is reused for
@@ -14,8 +14,8 @@ import com.mackandall.jdvr.data.LiveTvRepository
  * server unreachable) the app behaves as it did before there were rights: everything but
  * deleting from the archive libraries.
  */
-object DeviceRights {
-    var info by mutableStateOf(LiveTvRepository.DeviceRights())
+object TvRights {
+    var info by mutableStateOf(DeviceRights())
         private set
 
     // Whether the server answered: only then are the rights someone's choice.
@@ -28,8 +28,8 @@ object DeviceRights {
         val user = Jdvr.serverKey
         if (user != forUser) at = 0
         if (System.currentTimeMillis() - at < 2 * 60_000) return
-        val got = runCatching { Jdvr.liveTv.deviceRights() }.getOrNull()
-        info = got ?: LiveTvRepository.DeviceRights()
+        val got = runCatching { Jdvr.backend.deviceRights() }.getOrNull()
+        info = got ?: DeviceRights()
         managed = got != null
         forUser = user
         at = if (got != null) System.currentTimeMillis() else 0L
@@ -38,7 +38,7 @@ object DeviceRights {
 
 /** This TV's rights, refreshed when a page that uses them opens. */
 @Composable
-fun deviceRights(): LiveTvRepository.DeviceRights {
-    LaunchedEffect(Jdvr.serverKey) { DeviceRights.load() }
-    return DeviceRights.info
+fun deviceRights(): DeviceRights {
+    LaunchedEffect(Jdvr.serverKey) { TvRights.load() }
+    return TvRights.info
 }

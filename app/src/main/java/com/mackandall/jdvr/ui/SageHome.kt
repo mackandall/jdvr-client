@@ -52,7 +52,6 @@ import coil3.compose.AsyncImage
 import com.mackandall.jdvr.Screen
 import com.mackandall.jdvr.data.Channel
 import com.mackandall.jdvr.data.Jdvr
-import com.mackandall.jdvr.data.LiveTvRepository
 import com.mackandall.jdvr.data.Prefs
 import com.mackandall.jdvr.data.toUuid
 import kotlinx.coroutines.delay
@@ -63,6 +62,13 @@ import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.ZoneId
 import java.util.UUID
+import com.mackandall.jdvr.data.Drive
+import com.mackandall.jdvr.data.LibItem
+import com.mackandall.jdvr.data.Library
+import com.mackandall.jdvr.data.MarkSymbols
+import com.mackandall.jdvr.data.RecordingCard
+import com.mackandall.jdvr.data.TunerStatus
+import com.mackandall.jdvr.data.Upcoming
 
 /** Where SageTV's menu was left, so coming back to Home lands on the same entry. */
 private object SageMenuState {
@@ -107,7 +113,7 @@ private fun localOf(iso: String?): LocalDateTime? = iso?.let { runCatching { Loc
 @Composable
 fun SageHome(
     entry: FocusRequester,
-    libraries: List<LiveTvRepository.Library>,
+    libraries: List<Library>,
     showRecorded: Boolean,
     showTrash: Boolean,
     onOpenScreen: (Screen) -> Unit,
@@ -122,12 +128,12 @@ fun SageHome(
 ) {
     val prefs = Jdvr.prefs
     val gem = Jc.Style == UiStyle.Gem
-    var recordings by remember { mutableStateOf<List<LiveTvRepository.RecordingCard>>(emptyList()) }
+    var recordings by remember { mutableStateOf<List<RecordingCard>>(emptyList()) }
     var channels by remember { mutableStateOf<List<Channel>>(emptyList()) }
-    var upcoming by remember { mutableStateOf<List<LiveTvRepository.Upcoming>?>(null) }
+    var upcoming by remember { mutableStateOf<List<Upcoming>?>(null) }
     var newCount by remember { mutableStateOf<Int?>(null) }
-    var tuners by remember { mutableStateOf<LiveTvRepository.TunerStatus?>(null) }
-    var drive by remember { mutableStateOf<LiveTvRepository.Drive?>(null) }
+    var tuners by remember { mutableStateOf<TunerStatus?>(null) }
+    var drive by remember { mutableStateOf<Drive?>(null) }
     var now by remember { mutableStateOf(LocalDateTime.now()) }
     var picking by remember { mutableStateOf(false) }
     var signOutArmed by remember { mutableStateOf(false) }
@@ -147,16 +153,16 @@ fun SageHome(
         while (true) {
             // All at once: the channel list is slow on a small box, and the other panels needn't wait for it.
             kotlinx.coroutines.coroutineScope {
-                launch { runCatching { Jdvr.liveTv.channels() }.getOrNull()?.let { channels = it } }
-                launch { upcoming = Jdvr.liveTv.schedule().orEmpty() }
+                launch { runCatching { Jdvr.backend.channels() }.getOrNull()?.let { channels = it } }
+                launch { upcoming = Jdvr.backend.schedule().orEmpty() }
                 launch {
-                    Jdvr.liveTv.recordedShows()?.let { cards ->
+                    Jdvr.backend.recordedShows()?.let { cards ->
                         recordings = cards
                         newCount = cards.sumOf { it.unplayedCount }
                     }
                 }
-                launch { tuners = Jdvr.liveTv.tuners(null) }
-                launch { drive = runCatching { Jdvr.liveTv.homeExtras() }.getOrNull()?.drive }
+                launch { tuners = Jdvr.backend.tuners(null) }
+                launch { drive = runCatching { Jdvr.backend.homeExtras() }.getOrNull()?.drive }
             }
             // No channels yet (the server didn't answer, say just after the TV woke): try again soon.
             delay(if (channels.isEmpty()) 5_000 else 60_000)
@@ -260,8 +266,8 @@ fun SageHome(
 
     // The library the Libraries panel shows (the one picked in the submenu, else the first).
     val panelLibrary = if (current.key == "libraries") libs.getOrNull(subIndex ?: 0) else null
-    var libraryItems by remember(panelLibrary?.id) { mutableStateOf<List<LiveTvRepository.LibItem>?>(null) }
-    LaunchedEffect(panelLibrary?.id) { panelLibrary?.let { libraryItems = Jdvr.liveTv.latestIn(it.id, 6) } }
+    var libraryItems by remember(panelLibrary?.id) { mutableStateOf<List<LibItem>?>(null) }
+    LaunchedEffect(panelLibrary?.id) { panelLibrary?.let { libraryItems = Jdvr.backend.latestIn(it.id, 6) } }
 
     // Gemstone: the fanart for the entry.
     val fanart: String? =
@@ -269,10 +275,10 @@ fun SageHome(
             null
         } else {
             when (current.key) {
-                "livetv", "guide" -> last?.now?.let { Jdvr.liveTv.imageUrl(it.id, 1080) }
-                "recorded" -> recordings.firstOrNull()?.id?.toUuid()?.let { Jdvr.liveTv.backdropUrl(it) }
-                "scheduled" -> upcoming.orEmpty().firstNotNullOfOrNull { it.programId?.toUuid() }?.let { Jdvr.liveTv.imageUrl(it, 1080) }
-                "libraries" -> libraryItems?.firstOrNull()?.let { Jdvr.liveTv.backdropUrl(it.seriesId ?: it.id) }
+                "livetv", "guide" -> last?.now?.let { Jdvr.backend.imageUrl(it.id, 1080) }
+                "recorded" -> recordings.firstOrNull()?.id?.toUuid()?.let { Jdvr.backend.backdropUrl(it) }
+                "scheduled" -> upcoming.orEmpty().firstNotNullOfOrNull { it.programId?.toUuid() }?.let { Jdvr.backend.imageUrl(it, 1080) }
+                "libraries" -> libraryItems?.firstOrNull()?.let { Jdvr.backend.backdropUrl(it.seriesId ?: it.id) }
                 else -> null
             }
         }
@@ -581,7 +587,7 @@ private fun LivePanel(
     c: Channel,
     now: LocalDateTime,
     label: String,
-    symbols: LiveTvRepository.MarkSymbols?,
+    symbols: MarkSymbols?,
 ) {
     Column(
         Modifier
@@ -592,7 +598,7 @@ private fun LivePanel(
     ) {
         Box(Modifier.fillMaxWidth().height(150.dp).background(if (LocalGemLook.current) Color(0xFF14161B) else Color(0xFF050B1C)), contentAlignment = Alignment.Center) {
             val p = c.now
-            val image = p?.let { Jdvr.liveTv.imageUrl(it.id, 360) } ?: c.logoUrl
+            val image = p?.let { Jdvr.backend.imageUrl(it.id, 360) } ?: c.logoUrl
             if (image != null) AsyncImage(model = image, contentDescription = null, contentScale = if (p != null) ContentScale.Crop else ContentScale.Fit, modifier = Modifier.fillMaxSize())
         }
         Column(Modifier.padding(horizontal = 12.dp, vertical = 9.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
@@ -615,7 +621,7 @@ private fun LivePanel(
 @Composable
 private fun NextPanel(
     // Null until the first answer: "Nothing scheduled" only once that's known.
-    upcoming: List<LiveTvRepository.Upcoming>?,
+    upcoming: List<Upcoming>?,
     now: LocalDateTime,
     count: Int,
 ) {
@@ -632,13 +638,13 @@ private fun NextPanel(
 
 /** Gemstone's Recorded Shows panel: the newest recordings' posters. */
 @Composable
-private fun NewRecordingsPanel(cards: List<LiveTvRepository.RecordingCard>) {
+private fun NewRecordingsPanel(cards: List<RecordingCard>) {
     SagePanel("NEW RECORDINGS") {
         val fresh = cards.filter { it.unplayedCount > 0 }.ifEmpty { cards }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             fresh.take(3).forEach { c ->
                 AsyncImage(
-                    model = Jdvr.liveTv.imageUrl(c.imageId ?: c.id, 240),
+                    model = Jdvr.backend.imageUrl(c.imageId ?: c.id, 240),
                     contentDescription = c.name,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.width(90.dp).height(135.dp).clip(RoundedCornerShape(4.dp)).background(Color(0xFF14161B)),
@@ -651,8 +657,8 @@ private fun NewRecordingsPanel(cards: List<LiveTvRepository.RecordingCard>) {
 
 @Composable
 private fun LibraryPanel(
-    lib: LiveTvRepository.Library,
-    items: List<LiveTvRepository.LibItem>?,
+    lib: Library,
+    items: List<LibItem>?,
 ) {
     SagePanel("RECENTLY ADDED · ${lib.name.uppercase()}") {
         val list = items
@@ -662,7 +668,7 @@ private fun LibraryPanel(
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 list.take(3).forEach { it ->
                     AsyncImage(
-                        model = Jdvr.liveTv.imageUrl(it.seriesId ?: it.id, 240),
+                        model = Jdvr.backend.imageUrl(it.seriesId ?: it.id, 240),
                         contentDescription = it.seriesName ?: it.name,
                         contentScale = ContentScale.Crop,
                         modifier = Modifier.width(90.dp).height(135.dp).clip(RoundedCornerShape(5.dp)).background(panelFill()),

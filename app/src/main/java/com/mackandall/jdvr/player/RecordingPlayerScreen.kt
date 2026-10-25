@@ -58,7 +58,6 @@ import androidx.media3.ui.PlayerView
 import androidx.tv.material3.Text
 import com.mackandall.jdvr.PlayRecording
 import com.mackandall.jdvr.data.Jdvr
-import com.mackandall.jdvr.data.LiveTvRepository
 import com.mackandall.jdvr.data.Prefs
 import com.mackandall.jdvr.data.toUuid
 import com.mackandall.jdvr.ui.Button
@@ -69,17 +68,23 @@ import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import timber.log.Timber
+import com.mackandall.jdvr.data.Buffer
+import com.mackandall.jdvr.data.ItemDetails
+import com.mackandall.jdvr.data.ItemPlayback
+import com.mackandall.jdvr.data.ProgramStartResult
+import com.mackandall.jdvr.data.ProgramStartStatus
+import com.mackandall.jdvr.data.Segment
 
 private fun clock(ms: Long): String {
     val s = (ms / 1000).coerceAtLeast(0)
     return if (s >= 3600) "%d:%02d:%02d".format(s / 3600, s / 60 % 60, s % 60) else "%d:%02d".format(s / 60, s % 60)
 }
 
-private fun isCommercial(s: LiveTvRepository.Segment) = s.type.equals("Commercial", ignoreCase = true)
+private fun isCommercial(s: Segment) = s.type.equals("Commercial", ignoreCase = true)
 
-private fun skippable(s: LiveTvRepository.Segment) = s.type.lowercase() in setOf("commercial", "intro", "recap", "preview")
+private fun skippable(s: Segment) = s.type.lowercase() in setOf("commercial", "intro", "recap", "preview")
 
-private fun skipLabel(s: LiveTvRepository.Segment) =
+private fun skipLabel(s: Segment) =
     when (s.type.lowercase()) {
         "commercial" -> "Skip commercial"
         "intro" -> "Skip intro"
@@ -112,10 +117,10 @@ fun RecordingPlayerScreen(
     val context = LocalContext.current
     val prefs = Jdvr.prefs
     val scope = rememberCoroutineScope()
-    var playback by remember { mutableStateOf<LiveTvRepository.ItemPlayback?>(null) }
-    var segments by remember { mutableStateOf<List<LiveTvRepository.Segment>>(emptyList()) }
+    var playback by remember { mutableStateOf<ItemPlayback?>(null) }
+    var segments by remember { mutableStateOf<List<Segment>>(emptyList()) }
     var inProgress by remember { mutableStateOf(false) }
-    var buffer by remember { mutableStateOf<LiveTvRepository.Buffer?>(null) }
+    var buffer by remember { mutableStateOf<Buffer?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var osdUntil by remember { mutableStateOf(System.currentTimeMillis() + 5000) }
     var controlsOpen by remember { mutableStateOf(false) }
@@ -129,7 +134,7 @@ fun RecordingPlayerScreen(
     val focus = remember { FocusRequester() }
     val playFocus = remember { FocusRequester() }
     // What's playing (the top box and the Info panel), and the next episode's name.
-    var details by remember { mutableStateOf<LiveTvRepository.ItemDetails?>(null) }
+    var details by remember { mutableStateOf<ItemDetails?>(null) }
     var nextTitle by remember { mutableStateOf<String?>(null) }
     var commercialsLabel by remember { mutableStateOf<String?>(null) }
     var infoOpen by remember { mutableStateOf(false) }
@@ -164,11 +169,11 @@ fun RecordingPlayerScreen(
             }
         player.addListener(listener)
         val logger = playerLog("recording $itemId", player).also { player.addListener(it) }
-        var current: LiveTvRepository.ItemPlayback? = null
+        var current: ItemPlayback? = null
         val job =
             MainScope().launch {
                 try {
-                    val p = Jdvr.liveTv.startItem(itemId)
+                    val p = Jdvr.backend.startItem(itemId)
                     current = p
                     playback = p
                     val start = recording.startMs ?: p.resumeMs
@@ -187,10 +192,10 @@ fun RecordingPlayerScreen(
                             ).build()
                     player.setMediaItem(item, start.coerceAtLeast(0))
                     player.prepare()
-                    Jdvr.liveTv.reportItem(p, start, paused = recording.paused, event = "start")
+                    Jdvr.backend.reportItem(p, start, paused = recording.paused, event = "start")
                     while (true) {
                         delay(10_000)
-                        Jdvr.liveTv.reportItem(p, player.currentPosition, paused = !player.isPlaying, event = "progress")
+                        Jdvr.backend.reportItem(p, player.currentPosition, paused = !player.isPlaying, event = "progress")
                     }
                 } catch (e: CancellationException) {
                     throw e
@@ -206,17 +211,17 @@ fun RecordingPlayerScreen(
             player.removeListener(logger)
             player.release()
             // Reported in the background, so leaving the player never waits on the server.
-            current?.let { p -> MainScope().launch { runCatching { Jdvr.liveTv.reportItem(p, position, paused = true, event = "stop") } } }
+            current?.let { p -> MainScope().launch { runCatching { Jdvr.backend.reportItem(p, position, paused = true, event = "stop") } } }
         }
     }
 
     // Segments: Jellyfin's once a recording is finished; Comskip's live ones (refreshed) while it records.
     LaunchedEffect(itemId) {
-        buffer = Jdvr.liveTv.bufferOfItem(itemId)
+        buffer = Jdvr.backend.bufferOfItem(itemId)
         while (true) {
-            val (live, liveSegs) = Jdvr.liveTv.liveSegments(itemId)
+            val (live, liveSegs) = Jdvr.backend.liveSegments(itemId)
             inProgress = live
-            segments = if (live) liveSegs else Jdvr.liveTv.segments(itemId)
+            segments = if (live) liveSegs else Jdvr.backend.segments(itemId)
             if (!live) break
             delay(15_000)
         }
@@ -233,7 +238,7 @@ fun RecordingPlayerScreen(
     LaunchedEffect(playback?.seriesId) {
         val live = recording.liveChannelId
         if (live != null) {
-            val ids = Jdvr.liveTv.buffers(live).mapNotNull { it.itemId?.toUuid() }
+            val ids = Jdvr.backend.buffers(live).mapNotNull { it.itemId?.toUuid() }
             val i = ids.indexOf(itemId)
             if (i >= 0) {
                 previous = ids.getOrNull(i - 1)?.let { PlayRecording(it, startMs = 0L, liveChannelId = live) }
@@ -242,7 +247,7 @@ fun RecordingPlayerScreen(
             return@LaunchedEffect
         }
         val series = playback?.seriesId ?: return@LaunchedEffect
-        val all = runCatching { Jdvr.liveTv.showRecordings(series, Jdvr.prefs.recordingsFilter) }.getOrNull().orEmpty()
+        val all = runCatching { Jdvr.backend.showRecordings(series, Jdvr.prefs.recordingsFilter) }.getOrNull().orEmpty()
         val ordered =
             if (all.all { it.season != null && it.episode != null }) {
                 all.sortedWith(compareBy({ it.season }, { it.episode }))
@@ -251,7 +256,7 @@ fun RecordingPlayerScreen(
             }
         var ids = ordered.mapNotNull { it.id.toUuid() }
         // Not a live-folder recording (a library or archive episode): the show's own episode order.
-        if (itemId !in ids) ids = series.toUuid()?.let { runCatching { Jdvr.liveTv.episodes(it, null) }.getOrNull() }?.map { it.id }.orEmpty()
+        if (itemId !in ids) ids = series.toUuid()?.let { runCatching { Jdvr.backend.episodes(it, null) }.getOrNull() }?.map { it.id }.orEmpty()
         val i = ids.indexOf(itemId)
         if (i >= 0) {
             previous = ids.getOrNull(i - 1)?.let { PlayRecording(it) }
@@ -260,14 +265,14 @@ fun RecordingPlayerScreen(
     }
 
     LaunchedEffect(itemId) {
-        details = runCatching { Jdvr.liveTv.details(itemId) }.getOrNull()
-        commercialsLabel = runCatching { Jdvr.liveTv.commercialBadges(listOf(itemId)) }.getOrNull()?.values?.firstOrNull()?.label
+        details = runCatching { Jdvr.backend.details(itemId) }.getOrNull()
+        commercialsLabel = runCatching { Jdvr.backend.commercialBadges(listOf(itemId)) }.getOrNull()?.values?.firstOrNull()?.label
     }
     // "Next · S3:E2 Mobile Suit Toyman": the show's next recording (not for live TV buffers).
     LaunchedEffect(next) {
         nextTitle =
             next?.takeIf { recording.liveChannelId == null }?.let { n ->
-                runCatching { Jdvr.liveTv.libItem(n.itemId) }.getOrNull()?.let { listOfNotNull(it.seasonEpisode, it.name).joinToString(" ") }
+                runCatching { Jdvr.backend.libItem(n.itemId) }.getOrNull()?.let { listOfNotNull(it.seasonEpisode, it.name).joinToString(" ") }
             }
     }
     LaunchedEffect(infoOpen) {
@@ -331,14 +336,14 @@ fun RecordingPlayerScreen(
 
     // Stop: from a live TV buffer, done with the channel too, so its tuner input is freed now.
     fun stop() {
-        recording.liveChannelId?.let { Jdvr.liveTv.stopBuffering(it) }
+        recording.liveChannelId?.let { Jdvr.backend.stopBuffering(it) }
         onExit()
     }
 
     fun toggleKeep() {
         val b = buffer ?: return
         scope.launch {
-            Jdvr.liveTv.keepBuffer(b.id, !b.kept)?.let { buffer = it }
+            Jdvr.backend.keepBuffer(b.id, !b.kept)?.let { buffer = it }
             note = if (b.kept) "Won't keep this buffer" else "Recording kept"
             delay(3000)
             note = null
@@ -369,7 +374,7 @@ fun RecordingPlayerScreen(
     // "Starts here" with trims: the keyframes either side of the paused moment, to pick the one
     // the cut starts on (a cut can only start on a keyframe).
     var keyChoices by remember { mutableStateOf<List<KeyChoice>?>(null) }
-    var startStatus by remember { mutableStateOf<LiveTvRepository.ProgramStartStatus?>(null) }
+    var startStatus by remember { mutableStateOf<ProgramStartStatus?>(null) }
     LaunchedEffect(armed) {
         if (armed != null) {
             delay(4000)
@@ -389,7 +394,7 @@ fun RecordingPlayerScreen(
             editFocus = editButton
         }
     }
-    LaunchedEffect(editOpen) { if (editOpen) startStatus = runCatching { Jdvr.liveTv.programStartStatus(itemId) }.getOrNull() }
+    LaunchedEffect(editOpen) { if (editOpen) startStatus = runCatching { Jdvr.backend.programStartStatus(itemId) }.getOrNull() }
     LaunchedEffect(player.isPlaying) {
         if (player.isPlaying) {
             editOpen = false
@@ -399,7 +404,7 @@ fun RecordingPlayerScreen(
     }
 
     // An edit action that changed the recording's markers or file: say what happened.
-    fun editDone(r: LiveTvRepository.ProgramStartResult?, fallback: String) {
+    fun editDone(r: ProgramStartResult?, fallback: String) {
         editOpen = false
         editFocus = playFocus
         scope.launch {
@@ -408,7 +413,7 @@ fun RecordingPlayerScreen(
                 r.trimmed -> r.message + " Start the recording again to see it."
                 else -> r.message
             }
-            if (r?.ok == true && !r.trimmed) runCatching { segments = Jdvr.liveTv.segments(itemId) }
+            if (r?.ok == true && !r.trimmed) runCatching { segments = Jdvr.backend.segments(itemId) }
             com.mackandall.jdvr.ui.MoveWatcher.kick()
             delay(7000)
             note = null
@@ -426,7 +431,7 @@ fun RecordingPlayerScreen(
         scope.launch {
             note = if (card) "Looking at the card…" else "Setting the program start…"
             val r = runCatching {
-                if (card) Jdvr.liveTv.rememberStartCard(itemId, at) else Jdvr.liveTv.setProgramStart(itemId, at)
+                if (card) Jdvr.backend.rememberStartCard(itemId, at) else Jdvr.backend.setProgramStart(itemId, at)
             }.getOrNull()
             programStartBusy = false
             note = when {
@@ -434,7 +439,7 @@ fun RecordingPlayerScreen(
                 r.trimmed -> r.message + " Start the recording again to see it."
                 else -> r.message
             }
-            if (r?.ok == true && !r.trimmed) runCatching { segments = Jdvr.liveTv.segments(itemId) }
+            if (r?.ok == true && !r.trimmed) runCatching { segments = Jdvr.backend.segments(itemId) }
             com.mackandall.jdvr.ui.MoveWatcher.kick()
             delay(7000)
             note = null
@@ -448,7 +453,7 @@ fun RecordingPlayerScreen(
         val at = player.currentPosition / 1000.0
         scope.launch {
             note = "Finding where a cut can start…"
-            val k = runCatching { Jdvr.liveTv.keyframes(itemId, at) }.getOrNull()
+            val k = runCatching { Jdvr.backend.keyframes(itemId, at) }.getOrNull()
             val times = listOfNotNull(k?.before, k?.after)
             if (times.isEmpty()) {
                 programStartBusy = false
@@ -457,7 +462,7 @@ fun RecordingPlayerScreen(
                 note = null
                 return@launch
             }
-            val pictures = times.map { t -> async { runCatching { Jdvr.liveTv.frame(itemId, t) }.getOrNull() } }.map { it.await() }
+            val pictures = times.map { t -> async { runCatching { Jdvr.backend.frame(itemId, t) }.getOrNull() } }.map { it.await() }
             keyChoices = times.mapIndexed { i, t -> KeyChoice(t, pictures[i], before = t <= at + 0.02) }
             programStartBusy = false
             note = null
@@ -472,14 +477,14 @@ fun RecordingPlayerScreen(
         programStartBusy = true
         scope.launch {
             note = "Setting the program start…"
-            val r = runCatching { Jdvr.liveTv.setProgramStart(itemId, seconds, keyframe = true) }.getOrNull()
+            val r = runCatching { Jdvr.backend.setProgramStart(itemId, seconds, keyframe = true) }.getOrNull()
             programStartBusy = false
             note = when {
                 r == null -> "Couldn't do it: something may already be working on this recording."
                 r.trimmed -> r.message + " Start the recording again to see it."
                 else -> r.message
             }
-            if (r?.ok == true && !r.trimmed) runCatching { segments = Jdvr.liveTv.segments(itemId) }
+            if (r?.ok == true && !r.trimmed) runCatching { segments = Jdvr.backend.segments(itemId) }
             com.mackandall.jdvr.ui.MoveWatcher.kick()
             delay(7000)
             note = null
@@ -717,7 +722,7 @@ fun RecordingPlayerScreen(
                                             armed = "clear"
                                         } else {
                                             armed = null
-                                            scope.launch { editDone(runCatching { Jdvr.liveTv.clearProgramStart(itemId) }.getOrNull(), "Couldn't remove it.") }
+                                            scope.launch { editDone(runCatching { Jdvr.backend.clearProgramStart(itemId) }.getOrNull(), "Couldn't remove it.") }
                                         }
                                     }
                                 }
@@ -728,7 +733,7 @@ fun RecordingPlayerScreen(
                                         } else {
                                             armed = null
                                             scope.launch {
-                                                val r = runCatching { Jdvr.liveTv.undoTrim(itemId) }.getOrNull()
+                                                val r = runCatching { Jdvr.backend.undoTrim(itemId) }.getOrNull()
                                                 editDone(r?.copy(trimmed = r.ok), "Couldn't undo it.")
                                             }
                                         }
@@ -766,7 +771,7 @@ fun RecordingPlayerScreen(
 private fun SegmentBar(
     position: Long,
     duration: Long,
-    segments: List<LiveTvRepository.Segment>,
+    segments: List<Segment>,
     modifier: Modifier,
 ) {
     BoxWithConstraints(modifier.height(10.dp)) {

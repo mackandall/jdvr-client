@@ -43,7 +43,7 @@ import androidx.compose.ui.unit.sp
 import androidx.tv.material3.Text
 import coil3.compose.AsyncImage
 import com.mackandall.jdvr.data.Jdvr
-import com.mackandall.jdvr.data.LiveTvRepository.ItemDetails
+import com.mackandall.jdvr.data.ItemDetails
 import com.mackandall.jdvr.ui.Button
 import com.mackandall.jdvr.ui.Jc
 import com.mackandall.jdvr.ui.seeThrough
@@ -99,7 +99,7 @@ private fun Poster(
     // An episode shows its show's poster; anything else its own.
     val image = (if (d.item.type == "Episode") d.item.seriesId else null) ?: d.item.id
     Box(Modifier.width(width.dp).height((width * 1.5f).dp).clip(RoundedCornerShape(6.dp)).background(Jc.Panel)) {
-        AsyncImage(model = Jdvr.liveTv.imageUrl(image, width * 4), contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxWidth().fillMaxHeight())
+        AsyncImage(model = Jdvr.backend.imageUrl(image, width * 4), contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxWidth().fillMaxHeight())
     }
 }
 
