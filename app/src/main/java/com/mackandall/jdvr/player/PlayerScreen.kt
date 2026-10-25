@@ -272,6 +272,7 @@ fun PlayerScreen(
                 player,
                 playFocus,
                 Modifier.align(Alignment.BottomCenter),
+                tick = tick,
                 onRecord = record,
                 onStop = stop,
                 onFromStart = fromStart,
@@ -447,11 +448,13 @@ private fun LiveControls(
     player: ExoPlayer,
     playFocus: FocusRequester,
     modifier: Modifier,
+    // The screen's 1-second tick: how far behind live (and the clock) count on while it shows.
+    tick: Int,
     onRecord: () -> Unit,
     onStop: () -> Unit,
     onFromStart: (UUID) -> Unit,
 ) {
-    val offset = stream.behindLiveMs()
+    val offset = tick.let { stream.behindLiveMs() }
     val paused = stream.pausedAt
     // Paused: behind from the first second, never "● LIVE" beside the Paused line.
     val behind =
