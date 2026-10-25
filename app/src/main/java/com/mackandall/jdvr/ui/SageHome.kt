@@ -55,21 +55,17 @@ import com.mackandall.jdvr.data.Jdvr
 import com.mackandall.jdvr.data.Prefs
 import com.mackandall.jdvr.data.toUuid
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import java.time.Duration
 import java.time.Instant
 import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.ZoneId
 import java.util.UUID
-import com.mackandall.jdvr.data.Drive
 import com.mackandall.jdvr.data.LibItem
 import com.mackandall.jdvr.data.Library
 import com.mackandall.jdvr.data.MarkSymbols
 import com.mackandall.jdvr.data.RecordingCard
-import com.mackandall.jdvr.data.TunerStatus
 import com.mackandall.jdvr.data.Upcoming
-import com.mackandall.jdvr.data.attempt
 
 /** Where SageTV's menu was left, so coming back to Home lands on the same entry. */
 private object SageMenuState {
@@ -129,12 +125,13 @@ fun SageHome(
 ) {
     val prefs = Jdvr.prefs
     val gem = Jc.Style == UiStyle.Gem
-    var recordings by remember { mutableStateOf<List<RecordingCard>>(emptyList()) }
-    var channels by remember { mutableStateOf<List<Channel>>(emptyList()) }
-    var upcoming by remember { mutableStateOf<List<Upcoming>?>(null) }
-    var newCount by remember { mutableStateOf<Int?>(null) }
-    var tuners by remember { mutableStateOf<TunerStatus?>(null) }
-    var drive by remember { mutableStateOf<Drive?>(null) }
+    val data = rememberHomeData()
+    val recordings = data.shows.orEmpty()
+    val channels = data.channels.orEmpty()
+    val upcoming = data.schedule
+    val newCount = data.shows?.sumOf { it.unplayedCount }
+    val tuners = data.tuners
+    val drive = data.extras?.drive
     var now by remember { mutableStateOf(LocalDateTime.now()) }
     var picking by remember { mutableStateOf(false) }
     var signOutArmed by remember { mutableStateOf(false) }
@@ -150,26 +147,7 @@ fun SageHome(
             delay(5_000)
         }
     }
-    LaunchedEffect(Unit) {
-        while (true) {
-            // All at once: the channel list is slow on a small box, and the other panels needn't wait for it.
-            kotlinx.coroutines.coroutineScope {
-                launch { attempt { Jdvr.backend.channels() }?.let { channels = it } }
-                launch { upcoming = Jdvr.backend.schedule().orEmpty() }
-                launch {
-                    Jdvr.backend.recordedShows()?.let { cards ->
-                        recordings = cards
-                        newCount = cards.sumOf { it.unplayedCount }
-                    }
-                }
-                launch { tuners = Jdvr.backend.tuners(null) }
-                launch { drive = attempt { Jdvr.backend.homeExtras() }?.drive }
-            }
-            // No channels yet (the server didn't answer, say just after the TV woke): try again soon.
-            delay(if (channels.isEmpty()) 5_000 else 60_000)
-        }
-    }
-    val last = channels.firstOrNull { it.id.toString() == Jdvr.session.lastChannelId } ?: channels.firstOrNull()
+    val last = data.lastChannel
     val recent =
         Jdvr.session.recentChannels.mapNotNull { id -> channels.firstOrNull { it.id.toString() == id } }
             .filter { it.id != last?.id }

@@ -55,13 +55,10 @@ import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneId
 import java.util.UUID
-import com.mackandall.jdvr.data.HomeExtras
 import com.mackandall.jdvr.data.LibItem
 import com.mackandall.jdvr.data.Library
 import com.mackandall.jdvr.data.MarkSymbols
 import com.mackandall.jdvr.data.RecordingCard
-import com.mackandall.jdvr.data.TunerStatus
-import com.mackandall.jdvr.data.Upcoming
 import com.mackandall.jdvr.data.attempt
 
 /** Home's panels: see-through over the weather sky, solid otherwise. */
@@ -91,17 +88,19 @@ fun HomeScreen(
     returnPoster: UUID? = null,
     onReturned: () -> Unit = {},
 ) {
-    var last by remember { mutableStateOf<Channel?>(null) }
+    val data = rememberHomeData()
+    val last = data.lastChannel
+    val hasLiveTv = data.channels?.isNotEmpty() ?: true
+    val upcoming = data.schedule.orEmpty()
+    val bufferIds = data.bufferIds
+    val tuners = data.tuners
+    val extras = data.extras
+    val loaded = data.loaded
     var fromStart by remember { mutableStateOf<UUID?>(null) }
-    var upcoming by remember { mutableStateOf<List<Upcoming>>(emptyList()) }
-    var fresh by remember { mutableStateOf<List<RecordingCard>?>(null) }
     // Without Episode History, the new-recordings row is Jellyfin's "recently added" instead.
-    var freshFromLibrary by remember { mutableStateOf(false) }
-    // The first round has answered: until then, empty means "not yet", not "none".
-    var loaded by remember { mutableStateOf(false) }
-    var hasLiveTv by remember { mutableStateOf(true) }
-    var tuners by remember { mutableStateOf<TunerStatus?>(null) }
-    var bufferIds by remember { mutableStateOf<Set<String>>(emptySet()) }
+    val freshFromLibrary = loaded && data.shows == null
+    var recentlyAdded by remember { mutableStateOf<List<RecordingCard>?>(null) }
+    val fresh = data.shows?.filter { it.unplayedCount > 0 }?.take(6) ?: recentlyAdded
     var now by remember { mutableStateOf(LocalDateTime.now()) }
     // Today's weather (Settings › Weather on Home), refreshed every 15 minutes.
     val prefs = Jdvr.prefs
@@ -117,7 +116,6 @@ fun HomeScreen(
     }
     val scope = rememberCoroutineScope()
     val symbols = rememberMarkSymbols()
-    var extras by remember { mutableStateOf<HomeExtras?>(null) }
 
     // The clock.
     LaunchedEffect(Unit) {
@@ -126,25 +124,12 @@ fun HomeScreen(
             delay(5_000)
         }
     }
-    LaunchedEffect(Unit) {
-        while (true) {
-            val channels = attempt { Jdvr.backend.channels() }
-            // A failed call isn't "no Live TV": keep what was shown.
-            if (channels != null) {
-                hasLiveTv = channels.isNotEmpty()
-                last = channels.firstOrNull { it.id.toString() == Jdvr.session.lastChannelId } ?: channels.firstOrNull()
-            }
-            fromStart = last?.now?.takeIf { it.isRecording }?.let { Jdvr.backend.recordingOfProgram(it.id) }
-            upcoming = Jdvr.backend.schedule().orEmpty()
-            bufferIds = Jdvr.backend.bufferPrograms()
-            val shows = Jdvr.backend.recordedShows()
-            freshFromLibrary = shows == null
-            fresh = shows?.filter { it.unplayedCount > 0 }?.take(6) ?: Jdvr.backend.recentlyAdded(6).orEmpty()
-            tuners = Jdvr.backend.tuners(null)
-            extras = attempt { Jdvr.backend.homeExtras() }
-            loaded = true
-            delay(60_000)
-        }
+    // Each round: the last channel's recording (to watch from the start), and the libraries' row
+    // when there's no Recorded Shows.
+    LaunchedEffect(data.round) {
+        if (!loaded) return@LaunchedEffect
+        fromStart = last?.now?.takeIf { it.isRecording }?.let { Jdvr.backend.recordingOfProgram(it.id) }
+        if (data.shows == null) recentlyAdded = Jdvr.backend.recentlyAdded(6) ?: recentlyAdded.orEmpty()
     }
 
     // What each tile has to show.
