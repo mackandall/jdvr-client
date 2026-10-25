@@ -104,6 +104,7 @@ fun PlayerScreen(
     val stream = remember(channelId) { LiveStream(channelId, player, scope, ui) }
     val formats = rememberPlayingFormats(player)
     var tick by remember { mutableIntStateOf(0) }
+    val exit by androidx.compose.runtime.rememberUpdatedState(onExit)
 
     DisposableEffect(stream) {
         val listener =
@@ -140,6 +141,8 @@ fun PlayerScreen(
         val job = stream.start()
         onDispose { stream.stopPlaying(job) }
     }
+    // Leaving the app (Home, another app, the TV sleeping) leaves live TV too: it frees the tuner.
+    OnLeaveApp { exit() }
     LaunchedEffect(stream, stream.attempt) { stream.watchForStalls() }
     LaunchedEffect(stream.tuning, stream.attempt) {
         if (!stream.tuning && ui.note?.startsWith("Reconnecting") == true) ui.note = null
@@ -186,7 +189,6 @@ fun PlayerScreen(
 
     // The controls' handlers stay the same between key down and key up: rebuilt (every key press
     // recomposes the screen), the row's buttons lost their clicks.
-    val exit by androidx.compose.runtime.rememberUpdatedState(onExit)
     val playRecording by androidx.compose.runtime.rememberUpdatedState(onPlayRecording)
     val record: () -> Unit =
         remember(channelId) {
@@ -326,6 +328,18 @@ fun PlayerScreen(
         stream.busy?.let { status ->
             TunersBusy(status, channel, onWatch = { onChannelChange(it) }, onCancel = onExit, modifier = Modifier.align(Alignment.Center))
         }
+    }
+}
+
+/** [action] when the app goes out of sight (Home, another app, the TV going to sleep). */
+@Composable
+internal fun OnLeaveApp(action: () -> Unit) {
+    val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
+    val current by androidx.compose.runtime.rememberUpdatedState(action)
+    DisposableEffect(lifecycle) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, e -> if (e == androidx.lifecycle.Lifecycle.Event.ON_STOP) current() }
+        lifecycle.addObserver(observer)
+        onDispose { lifecycle.removeObserver(observer) }
     }
 }
 

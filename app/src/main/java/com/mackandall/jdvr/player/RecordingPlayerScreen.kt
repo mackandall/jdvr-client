@@ -168,6 +168,8 @@ fun RecordingPlayerScreen(
         }
     }
 
+    // Leaving the app (Home, another app, the TV going to sleep) pauses it, as the remote's Pause would.
+    OnLeaveApp { player.pause() }
     LaunchedEffect(itemId) { rec.followSegments() }
     LaunchedEffect(Unit) {
         focus.requestFocus()
