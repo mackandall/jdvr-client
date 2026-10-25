@@ -43,6 +43,7 @@ import com.mackandall.jdvr.BuildConfig
 import com.mackandall.jdvr.data.Jdvr
 import com.mackandall.jdvr.data.Prefs
 import com.mackandall.jdvr.data.Library
+import com.mackandall.jdvr.data.attempt
 
 /**
  * Settings: things set once for the whole app. Actions that belong to what's on screen (Record,
@@ -309,7 +310,7 @@ private fun TownRow() {
         if (q.isEmpty()) return
         scope.launch {
             note =
-                runCatching { com.mackandall.jdvr.data.Weather.find(q) }.getOrNull()?.let {
+                attempt { com.mackandall.jdvr.data.Weather.find(q) }?.let {
                     prefs.changeWeatherPlace(it)
                     text = ""
                     "Weather for ${it.name}"

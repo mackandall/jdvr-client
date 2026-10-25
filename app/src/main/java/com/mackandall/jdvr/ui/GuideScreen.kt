@@ -74,6 +74,7 @@ import com.mackandall.jdvr.data.EhProgram
 import com.mackandall.jdvr.data.MarkSymbols
 import com.mackandall.jdvr.data.ScheduleState
 import com.mackandall.jdvr.data.ShowForget
+import com.mackandall.jdvr.data.attempt
 
 private const val WINDOW_MINUTES = 120L
 private const val STEP_MINUTES = 30L
@@ -179,7 +180,7 @@ fun GuideScreen(
     // Channel groups (all, favourites): a button by the title picks the one shown, and it's kept.
     var groups by remember { mutableStateOf<List<String>>(emptyList()) }
     val groupFocus = remember { FocusRequester() }
-    LaunchedEffect(Unit) { groups = runCatching { Jdvr.backend.channelGroups() }.getOrDefault(emptyList()) }
+    LaunchedEffect(Unit) { groups = attempt { Jdvr.backend.channelGroups() } ?: emptyList() }
     val group = Jdvr.prefs.channelGroup
     LaunchedEffect(group) {
         try {

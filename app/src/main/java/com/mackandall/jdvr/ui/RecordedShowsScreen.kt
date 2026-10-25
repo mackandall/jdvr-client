@@ -57,6 +57,7 @@ import java.time.ZoneId
 import java.util.UUID
 import com.mackandall.jdvr.data.CommercialBadge
 import com.mackandall.jdvr.data.RecordingCard
+import com.mackandall.jdvr.data.attempt
 
 private fun local(iso: String?): LocalDateTime? = iso?.let { runCatching { LocalDateTime.ofInstant(Instant.parse(it), ZoneId.systemDefault()) }.getOrNull() }
 
@@ -116,8 +117,8 @@ fun RecordedShowsScreen(
         plain = shows == null
         cards = shows ?: Jdvr.backend.jellyfinRecordings()
         // Comskip's badges for the cards (a show's: how many of its recordings are scanned).
-        badges = cards?.mapNotNull { it.id.toUuid() }?.let { ids -> runCatching { Jdvr.backend.commercialBadges(ids) }.getOrNull() }.orEmpty() +
-            cards?.filter { it.id.toUuid() == null }?.map { it.id }?.let { ids -> runCatching { Jdvr.backend.showCommercialBadges(ids) }.getOrNull() }.orEmpty()
+        badges = cards?.mapNotNull { it.id.toUuid() }?.let { ids -> attempt { Jdvr.backend.commercialBadges(ids) } }.orEmpty() +
+            cards?.filter { it.id.toUuid() == null }?.map { it.id }?.let { ids -> attempt { Jdvr.backend.showCommercialBadges(ids) } }.orEmpty()
         loaded = true
         // Asked to open a show (from Home): straight to its episodes.
         openShowId?.let { id -> cards?.firstOrNull { it.id == id }?.let { openShow = it } }
@@ -446,7 +447,7 @@ private fun ShowEpisodes(
         onShowChanged = { reload++ },
         onToggleWatched = { e ->
             scope.launch {
-                runCatching { Jdvr.backend.setPlayed(e.id, !e.played) }
+                attempt { Jdvr.backend.setPlayed(e.id, !e.played) }
                 reload++
             }
         },

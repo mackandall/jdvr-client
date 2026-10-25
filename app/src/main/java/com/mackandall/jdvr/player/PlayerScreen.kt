@@ -82,6 +82,8 @@ import com.mackandall.jdvr.data.Buffer
 import com.mackandall.jdvr.data.ItemDetails
 import com.mackandall.jdvr.data.MarkSymbols
 import com.mackandall.jdvr.data.TunerStatus
+import com.mackandall.jdvr.data.attempt
+import com.mackandall.jdvr.data.attemptResult
 
 /** This visit's buffer: the one recording now (an older, finished one is the wrong place to land). */
 private fun List<Buffer>.currentBuffer() = lastOrNull { it.recording && it.itemId != null }
@@ -201,7 +203,7 @@ fun PlayerScreen(
     }
 
     LaunchedEffect(Unit) {
-        runCatching { channels = Jdvr.backend.channels() }
+        attempt { channels = Jdvr.backend.channels() }
         focus.requestFocus()
     }
 
@@ -227,7 +229,7 @@ fun PlayerScreen(
                     val p = kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) { Jdvr.backend.startLive(channelId) }
                     if (!isActive) {
                         Timber.i("Channel %s opened after its player left; closing it", channelId)
-                        p.liveStreamId?.let { id -> kotlinx.coroutines.MainScope().launch { runCatching { Jdvr.backend.closeLiveStream(id) } } }
+                        p.liveStreamId?.let { id -> kotlinx.coroutines.MainScope().launch { attempt { Jdvr.backend.closeLiveStream(id) } } }
                         return@launch
                     }
                     current = p
@@ -266,7 +268,7 @@ fun PlayerScreen(
             current?.let { p ->
                 // Closing the live stream frees the tuner: finished in the background even as the
                 // screen goes away (waiting for it here froze the screen for ~2 s).
-                kotlinx.coroutines.MainScope().launch { runCatching { Jdvr.backend.reportStopped(p) } }
+                kotlinx.coroutines.MainScope().launch { attempt { Jdvr.backend.reportStopped(p) } }
             }
         }
     }
@@ -338,8 +340,8 @@ fun PlayerScreen(
         nowDetails = null
         nextUp = null
         val now = channels.firstOrNull { it.id == channelId }?.now ?: return@LaunchedEffect
-        nowDetails = runCatching { Jdvr.backend.details(now.id) }.getOrNull()
-        nextUp = runCatching { Jdvr.backend.programs(listOf(channelId), now.end, now.end.plusHours(3)) }.getOrNull()?.firstOrNull { !it.start.isBefore(now.end) }
+        nowDetails = attempt { Jdvr.backend.details(now.id) }
+        nextUp = attempt { Jdvr.backend.programs(listOf(channelId), now.end, now.end.plusHours(3)) }?.firstOrNull { !it.start.isBefore(now.end) }
     }
     LaunchedEffect(miniOpen) { if (!miniOpen) runCatching { focus.requestFocus() } }
 
@@ -431,7 +433,7 @@ fun PlayerScreen(
         val realTimer = now.timerId?.takeIf { now.id.toString().plainId() !in bufferIds }
         scope.launch {
             note =
-                runCatching {
+                attemptResult {
                     when {
                         b?.kept == true -> {
                             Jdvr.backend.keepBuffer(b.id, false)
@@ -458,7 +460,7 @@ fun PlayerScreen(
                 }.getOrElse { "Couldn't change the recording: ${it.message}" }
             buffers = Jdvr.backend.buffers(channelId)
             bufferIds = Jdvr.backend.bufferPrograms()
-            runCatching { channels = Jdvr.backend.channels() }
+            attempt { channels = Jdvr.backend.channels() }
             delay(4000)
             note = null
         }
@@ -722,7 +724,7 @@ fun PlayerScreen(
                             scope.launch {
                                 note = msg
                                 delay(1500)
-                                runCatching { channels = Jdvr.backend.channels() }
+                                attempt { channels = Jdvr.backend.channels() }
                                 buffers = Jdvr.backend.buffers(channelId)
                                 bufferIds = Jdvr.backend.bufferPrograms()
                                 delay(2500)

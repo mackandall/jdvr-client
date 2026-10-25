@@ -46,6 +46,8 @@ import java.time.ZoneId
 import com.mackandall.jdvr.data.FavouriteEntry
 import com.mackandall.jdvr.data.FavouritesList
 import com.mackandall.jdvr.data.SeriesScheduled
+import com.mackandall.jdvr.data.attempt
+import com.mackandall.jdvr.data.attemptResult
 
 /**
  * Series recordings (Jellyfin's, tied to the guide's series id) beside Recording Favourites
@@ -68,18 +70,15 @@ fun SeriesScreen(entry: FocusRequester) {
     // Recording Favourites answered (or didn't: the JellyDVR Schedule plugin isn't on this server).
     var favouritesLoaded by remember { mutableStateOf(false) }
     LaunchedEffect(reload) {
-        series = runCatching { Jdvr.backend.seriesTimers() }.getOrNull()
-        scheduled = runCatching { Jdvr.backend.seriesScheduled() }.getOrDefault(emptyMap())
+        series = attempt { Jdvr.backend.seriesTimers() }
+        scheduled = attempt { Jdvr.backend.seriesScheduled() } ?: emptyMap()
         favourites = Jdvr.backend.favourites()
         favouritesLoaded = true
     }
 
     fun act(block: suspend () -> String?) {
         scope.launch {
-            note = runCatching { block() }.getOrElse {
-                android.util.Log.w("JDVR", "series action failed", it)
-                "Didn't work: ${it.message ?: it.javaClass.simpleName}"
-            }
+            note = attemptResult { block() }.getOrElse { "Didn't work: ${it.message ?: it.javaClass.simpleName}" }
             delay(1500) // the server schedules in the background
             reload++
         }

@@ -69,6 +69,7 @@ import com.mackandall.jdvr.data.MarkSymbols
 import com.mackandall.jdvr.data.RecordingCard
 import com.mackandall.jdvr.data.TunerStatus
 import com.mackandall.jdvr.data.Upcoming
+import com.mackandall.jdvr.data.attempt
 
 /** Where SageTV's menu was left, so coming back to Home lands on the same entry. */
 private object SageMenuState {
@@ -153,7 +154,7 @@ fun SageHome(
         while (true) {
             // All at once: the channel list is slow on a small box, and the other panels needn't wait for it.
             kotlinx.coroutines.coroutineScope {
-                launch { runCatching { Jdvr.backend.channels() }.getOrNull()?.let { channels = it } }
+                launch { attempt { Jdvr.backend.channels() }?.let { channels = it } }
                 launch { upcoming = Jdvr.backend.schedule().orEmpty() }
                 launch {
                     Jdvr.backend.recordedShows()?.let { cards ->
@@ -162,7 +163,7 @@ fun SageHome(
                     }
                 }
                 launch { tuners = Jdvr.backend.tuners(null) }
-                launch { drive = runCatching { Jdvr.backend.homeExtras() }.getOrNull()?.drive }
+                launch { drive = attempt { Jdvr.backend.homeExtras() }?.drive }
             }
             // No channels yet (the server didn't answer, say just after the TV woke): try again soon.
             delay(if (channels.isEmpty()) 5_000 else 60_000)

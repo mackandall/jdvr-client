@@ -62,6 +62,7 @@ import com.mackandall.jdvr.data.MarkSymbols
 import com.mackandall.jdvr.data.RecordingCard
 import com.mackandall.jdvr.data.TunerStatus
 import com.mackandall.jdvr.data.Upcoming
+import com.mackandall.jdvr.data.attempt
 
 /** Home's panels: see-through over the weather sky, solid otherwise. */
 private val LocalSeeThrough = androidx.compose.runtime.compositionLocalOf { false }
@@ -110,7 +111,7 @@ fun HomeScreen(
         val place = prefs.weatherPlace ?: return@LaunchedEffect
         if (!prefs.weatherOn) return@LaunchedEffect
         while (true) {
-            runCatching { com.mackandall.jdvr.data.Weather.now(place, prefs.fahrenheit) }.getOrNull()?.let { weather = it }
+            attempt { com.mackandall.jdvr.data.Weather.now(place, prefs.fahrenheit) }?.let { weather = it }
             delay(15 * 60_000L)
         }
     }
@@ -127,7 +128,7 @@ fun HomeScreen(
     }
     LaunchedEffect(Unit) {
         while (true) {
-            val channels = runCatching { Jdvr.backend.channels() }.getOrNull()
+            val channels = attempt { Jdvr.backend.channels() }
             // A failed call isn't "no Live TV": keep what was shown.
             if (channels != null) {
                 hasLiveTv = channels.isNotEmpty()
@@ -140,7 +141,7 @@ fun HomeScreen(
             freshFromLibrary = shows == null
             fresh = shows?.filter { it.unplayedCount > 0 }?.take(6) ?: Jdvr.backend.recentlyAdded(6).orEmpty()
             tuners = Jdvr.backend.tuners(null)
-            extras = runCatching { Jdvr.backend.homeExtras() }.getOrNull()
+            extras = attempt { Jdvr.backend.homeExtras() }
             loaded = true
             delay(60_000)
         }
@@ -161,7 +162,7 @@ fun HomeScreen(
                 // Watch it from the start; Back to live in the player tunes its channel.
                 scope.launch {
                     val pid = r.programId?.toUuid() ?: return@launch
-                    val channel = runCatching { Jdvr.backend.program(pid)?.channelId }.getOrNull()
+                    val channel = attempt { Jdvr.backend.program(pid)?.channelId }
                     Jdvr.backend.recordingOfProgram(pid)?.let { onPlayRecording(PlayRecording(it, startMs = 0L, liveChannelId = channel)) }
                 }
             }
@@ -371,7 +372,7 @@ private fun LibraryRows(
     var rows by remember { mutableStateOf(libraryRowsCache.takeIf { it.first == Jdvr.serverKey }?.second.orEmpty()) }
     LaunchedEffect(prefs.hiddenLibraries, prefs.homeHiddenLibraries, prefs.libraryOrder) {
         while (true) {
-            runCatching { Jdvr.backend.libraries() }.getOrNull()?.let { libs ->
+            attempt { Jdvr.backend.libraries() }?.let { libs ->
                 rows =
                     libs.filter { it.id.toString() !in prefs.hiddenLibraries && it.id.toString() !in prefs.homeHiddenLibraries }.inMenuOrder().mapNotNull { l ->
                         Jdvr.backend.latestIn(l.id)?.takeIf { it.isNotEmpty() }?.let { l to it }

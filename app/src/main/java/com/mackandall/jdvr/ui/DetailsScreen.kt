@@ -57,6 +57,8 @@ import java.util.UUID
 import com.mackandall.jdvr.data.CommercialBadge
 import com.mackandall.jdvr.data.ItemDetails
 import com.mackandall.jdvr.data.Person
+import com.mackandall.jdvr.data.attemptResult
+import com.mackandall.jdvr.data.attempt
 
 private val DateFormat = DateTimeFormatter.ofPattern("MMM d, yyyy")
 
@@ -77,7 +79,7 @@ fun DetailsPage(
     var d by remember { mutableStateOf<ItemDetails?>(null) }
     var note by remember { mutableStateOf<String?>(null) }
     var commercials by remember { mutableStateOf<CommercialBadge?>(null) }
-    LaunchedEffect(itemId, refresh, CommercialMarks.changed) { commercials = runCatching { Jdvr.backend.commercialBadges(listOf(itemId)).values.firstOrNull() }.getOrNull() }
+    LaunchedEffect(itemId, refresh, CommercialMarks.changed) { commercials = attempt { Jdvr.backend.commercialBadges(listOf(itemId)).values.firstOrNull() } }
     LaunchedEffect(note) {
         if (note != null) {
             kotlinx.coroutines.delay(4000)
@@ -88,7 +90,7 @@ fun DetailsPage(
     val scope = rememberCoroutineScope()
     val play = remember { FocusRequester() }
     LaunchedEffect(itemId, refresh) {
-        runCatching { Jdvr.backend.details(itemId) }.onSuccess { d = it }.onFailure { error = it.message }
+        attemptResult { Jdvr.backend.details(itemId) }.onSuccess { d = it }.onFailure { error = it.message }
     }
     LaunchedEffect(d != null) { if (d != null) runCatching { play.requestFocus() } }
 
@@ -140,8 +142,8 @@ fun DetailsPage(
                         if (resume) Button("Play from start") { onPlay(PlayRecording(item.id, startMs = 0L)) }
                         Button(if (item.played) "Mark unwatched" else "Mark watched") {
                             scope.launch {
-                                runCatching { Jdvr.backend.setPlayed(item.id, !item.played) }
-                                runCatching { d = Jdvr.backend.details(item.id) }
+                                attempt { Jdvr.backend.setPlayed(item.id, !item.played) }
+                                attempt { d = Jdvr.backend.details(item.id) }
                             }
                         }
                         actions(det) { note = it }

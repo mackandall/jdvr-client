@@ -42,6 +42,7 @@ import com.mackandall.jdvr.data.MoveProgress
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import com.mackandall.jdvr.data.attempt
 
 private val MoveBlue = Color(0xFF00A4DC)
 private val CutAmber = Color(0xFFE0A100)
@@ -79,7 +80,7 @@ object MoveWatcher {
     /** Runs for the app's lifetime (from the root composable). */
     suspend fun run() {
         while (true) {
-            val list = runCatching { Jdvr.backend.moving() }.getOrNull().orEmpty()
+            val list = attempt { Jdvr.backend.moving() }.orEmpty()
             val map = HashMap<String, MoveProgress>()
             list.forEach { m ->
                 map[m.itemId.plain()] = m
@@ -88,7 +89,7 @@ object MoveWatcher {
             val before = _moving.value.values.map { it.itemId }.toSet()
             if (before.any { id -> list.none { it.itemId == id } }) _finished.value++
             _moving.value = map
-            val cuts = runCatching { Jdvr.backend.cuts() }.getOrNull().orEmpty()
+            val cuts = attempt { Jdvr.backend.cuts() }.orEmpty()
             _cutting.value = HashMap<String, CutJob>().apply {
                 cuts.forEach { c ->
                     put(c.itemId.plain(), c)

@@ -47,6 +47,7 @@ import kotlinx.coroutines.delay
 import java.util.UUID
 import com.mackandall.jdvr.data.LibItem
 import com.mackandall.jdvr.data.Library
+import com.mackandall.jdvr.data.attempt
 
 /** The sections in the left rail. */
 enum class Screen(
@@ -174,9 +175,9 @@ fun AppRoot(
     // Trash only where Episode History keeps one (or still holds something from when it did).
     var hasTrash by remember { mutableStateOf(false) }
     LaunchedEffect(signedIn, librariesLoad) {
-        if (signedIn) runCatching { Jdvr.backend.libraries() }.getOrNull()?.let { libraries = it }
+        if (signedIn) attempt { Jdvr.backend.libraries() }?.let { libraries = it }
         if (signedIn) hasDvr = Jdvr.backend.hasDvr()
-        if (signedIn) hasTrash = runCatching { Jdvr.backend.trash() }.getOrNull()?.let { it.enabled || it.items.isNotEmpty() } == true
+        if (signedIn) hasTrash = attempt { Jdvr.backend.trash() }?.let { it.enabled || it.items.isNotEmpty() } == true
     }
     val shownLibraries = libraries.filter { it.id.toString() !in Jdvr.prefs.hiddenLibraries }
     val currentLibrary = shownLibraries.firstOrNull { it.id == libraryId }

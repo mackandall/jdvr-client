@@ -47,6 +47,8 @@ import com.mackandall.jdvr.data.Airing
 import com.mackandall.jdvr.data.AiringsResult
 import com.mackandall.jdvr.data.DateChannel
 import com.mackandall.jdvr.data.RerecordState
+import com.mackandall.jdvr.data.attemptResult
+import com.mackandall.jdvr.data.attempt
 
 private val Reasons = listOf("Partial", "Picture trouble", "Audio trouble", "Ads or edited version", "Other")
 
@@ -134,7 +136,7 @@ fun AiringsDialog(
     val scope = rememberCoroutineScope()
     val first = remember { FocusRequester() }
     LaunchedEffect(itemId, programId) {
-        result = runCatching { Jdvr.backend.airings(itemId, programId) }.getOrNull()
+        result = attempt { Jdvr.backend.airings(itemId, programId) }
         loaded = true
     }
     LaunchedEffect(loaded) {
@@ -149,7 +151,7 @@ fun AiringsDialog(
         if (busy) return
         busy = true
         scope.launch {
-            val r = runCatching { Jdvr.backend.rerecord(id, pid, reason) }.getOrNull()
+            val r = attempt { Jdvr.backend.rerecord(id, pid, reason) }
             onNote(r?.message?.ifEmpty { null } ?: "It couldn't be set to re-record.")
             busy = false
             onDismiss()
@@ -161,7 +163,7 @@ fun AiringsDialog(
         if (busy) return
         busy = true
         scope.launch {
-            val ok = runCatching { Jdvr.backend.record(pid, series = false) }.isSuccess
+            val ok = attemptResult { Jdvr.backend.record(pid, series = false) }.isSuccess
             onNote(if (ok) "Recording ${a.name} ${localOf(a.start)?.let { "on " + it.day() + " at " + it.time() } ?: ""}" else "It couldn't be scheduled.")
             busy = false
             onDismiss()
@@ -287,7 +289,7 @@ fun RerecordButtons(
     var armedCancel by remember(itemId) { mutableStateOf(false) }
     val rights = deviceRights()
     val scope = rememberCoroutineScope()
-    LaunchedEffect(itemId, check) { state = runCatching { Jdvr.backend.rerecordState(itemId) }.getOrNull() }
+    LaunchedEffect(itemId, check) { state = attempt { Jdvr.backend.rerecordState(itemId) } }
     LaunchedEffect(armedCancel) {
         if (armedCancel) {
             delay(4000)

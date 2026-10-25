@@ -60,6 +60,7 @@ import kotlinx.coroutines.launch
 import java.util.UUID
 import com.mackandall.jdvr.data.LibItem
 import com.mackandall.jdvr.data.MarkSymbols
+import com.mackandall.jdvr.data.attempt
 
 /** What was last searched for, so Search opens with it again. */
 private object LastSearch {
@@ -86,7 +87,7 @@ fun SearchScreen(
     var show by remember { mutableStateOf<LibItem?>(null) }
     var program by remember { mutableStateOf<Program?>(null) }
     var note by remember { mutableStateOf<String?>(null) }
-    val channels by produceState<List<Channel>>(emptyList()) { value = runCatching { Jdvr.backend.allChannels() }.getOrDefault(emptyList()) }
+    val channels by produceState<List<Channel>>(emptyList()) { value = attempt { Jdvr.backend.allChannels() } ?: emptyList() }
     val symbols = rememberMarkSymbols()
     val focusManager = LocalFocusManager.current
     var fieldFocused by remember { mutableStateOf(false) }
@@ -119,8 +120,8 @@ fun SearchScreen(
             return@LaunchedEffect
         }
         delay(400)
-        library = runCatching { Jdvr.backend.searchLibrary(q) }.getOrDefault(emptyList())
-        guide = runCatching { Jdvr.backend.searchGuide(q) }.getOrDefault(emptyList())
+        library = attempt { Jdvr.backend.searchLibrary(q) } ?: emptyList()
+        guide = attempt { Jdvr.backend.searchGuide(q) } ?: emptyList()
     }
     LaunchedEffect(note) {
         if (note != null) {

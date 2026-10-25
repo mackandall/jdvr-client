@@ -232,7 +232,7 @@ class JellyfinBackend private constructor(
                 source.supportsDirectStream -> PlayMethod.DIRECT_STREAM
                 else -> PlayMethod.TRANSCODE
             }
-        val hls = if (method == PlayMethod.TRANSCODE) null else runCatching { hlsOf(channelId, source.id, source.liveStreamId, response.playSessionId) }.onFailure { Timber.w(it, "No HLS for %s", channelId) }.getOrNull()
+        val hls = if (method == PlayMethod.TRANSCODE) null else attemptResult { hlsOf(channelId, source.id, source.liveStreamId, response.playSessionId) }.onFailure { Timber.w(it, "No HLS for %s", channelId) }.getOrNull()
         Timber.i("Live %s: %s via %s; HLS %s", channelId, method, url.substringBefore('?'), if (hls != null) "ready" else "none")
         LivePlayback(channelId, url, source.id, source.liveStreamId, response.playSessionId, method, hls ?: url.takeIf { method == PlayMethod.TRANSCODE })
     }
@@ -575,9 +575,9 @@ class JellyfinBackend private constructor(
         libraryId: UUID,
         limit: Int,
     ): List<LibItem>? =
-        runCatching {
+        attempt {
             io { api.userLibraryApi.getLatestMedia(userId = Jdvr.userId, parentId = libraryId, limit = limit).content.map(::toLibItem) }
-        }.getOrNull()
+        }
 
     override suspend fun setPlayed(
         id: UUID,
@@ -614,14 +614,14 @@ class JellyfinBackend private constructor(
     override suspend fun schedule(): List<Upcoming>? = upcoming() ?: jellyfinTimers()
 
     override suspend fun hasDvr(): Boolean {
-        val channels = runCatching { io { api.liveTvApi.getLiveTvChannels(userId = Jdvr.userId, limit = 1).content.totalRecordCount } }.getOrNull() ?: return true
+        val channels = attempt { io { api.liveTvApi.getLiveTvChannels(userId = Jdvr.userId, limit = 1).content.totalRecordCount } } ?: return true
         if (channels > 0) return true
-        val recordings = runCatching { io { api.liveTvApi.getRecordings(userId = Jdvr.userId, limit = 1).content.totalRecordCount } }.getOrNull() ?: return true
+        val recordings = attempt { io { api.liveTvApi.getRecordings(userId = Jdvr.userId, limit = 1).content.totalRecordCount } } ?: return true
         return recordings > 0
     }
 
     private suspend fun jellyfinTimers(): List<Upcoming>? =
-        runCatching {
+        attempt {
             io { api.liveTvApi.getTimers().content.items }.mapNotNull { t ->
                 val start = t.startDate ?: return@mapNotNull null
                 val end = t.endDate ?: return@mapNotNull null
@@ -641,10 +641,10 @@ class JellyfinBackend private constructor(
                     recordingNow = t.status == org.jellyfin.sdk.model.api.RecordingStatus.IN_PROGRESS,
                 )
             }.sortedBy { it.start }
-        }.getOrNull()
+        }
 
     override suspend fun jellyfinRecordings(): List<RecordingCard>? =
-        runCatching {
+        attempt {
             io {
                 api.liveTvApi.getRecordings(
                     userId = Jdvr.userId,
@@ -667,10 +667,10 @@ class JellyfinBackend private constructor(
                         unplayedCount = if (d.userData?.played == true) 0 else 1,
                     )
                 }
-        }.getOrNull()
+        }
 
     override suspend fun recentlyAdded(limit: Int): List<RecordingCard>? =
-        runCatching {
+        attempt {
             io {
                 api.userLibraryApi.getLatestMedia(
                     userId = Jdvr.userId,
@@ -694,7 +694,7 @@ class JellyfinBackend private constructor(
                     unplayedCount = 1,
                 )
             }
-        }.getOrNull()
+        }
 
     override suspend fun segments(itemId: UUID): List<Segment> =
         io {

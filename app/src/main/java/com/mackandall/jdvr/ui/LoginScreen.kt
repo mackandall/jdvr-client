@@ -55,6 +55,7 @@ import org.jellyfin.sdk.api.client.extensions.systemApi
 import org.jellyfin.sdk.model.api.AuthenticationResult
 import org.jellyfin.sdk.model.api.QuickConnectDto
 import timber.log.Timber
+import com.mackandall.jdvr.data.attemptQuietly
 
 /**
  * Sign in. The server: the last one signed in to, or one found on the network (Jellyfin answers a
@@ -145,10 +146,10 @@ fun LoginScreen(
         delay(400)
         for (c in candidates) {
             serverName =
-                runCatching {
+                attemptQuietly {
                     val api = Jdvr.jellyfin.createApi(baseUrl = c)
                     withContext(Dispatchers.IO) { api.systemApi.getPublicSystemInfo().content.serverName }
-                }.getOrNull()
+                }
             if (serverName != null) {
                 base = c
                 break
@@ -168,7 +169,7 @@ fun LoginScreen(
             val api = Jdvr.jellyfin.createApi(baseUrl = address)
             val kept = PendingCode.takeIf { it?.server == address && it.attempt == attempt && System.currentTimeMillis() - it.at < 9 * 60_000 }
             var state =
-                kept?.let { k -> runCatching { withContext(Dispatchers.IO) { api.quickConnectApi.getQuickConnectState(secret = k.secret).content } }.getOrNull() }
+                kept?.let { k -> attemptQuietly { withContext(Dispatchers.IO) { api.quickConnectApi.getQuickConnectState(secret = k.secret).content } } }
                     ?: withContext(Dispatchers.IO) { api.quickConnectApi.initiateQuickConnect().content }.also {
                         PendingCode = PendingQuickConnect(address, attempt, it.secret, System.currentTimeMillis())
                     }

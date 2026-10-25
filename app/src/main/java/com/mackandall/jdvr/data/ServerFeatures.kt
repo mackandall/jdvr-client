@@ -69,17 +69,17 @@ object ServerFeatures {
             val api = Jdvr.api ?: return@withContext emptyMap()
             // An administrator sees the server's own list (exact, versions and all).
             val installed =
-                runCatching {
+                attemptQuietly {
                     api.pluginsApi.getPlugins().content
                         .filter { it.status.serialName == "Active" || it.status.serialName == "Restart" }
                         .map { it.id }
                         .toSet()
-                }.getOrNull()
+                }
             plugins.associate { p ->
                 p.id to
                     when {
                         installed != null -> p.id in installed
-                        p.probe != null -> runCatching { api.request(method = HttpMethod.GET, pathTemplate = p.probe); true }.getOrDefault(false)
+                        p.probe != null -> attemptQuietly { api.request(method = HttpMethod.GET, pathTemplate = p.probe); true } ?: false
                         else -> null
                     }
             }

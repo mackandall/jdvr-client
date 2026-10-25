@@ -44,6 +44,8 @@ import kotlinx.coroutines.launch
 import java.util.UUID
 import com.mackandall.jdvr.data.ItemDetails
 import com.mackandall.jdvr.data.LibItem
+import com.mackandall.jdvr.data.attemptResult
+import com.mackandall.jdvr.data.attempt
 
 /** Holding OK does something of its own (Settings › Remote); off, a hold is just a press. */
 val holdEnabled: Boolean get() = Jdvr.prefs.holdOk != Prefs.HOLD_OFF
@@ -99,7 +101,7 @@ fun QuickActions(
     val first = remember { FocusRequester() }
     val scope = rememberCoroutineScope()
     LaunchedEffect(itemId) {
-        runCatching { Jdvr.backend.details(itemId) }.onSuccess { d = it }.onFailure { failed = true }
+        attemptResult { Jdvr.backend.details(itemId) }.onSuccess { d = it }.onFailure { failed = true }
     }
     LaunchedEffect(note) {
         if (note != null) {
@@ -183,7 +185,7 @@ fun QuickActions(
                     val all = if (item.type == "Series") " (all episodes)" else ""
                     Button(if (item.played) "Mark unwatched$all" else "Mark watched$all", modifier = if (onShowPage) firstMod else Modifier.fillMaxWidth()) {
                         scope.launch {
-                            runCatching { Jdvr.backend.setPlayed(item.id, !item.played) }
+                            attemptResult { Jdvr.backend.setPlayed(item.id, !item.played) }
                                 .onSuccess {
                                     note = if (item.played) "Marked unwatched" else "Marked watched"
                                     d = det.copy(item = item.copy(played = !item.played, resumeMs = if (item.played) item.resumeMs else 0L))

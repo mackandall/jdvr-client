@@ -42,6 +42,8 @@ import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneId
 import com.mackandall.jdvr.data.Upcoming
+import com.mackandall.jdvr.data.attemptResult
+import com.mackandall.jdvr.data.attempt
 
 private fun localTime(iso: String): LocalDateTime? = runCatching { LocalDateTime.ofInstant(Instant.parse(iso), ZoneId.systemDefault()) }.getOrNull()
 
@@ -112,8 +114,8 @@ fun ScheduledScreen(
                                 // Recording now: its file so far (Back to live in the player), or its channel.
                                 onWatch = { fromStart ->
                                     scope.launch {
-                                        val program = r.programId?.toUuid()?.let { runCatching { Jdvr.backend.program(it) }.getOrNull() }
-                                        val item = if (fromStart) program?.id?.let { runCatching { Jdvr.backend.recordingOfProgram(it) }.getOrNull() } else null
+                                        val program = r.programId?.toUuid()?.let { attempt { Jdvr.backend.program(it) } }
+                                        val item = if (fromStart) program?.id?.let { attempt { Jdvr.backend.recordingOfProgram(it) } } else null
                                         when {
                                             fromStart && item != null -> onPlayRecording(com.mackandall.jdvr.PlayRecording(item, startMs = 0L, liveChannelId = program?.channelId))
                                             !fromStart && program != null && watchLive != null -> watchLive(program.channelId)
@@ -124,7 +126,7 @@ fun ScheduledScreen(
                                 onCancel = {
                                     scope.launch {
                                         note =
-                                            runCatching {
+                                            attemptResult {
                                                 Jdvr.backend.cancelRecording(r.timerId)
                                                 "Won't record ${r.name} at ${localTime(r.start)?.time()}."
                                             }.getOrElse { "Couldn't cancel: ${it.message}" }

@@ -65,6 +65,7 @@ import kotlinx.coroutines.launch
 import com.mackandall.jdvr.data.ItemDetails
 import com.mackandall.jdvr.data.LibItem
 import com.mackandall.jdvr.data.Person
+import com.mackandall.jdvr.data.attempt
 
 /** One episode as both episode lists show it (a recording, or a library episode). */
 data class EpisodeEntry(
@@ -93,7 +94,7 @@ data class EpisodeEntry(
 
 /** The entries with Comskip's commercial badges added. */
 suspend fun withCommercialBadges(list: List<EpisodeEntry>): List<EpisodeEntry> {
-    val badges = runCatching { Jdvr.backend.commercialBadges(list.map { it.id }) }.getOrDefault(emptyMap())
+    val badges = attempt { Jdvr.backend.commercialBadges(list.map { it.id }) } ?: emptyMap()
     return if (badges.isEmpty()) list else list.map { e -> badges[e.id.plain()]?.let { e.copy(commercials = it.label, commercialState = it.state) } ?: e }
 }
 
@@ -148,7 +149,7 @@ fun EpisodeBrowser(
     var backdrop by remember { mutableStateOf<UUID?>(null) }
     var overview by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(seriesId) {
-        seriesId?.let { id -> runCatching { Jdvr.backend.details(id) }.getOrNull()?.let { backdrop = it.backdropOf; overview = it.item.overview } }
+        seriesId?.let { id -> attempt { Jdvr.backend.details(id) }?.let { backdrop = it.backdropOf; overview = it.item.overview } }
     }
 
     Box(Modifier.fillMaxSize()) {
@@ -268,7 +269,7 @@ private fun ListView(
     // Descriptions the list didn't come with (recordings), fetched as episodes get focus.
     val more = remember { mutableStateMapOf<UUID, LibItem>() }
     LaunchedEffect(focused.id) {
-        if (focused.overview == null && focused.id !in more) runCatching { Jdvr.backend.libItem(focused.id) }.getOrNull()?.let { more[focused.id] = it }
+        if (focused.overview == null && focused.id !in more) attempt { Jdvr.backend.libItem(focused.id) }?.let { more[focused.id] = it }
     }
 
     Column(Modifier.fillMaxSize().padding(start = 28.dp, top = 20.dp, end = 28.dp)) {
@@ -459,7 +460,7 @@ private fun TilesView(
     LaunchedEffect(focusedId) {
         if (focusedId !in details) {
             kotlinx.coroutines.delay(200)
-            runCatching { Jdvr.backend.details(focusedId) }.getOrNull()?.let { details[focusedId] = it }
+            attempt { Jdvr.backend.details(focusedId) }?.let { details[focusedId] = it }
         }
     }
     val d = details[focused.id]

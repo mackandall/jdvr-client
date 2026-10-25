@@ -23,6 +23,8 @@ import com.mackandall.jdvr.data.FavouriteFor
 import com.mackandall.jdvr.data.ProgramStartStatus
 import com.mackandall.jdvr.data.ShowDelete
 import com.mackandall.jdvr.data.ShowForget
+import com.mackandall.jdvr.data.attemptResult
+import com.mackandall.jdvr.data.attempt
 
 /**
  * "Stop recording" for an item being recorded right now: a recording, or a show with an episode
@@ -39,7 +41,7 @@ import com.mackandall.jdvr.data.ShowForget
 fun WatchLiveButtons(itemId: UUID) {
     val watch = LocalWatchLive.current ?: return
     var active by remember(itemId) { mutableStateOf<ActiveRecordings?>(null) }
-    LaunchedEffect(itemId) { active = runCatching { Jdvr.backend.activeRecordings(itemId) }.getOrNull() }
+    LaunchedEffect(itemId) { active = attempt { Jdvr.backend.activeRecordings(itemId) } }
     val list = active?.recordings.orEmpty().filter { it.channelId?.toUuid() != null }
     list.forEach { r ->
         // ▶ as in the guide: the red dot is for what changes the recording (Stop), not for watching it.
@@ -60,7 +62,7 @@ fun StopRecordingButtons(
     var active by remember(itemId) { mutableStateOf<ActiveRecordings?>(null) }
     var check by remember(itemId) { mutableIntStateOf(0) }
     var armed by remember(itemId) { mutableStateOf<String?>(null) }
-    LaunchedEffect(itemId, check) { active = runCatching { Jdvr.backend.activeRecordings(itemId) }.getOrNull() }
+    LaunchedEffect(itemId, check) { active = attempt { Jdvr.backend.activeRecordings(itemId) } }
     LaunchedEffect(armed) {
         if (armed != null) {
             delay(4000)
@@ -77,7 +79,7 @@ fun StopRecordingButtons(
             } else {
                 armed = null
                 scope.launch {
-                    val stopped = runCatching { Jdvr.backend.stopRecording(r.id) }.getOrDefault(false)
+                    val stopped = attempt { Jdvr.backend.stopRecording(r.id) } ?: false
                     onNote(if (stopped) "Recording stopped: what was recorded so far is kept" else "Couldn't stop it (it may have just ended).")
                     check++
                     if (stopped) onStopped()
@@ -120,16 +122,16 @@ fun RecordingActions(
     var commercials by remember(itemId) { mutableStateOf<CommercialStatus?>(null) }
     var commercialsCheck by remember(itemId) { mutableIntStateOf(0) }
     LaunchedEffect(itemId, commercialsCheck) {
-        commercials = runCatching { Jdvr.backend.commercialStatus(itemId) }.getOrNull()
+        commercials = attempt { Jdvr.backend.commercialStatus(itemId) }
         // A scan in progress: check again every few seconds until it's done.
         val scanned = commercials?.inFlight == true
         while (commercials?.inFlight == true) {
             delay(4000)
-            commercials = runCatching { Jdvr.backend.commercialStatus(itemId) }.getOrNull()
+            commercials = attempt { Jdvr.backend.commercialStatus(itemId) }
         }
         if (scanned) CommercialMarks.changed++
     }
-    LaunchedEffect(itemId, reload) { fav = runCatching { Jdvr.backend.favouriteForItem(itemId) }.getOrNull() }
+    LaunchedEffect(itemId, reload) { fav = attempt { Jdvr.backend.favouriteForItem(itemId) } }
     // JellyDVR Space: "Move to archive…" for recordings in the live folder. While a move runs it
     // checks back; once the recording has moved, this item is gone (the archive copy is a new
     // item), so the page closes.
@@ -146,7 +148,7 @@ fun RecordingActions(
     // Comskip's tools change the recording: only for users allowed to edit recordings.
     val edit = editPermission()
     val editTools = tools && edit != null && rights.edit
-    LaunchedEffect(itemId, startCheck, editTools) { if (editTools) start = runCatching { Jdvr.backend.programStartStatus(itemId) }.getOrNull() }
+    LaunchedEffect(itemId, startCheck, editTools) { if (editTools) start = attempt { Jdvr.backend.programStartStatus(itemId) } }
     LaunchedEffect(armedUndo, armedFind, armedClearStart, armedAudio) {
         if (armedUndo || armedFind || armedClearStart || armedAudio) {
             delay(4000)
@@ -158,12 +160,12 @@ fun RecordingActions(
     }
     LaunchedEffect(itemId, archiveCheck, rights.archive) {
         if (!manage || !rights.archive) return@LaunchedEffect
-        archive = runCatching { Jdvr.backend.archiveChoices(itemId) }.getOrNull()
+        archive = attempt { Jdvr.backend.archiveChoices(itemId) }
         var wasMoving = false
         while (archive?.inFlight != null) {
             wasMoving = true
             delay(5000)
-            archive = runCatching { Jdvr.backend.archiveChoices(itemId) }.getOrNull()
+            archive = attempt { Jdvr.backend.archiveChoices(itemId) }
         }
         if (wasMoving && archive == null) {
             onNote("Moved to the archive")
@@ -191,7 +193,7 @@ fun RecordingActions(
     LaunchedEffect(itemId, stops) {
         if (stops > 0) {
             repeat(8) {
-                val fresh = runCatching { Jdvr.backend.details(itemId).canDelete }.getOrNull()
+                val fresh = attempt { Jdvr.backend.details(itemId).canDelete }
                 if (fresh == true) {
                     canDeleteNow = true
                     return@LaunchedEffect
@@ -207,7 +209,7 @@ fun RecordingActions(
     RerecordButtons(itemId, onNote)
     val cut = cuttingFor(itemId.toString())
     if (cut != null) {
-        CuttingBar(cut, onStop = if (cut.stoppable && edit != null) { { scope.launch { onNote(runCatching { Jdvr.backend.stopCut(itemId)?.message }.getOrNull() ?: "Couldn't stop it."); MoveWatcher.kick() } } } else null)
+        CuttingBar(cut, onStop = if (cut.stoppable && edit != null) { { scope.launch { onNote(attempt { Jdvr.backend.stopCut(itemId)?.message } ?: "Couldn't stop it."); MoveWatcher.kick() } } } else null)
     }
     val f = fav
     if (manage && rights.record && f != null && !f.isMovie) {
@@ -215,7 +217,7 @@ fun RecordingActions(
         if (rule == null) {
             Button("★ Add to Recording Favourites") {
                 scope.launch {
-                    onNote(runCatching { Jdvr.backend.addFavourite(itemId)?.message ?: "Added ${f.title} to Recording Favourites" }.getOrElse { "Couldn't add it: ${it.message}" })
+                    onNote(attemptResult { Jdvr.backend.addFavourite(itemId)?.message ?: "Added ${f.title} to Recording Favourites" }.getOrElse { "Couldn't add it: ${it.message}" })
                     reload++
                 }
             }
@@ -226,7 +228,7 @@ fun RecordingActions(
                 } else {
                     armedUnfav = false
                     scope.launch {
-                        onNote(runCatching { Jdvr.backend.removeFavourite(rule.id)?.message ?: "Removed ${rule.title} from Recording Favourites" }.getOrElse { "Couldn't remove it: ${it.message}" })
+                        onNote(attemptResult { Jdvr.backend.removeFavourite(rule.id)?.message ?: "Removed ${rule.title} from Recording Favourites" }.getOrElse { "Couldn't remove it: ${it.message}" })
                         reload++
                     }
                 }
@@ -270,7 +272,7 @@ fun RecordingActions(
                     } else {
                         armedRemove = false
                         scope.launch {
-                            val r = runCatching { Jdvr.backend.removeCommercials(itemId) }.getOrNull()
+                            val r = attempt { Jdvr.backend.removeCommercials(itemId) }
                             onNote(r?.message?.ifEmpty { null } ?: "Couldn't remove them.")
                             CommercialMarks.changed++
                             commercialsCheck++
@@ -280,7 +282,7 @@ fun RecordingActions(
             else ->
                 Button("Scan for commercials", modifier = comModifier) {
                     scope.launch {
-                        onNote(runCatching { Jdvr.backend.scanCommercials(itemId)?.message }.getOrNull() ?: "Couldn't start a scan.")
+                        onNote(attempt { Jdvr.backend.scanCommercials(itemId)?.message } ?: "Couldn't start a scan.")
                         commercialsCheck++
                     }
                 }
@@ -302,7 +304,7 @@ fun RecordingActions(
                 armedFind = false
                 onNote("Looking for a remembered card…")
                 scope.launch {
-                    onNote(runCatching { Jdvr.backend.findProgramStart(itemId)?.message }.getOrNull() ?: "Couldn't look: something may already be working on it.")
+                    onNote(attempt { Jdvr.backend.findProgramStart(itemId)?.message } ?: "Couldn't look: something may already be working on it.")
                     MoveWatcher.kick()
                 }
             }
@@ -317,7 +319,7 @@ fun RecordingActions(
             } else {
                 armedClearStart = false
                 scope.launch {
-                    onNote(runCatching { Jdvr.backend.clearProgramStart(itemId)?.message }.getOrNull() ?: "Couldn't remove it.")
+                    onNote(attempt { Jdvr.backend.clearProgramStart(itemId)?.message } ?: "Couldn't remove it.")
                     startCheck++
                 }
             }
@@ -331,7 +333,7 @@ fun RecordingActions(
             } else {
                 armedUndo = false
                 scope.launch {
-                    onNote(runCatching { Jdvr.backend.undoTrim(itemId)?.message }.getOrNull() ?: "Couldn't undo it.")
+                    onNote(attempt { Jdvr.backend.undoTrim(itemId)?.message } ?: "Couldn't undo it.")
                     startCheck++
                 }
             }
@@ -344,7 +346,7 @@ fun RecordingActions(
             } else {
                 armedAudio = false
                 scope.launch {
-                    onNote(runCatching { Jdvr.backend.fixAudioFormat(itemId)?.message }.getOrNull() ?: "Couldn't fix it: something may already be working on it.")
+                    onNote(attempt { Jdvr.backend.fixAudioFormat(itemId)?.message } ?: "Couldn't fix it: something may already be working on it.")
                     MoveWatcher.kick()
                 }
             }
@@ -358,7 +360,7 @@ fun RecordingActions(
             } else {
                 armedForget = false
                 scope.launch {
-                    val r = runCatching { Jdvr.backend.forgetRecording(itemId) }.getOrNull()
+                    val r = attempt { Jdvr.backend.forgetRecording(itemId) }
                     if (r == null) {
                         onNote("Couldn't forget it (administrators only, needs Episode History).")
                     } else {
@@ -377,7 +379,7 @@ fun RecordingActions(
             Button("Move to archive…") {
                 scope.launch {
                     // Ask again: free space may have changed since the page opened.
-                    archive = runCatching { Jdvr.backend.archiveChoices(itemId) }.getOrNull() ?: archive
+                    archive = attempt { Jdvr.backend.archiveChoices(itemId) } ?: archive
                     picking = true
                 }
             }
@@ -390,7 +392,7 @@ fun RecordingActions(
                 onPick = { t ->
                     picking = false
                     scope.launch {
-                        val r = runCatching { Jdvr.backend.archive(itemId, t.path) }.getOrNull()
+                        val r = attempt { Jdvr.backend.archive(itemId, t.path) }
                         onNote(r?.message?.ifEmpty { null } ?: "Couldn't move it (administrators only, needs JellyDVR Space).")
                         MoveWatcher.kick()
                         archiveCheck++
@@ -414,7 +416,7 @@ fun RecordingActions(
         } else {
             armedDelete = false
             scope.launch {
-                runCatching { Jdvr.backend.deleteRecording(itemId) }
+                attemptResult { Jdvr.backend.deleteRecording(itemId) }
                     .onSuccess {
                         onNote(
                             (if (it.deleted > 1) "Partial recording deleted, with its ${it.deleted - 1} other partial piece${if (it.deleted > 2) "s" else ""}" else if (manage) "Recording deleted" else "Deleted$from") +
@@ -460,11 +462,11 @@ fun ShowActions(
     var armedArchived by remember(seriesId) { mutableStateOf(false) }
     val rights = deviceRights()
     LaunchedEffect(seriesId, rights) {
-        delete = if (rights.delete) runCatching { Jdvr.backend.deleteShowRecordings(seriesId, dryRun = true) }.getOrNull() else null
-        archived = if (rights.deleteArchive) runCatching { Jdvr.backend.deleteShowRecordings(seriesId, dryRun = true, archive = true) }.getOrNull() else null
+        delete = if (rights.delete) attempt { Jdvr.backend.deleteShowRecordings(seriesId, dryRun = true) } else null
+        archived = if (rights.deleteArchive) attempt { Jdvr.backend.deleteShowRecordings(seriesId, dryRun = true, archive = true) } else null
     }
     LaunchedEffect(seriesId) {
-        forget = runCatching { Jdvr.backend.forgetShow(seriesId, dryRun = true) }.getOrNull()
+        forget = attempt { Jdvr.backend.forgetShow(seriesId, dryRun = true) }
     }
     WatchLiveButtons(seriesId)
     StopRecordingButtons(seriesId, onNote)
@@ -485,11 +487,11 @@ fun ShowActions(
             archive = null
             return@LaunchedEffect
         }
-        archive = runCatching { Jdvr.backend.archiveChoices(seriesId) }.getOrNull()
+        archive = attempt { Jdvr.backend.archiveChoices(seriesId) }
         // Moves under way: check back until they're done.
         while (archive?.inFlight != null) {
             delay(5000)
-            archive = runCatching { Jdvr.backend.archiveChoices(seriesId) }.getOrNull()
+            archive = attempt { Jdvr.backend.archiveChoices(seriesId) }
         }
     }
     LaunchedEffect(armedDelete) {
@@ -507,7 +509,7 @@ fun ShowActions(
             Button(if (a.count > 1) "Move all ${a.count} recordings to archive…" else "Move to archive…") {
                 scope.launch {
                     // Ask again: free space may have changed since the menu opened.
-                    archive = runCatching { Jdvr.backend.archiveChoices(seriesId) }.getOrNull() ?: archive
+                    archive = attempt { Jdvr.backend.archiveChoices(seriesId) } ?: archive
                     picking = true
                 }
             }
@@ -520,7 +522,7 @@ fun ShowActions(
                 onPick = { t ->
                     picking = false
                     scope.launch {
-                        val r = runCatching { Jdvr.backend.archive(seriesId, t.path) }.getOrNull()
+                        val r = attempt { Jdvr.backend.archive(seriesId, t.path) }
                         onNote(r?.message?.ifEmpty { null } ?: "Couldn't move them (administrators only, needs JellyDVR Space).")
                         MoveWatcher.kick()
                         archiveCheck++
@@ -539,9 +541,9 @@ fun ShowActions(
             } else {
                 armedForget = false
                 scope.launch {
-                    val r = runCatching { Jdvr.backend.forgetShow(seriesId, dryRun = false) }.getOrNull()
+                    val r = attempt { Jdvr.backend.forgetShow(seriesId, dryRun = false) }
                     onNote(if (r == null) "Couldn't forget it." else "Forgotten: its episodes can be recorded again")
-                    forget = runCatching { Jdvr.backend.forgetShow(seriesId, dryRun = true) }.getOrNull()
+                    forget = attempt { Jdvr.backend.forgetShow(seriesId, dryRun = true) }
                 }
             }
         }
@@ -567,7 +569,7 @@ fun ShowActions(
                 armedDelete = false
                 deleting = true
                 scope.launch {
-                    val r = runCatching { Jdvr.backend.deleteShowRecordings(seriesId, dryRun = false) }.getOrNull()
+                    val r = attempt { Jdvr.backend.deleteShowRecordings(seriesId, dryRun = false) }
                     deleting = false
                     if (r == null) {
                         onNote("Couldn't delete them.")
@@ -600,7 +602,7 @@ fun ShowActions(
                 armedArchived = false
                 deleting = true
                 scope.launch {
-                    val r = runCatching { Jdvr.backend.deleteShowRecordings(seriesId, dryRun = false, archive = true) }.getOrNull()
+                    val r = attempt { Jdvr.backend.deleteShowRecordings(seriesId, dryRun = false, archive = true) }
                     deleting = false
                     if (r == null) {
                         onNote("Couldn't delete them.")
@@ -617,7 +619,7 @@ fun ShowActions(
 /** Days a delete stays in Episode History's trash; null when deletes are for good. */
 @Composable
 fun rememberTrashDays(): Int? {
-    val days by androidx.compose.runtime.produceState<Int?>(null) { value = runCatching { Jdvr.backend.trashDays() }.getOrNull() }
+    val days by androidx.compose.runtime.produceState<Int?>(null) { value = attempt { Jdvr.backend.trashDays() } }
     return days
 }
 

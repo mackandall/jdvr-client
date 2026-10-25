@@ -68,6 +68,7 @@ import java.util.UUID
 import com.mackandall.jdvr.data.ItemDetails
 import com.mackandall.jdvr.data.LibItem
 import com.mackandall.jdvr.data.Library
+import com.mackandall.jdvr.data.attempt
 
 private const val PAGE = 120
 
@@ -200,7 +201,7 @@ private fun LibraryGrid(
         loadLock.withLock {
             val gen = generation
             while (items.size <= through && (total < 0 || items.size < total)) {
-                val (page, t) = runCatching { Jdvr.backend.libraryItems(library.id, newest, items.size, PAGE) }.getOrNull() ?: break
+                val (page, t) = attempt { Jdvr.backend.libraryItems(library.id, newest, items.size, PAGE) } ?: break
                 if (gen != generation) break
                 items = items + page
                 total = t
@@ -219,7 +220,7 @@ private fun LibraryGrid(
         // Back from an item far down the list: load up to it and scroll there, so its poster can take focus.
         fetch(restoreIndex + 21)
         if (restore != null && restoreIndex > 0) runCatching { grid.scrollToItem(restoreIndex) }
-        letters = if (newest) emptyList() else runCatching { Jdvr.backend.libraryLetters(library.id) }.getOrDefault(emptyList())
+        letters = if (newest) emptyList() else attempt { Jdvr.backend.libraryLetters(library.id) } ?: emptyList()
     }
     LaunchedEffect(items.isNotEmpty()) { if (items.isNotEmpty() && restore == null) runCatching { first.requestFocus() } }
 
@@ -427,7 +428,7 @@ internal fun ShowPage(
     val scope = rememberCoroutineScope()
     LaunchedEffect(show.id, refresh, reload) {
         episodes =
-            runCatching { Jdvr.backend.episodes(show.id, null) }.getOrNull()?.map {
+            attempt { Jdvr.backend.episodes(show.id, null) }?.map {
                 EpisodeEntry(it.id, it.name, it.season, it.episode, it.played, it.resumeMs, it.runtimeMin, it.overview)
             }?.let { withCommercialBadges(it) } ?: emptyList()
     }
@@ -455,7 +456,7 @@ internal fun ShowPage(
         onShowChanged = { reload++ },
         onToggleWatched = { e ->
             scope.launch {
-                runCatching { Jdvr.backend.setPlayed(e.id, !e.played) }
+                attempt { Jdvr.backend.setPlayed(e.id, !e.played) }
                 reload++
             }
         },

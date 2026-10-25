@@ -74,6 +74,7 @@ import com.mackandall.jdvr.data.ItemPlayback
 import com.mackandall.jdvr.data.ProgramStartResult
 import com.mackandall.jdvr.data.ProgramStartStatus
 import com.mackandall.jdvr.data.Segment
+import com.mackandall.jdvr.data.attempt
 
 private fun clock(ms: Long): String {
     val s = (ms / 1000).coerceAtLeast(0)
@@ -211,7 +212,7 @@ fun RecordingPlayerScreen(
             player.removeListener(logger)
             player.release()
             // Reported in the background, so leaving the player never waits on the server.
-            current?.let { p -> MainScope().launch { runCatching { Jdvr.backend.reportItem(p, position, paused = true, event = "stop") } } }
+            current?.let { p -> MainScope().launch { attempt { Jdvr.backend.reportItem(p, position, paused = true, event = "stop") } } }
         }
     }
 
@@ -247,7 +248,7 @@ fun RecordingPlayerScreen(
             return@LaunchedEffect
         }
         val series = playback?.seriesId ?: return@LaunchedEffect
-        val all = runCatching { Jdvr.backend.showRecordings(series, Jdvr.prefs.recordingsFilter) }.getOrNull().orEmpty()
+        val all = attempt { Jdvr.backend.showRecordings(series, Jdvr.prefs.recordingsFilter) }.orEmpty()
         val ordered =
             if (all.all { it.season != null && it.episode != null }) {
                 all.sortedWith(compareBy({ it.season }, { it.episode }))
@@ -256,7 +257,7 @@ fun RecordingPlayerScreen(
             }
         var ids = ordered.mapNotNull { it.id.toUuid() }
         // Not a live-folder recording (a library or archive episode): the show's own episode order.
-        if (itemId !in ids) ids = series.toUuid()?.let { runCatching { Jdvr.backend.episodes(it, null) }.getOrNull() }?.map { it.id }.orEmpty()
+        if (itemId !in ids) ids = series.toUuid()?.let { attempt { Jdvr.backend.episodes(it, null) } }?.map { it.id }.orEmpty()
         val i = ids.indexOf(itemId)
         if (i >= 0) {
             previous = ids.getOrNull(i - 1)?.let { PlayRecording(it) }
@@ -265,14 +266,14 @@ fun RecordingPlayerScreen(
     }
 
     LaunchedEffect(itemId) {
-        details = runCatching { Jdvr.backend.details(itemId) }.getOrNull()
-        commercialsLabel = runCatching { Jdvr.backend.commercialBadges(listOf(itemId)) }.getOrNull()?.values?.firstOrNull()?.label
+        details = attempt { Jdvr.backend.details(itemId) }
+        commercialsLabel = attempt { Jdvr.backend.commercialBadges(listOf(itemId)) }?.values?.firstOrNull()?.label
     }
     // "Next · S3:E2 Mobile Suit Toyman": the show's next recording (not for live TV buffers).
     LaunchedEffect(next) {
         nextTitle =
             next?.takeIf { recording.liveChannelId == null }?.let { n ->
-                runCatching { Jdvr.backend.libItem(n.itemId) }.getOrNull()?.let { listOfNotNull(it.seasonEpisode, it.name).joinToString(" ") }
+                attempt { Jdvr.backend.libItem(n.itemId) }?.let { listOfNotNull(it.seasonEpisode, it.name).joinToString(" ") }
             }
     }
     LaunchedEffect(infoOpen) {
@@ -394,7 +395,7 @@ fun RecordingPlayerScreen(
             editFocus = editButton
         }
     }
-    LaunchedEffect(editOpen) { if (editOpen) startStatus = runCatching { Jdvr.backend.programStartStatus(itemId) }.getOrNull() }
+    LaunchedEffect(editOpen) { if (editOpen) startStatus = attempt { Jdvr.backend.programStartStatus(itemId) } }
     LaunchedEffect(player.isPlaying) {
         if (player.isPlaying) {
             editOpen = false
@@ -413,7 +414,7 @@ fun RecordingPlayerScreen(
                 r.trimmed -> r.message + " Start the recording again to see it."
                 else -> r.message
             }
-            if (r?.ok == true && !r.trimmed) runCatching { segments = Jdvr.backend.segments(itemId) }
+            if (r?.ok == true && !r.trimmed) attempt { segments = Jdvr.backend.segments(itemId) }
             com.mackandall.jdvr.ui.MoveWatcher.kick()
             delay(7000)
             note = null
@@ -430,16 +431,16 @@ fun RecordingPlayerScreen(
         controlsOpen = false
         scope.launch {
             note = if (card) "Looking at the card…" else "Setting the program start…"
-            val r = runCatching {
+            val r = attempt {
                 if (card) Jdvr.backend.rememberStartCard(itemId, at) else Jdvr.backend.setProgramStart(itemId, at)
-            }.getOrNull()
+            }
             programStartBusy = false
             note = when {
                 r == null -> "Couldn't do it: something may already be working on this recording."
                 r.trimmed -> r.message + " Start the recording again to see it."
                 else -> r.message
             }
-            if (r?.ok == true && !r.trimmed) runCatching { segments = Jdvr.backend.segments(itemId) }
+            if (r?.ok == true && !r.trimmed) attempt { segments = Jdvr.backend.segments(itemId) }
             com.mackandall.jdvr.ui.MoveWatcher.kick()
             delay(7000)
             note = null
@@ -453,7 +454,7 @@ fun RecordingPlayerScreen(
         val at = player.currentPosition / 1000.0
         scope.launch {
             note = "Finding where a cut can start…"
-            val k = runCatching { Jdvr.backend.keyframes(itemId, at) }.getOrNull()
+            val k = attempt { Jdvr.backend.keyframes(itemId, at) }
             val times = listOfNotNull(k?.before, k?.after)
             if (times.isEmpty()) {
                 programStartBusy = false
@@ -462,7 +463,7 @@ fun RecordingPlayerScreen(
                 note = null
                 return@launch
             }
-            val pictures = times.map { t -> async { runCatching { Jdvr.backend.frame(itemId, t) }.getOrNull() } }.map { it.await() }
+            val pictures = times.map { t -> async { attempt { Jdvr.backend.frame(itemId, t) } } }.map { it.await() }
             keyChoices = times.mapIndexed { i, t -> KeyChoice(t, pictures[i], before = t <= at + 0.02) }
             programStartBusy = false
             note = null
@@ -477,14 +478,14 @@ fun RecordingPlayerScreen(
         programStartBusy = true
         scope.launch {
             note = "Setting the program start…"
-            val r = runCatching { Jdvr.backend.setProgramStart(itemId, seconds, keyframe = true) }.getOrNull()
+            val r = attempt { Jdvr.backend.setProgramStart(itemId, seconds, keyframe = true) }
             programStartBusy = false
             note = when {
                 r == null -> "Couldn't do it: something may already be working on this recording."
                 r.trimmed -> r.message + " Start the recording again to see it."
                 else -> r.message
             }
-            if (r?.ok == true && !r.trimmed) runCatching { segments = Jdvr.backend.segments(itemId) }
+            if (r?.ok == true && !r.trimmed) attempt { segments = Jdvr.backend.segments(itemId) }
             com.mackandall.jdvr.ui.MoveWatcher.kick()
             delay(7000)
             note = null
@@ -722,7 +723,7 @@ fun RecordingPlayerScreen(
                                             armed = "clear"
                                         } else {
                                             armed = null
-                                            scope.launch { editDone(runCatching { Jdvr.backend.clearProgramStart(itemId) }.getOrNull(), "Couldn't remove it.") }
+                                            scope.launch { editDone(attempt { Jdvr.backend.clearProgramStart(itemId) }, "Couldn't remove it.") }
                                         }
                                     }
                                 }
@@ -733,7 +734,7 @@ fun RecordingPlayerScreen(
                                         } else {
                                             armed = null
                                             scope.launch {
-                                                val r = runCatching { Jdvr.backend.undoTrim(itemId) }.getOrNull()
+                                                val r = attempt { Jdvr.backend.undoTrim(itemId) }
                                                 editDone(r?.copy(trimmed = r.ok), "Couldn't undo it.")
                                             }
                                         }

@@ -7,6 +7,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.mackandall.jdvr.data.Jdvr
 import com.mackandall.jdvr.data.DeviceRights
+import com.mackandall.jdvr.data.attempt
 
 /**
  * What this TV may do (JellyDVR Space's settings page, "JDVR devices"). An answer is reused for
@@ -28,7 +29,7 @@ object TvRights {
         val user = Jdvr.serverKey
         if (user != forUser) at = 0
         if (System.currentTimeMillis() - at < 2 * 60_000) return
-        val got = runCatching { Jdvr.backend.deviceRights() }.getOrNull()
+        val got = attempt { Jdvr.backend.deviceRights() }
         info = got ?: DeviceRights()
         managed = got != null
         forUser = user

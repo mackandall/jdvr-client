@@ -7,6 +7,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.mackandall.jdvr.data.Jdvr
 import com.mackandall.jdvr.data.Editing
+import com.mackandall.jdvr.data.attempt
 
 /**
  * Whether the signed-in user may edit recordings (Comskip plugin: administrators, and the users
@@ -28,7 +29,7 @@ object EditPermission {
             at = 0
         }
         if (System.currentTimeMillis() - at < 5 * 60_000) return
-        val got = runCatching { Jdvr.backend.editing() }.getOrNull()
+        val got = attempt { Jdvr.backend.editing() }
         info = got
         forUser = user
         at = if (got != null) System.currentTimeMillis() else 0L

@@ -41,6 +41,7 @@ import java.time.LocalDateTime
 import java.time.ZoneId
 import com.mackandall.jdvr.data.TrashItem
 import com.mackandall.jdvr.data.TrashList
+import com.mackandall.jdvr.data.attempt
 
 private fun utc(iso: String): Instant? = runCatching { Instant.parse(iso) }.getOrNull()
 
@@ -134,7 +135,7 @@ fun TrashScreen(entry: FocusRequester) {
                         } else {
                             armed = false
                             scope.launch {
-                                val n = runCatching { Jdvr.backend.emptyTrash() }.getOrNull()
+                                val n = attempt { Jdvr.backend.emptyTrash() }
                                 note = if (n == null) "Couldn't empty it." else "Deleted $n for good."
                                 reload++
                             }
@@ -153,7 +154,7 @@ fun TrashScreen(entry: FocusRequester) {
                             onToggle = { open = if (open == e.id) null else e.id },
                             onRestore = {
                                 scope.launch {
-                                    val ok = runCatching { Jdvr.backend.restoreFromTrash(e.id) }.getOrDefault(false)
+                                    val ok = attempt { Jdvr.backend.restoreFromTrash(e.id) } ?: false
                                     note = if (ok) "Put back: ${e.title}. It's in its library again in a minute or so." else "Couldn't put it back: something may already be where it was."
                                     open = null
                                     reload++
@@ -161,7 +162,7 @@ fun TrashScreen(entry: FocusRequester) {
                             },
                             onDelete = {
                                 scope.launch {
-                                    val ok = runCatching { Jdvr.backend.deleteFromTrash(e.id) }.getOrDefault(false)
+                                    val ok = attempt { Jdvr.backend.deleteFromTrash(e.id) } ?: false
                                     note = if (ok) "Deleted for good: ${e.title}." else "Couldn't delete it."
                                     open = null
                                     reload++

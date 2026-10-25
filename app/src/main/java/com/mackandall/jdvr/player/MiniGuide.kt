@@ -60,6 +60,7 @@ import java.time.Duration
 import java.time.LocalDateTime
 import java.util.UUID
 import com.mackandall.jdvr.data.MarkSymbols
+import com.mackandall.jdvr.data.attempt
 
 private const val ROWS = 4
 private const val WINDOW_MIN = 90L
@@ -116,7 +117,7 @@ fun MiniGuide(
                 .filter { reload > 0 || fetchedTo[it]?.isBefore(need) != false }
         if (want.isEmpty()) return@LaunchedEffect
         val to = windowStart.plusHours(4)
-        runCatching { Jdvr.backend.programs(want, earliest, to) }.getOrNull()?.let { list ->
+        attempt { Jdvr.backend.programs(want, earliest, to) }?.let { list ->
             val byChannel = list.groupBy { it.channelId }
             want.forEach {
                 programs[it] = byChannel[it].orEmpty()
