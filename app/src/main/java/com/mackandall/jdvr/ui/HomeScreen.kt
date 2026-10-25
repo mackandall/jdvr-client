@@ -536,10 +536,7 @@ private fun NoLiveTvCard(
         // This card replaces the live card once Home knows there's no Live TV; the focus that was
         // on its Watch live button went with it, so it comes here.
         LaunchedEffect(Unit) {
-            repeat(20) {
-                if (runCatching { entry.requestFocus() }.isSuccess) return@LaunchedEffect
-                kotlinx.coroutines.delay(50)
-            }
+            entry.focusSoon()
         }
     }
 }

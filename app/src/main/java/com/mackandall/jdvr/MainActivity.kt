@@ -48,6 +48,7 @@ import java.util.UUID
 import com.mackandall.jdvr.data.LibItem
 import com.mackandall.jdvr.data.Library
 import com.mackandall.jdvr.data.attempt
+import com.mackandall.jdvr.ui.tryFocus
 
 /** The sections in the left rail. */
 enum class Screen(
@@ -213,7 +214,7 @@ fun AppRoot(
         leftPlayer = false
         repeat(150) { attempt ->
             if (screenHasFocus && !(fromPlayer && attempt == 0)) return@LaunchedEffect
-            runCatching { entry.requestFocus() }
+            entry.tryFocus()
             delay(100)
         }
     }
@@ -228,7 +229,7 @@ fun AppRoot(
                 // screen's entry): a plain move right lands on whatever is level with the menu item,
                 // in the guide channels away from the one left.
                 if (railOpen && !railKeepsRight && e.type == KeyEventType.KeyDown && e.key == Key.DirectionRight) {
-                    val returned = !screenHasFocus && runCatching { entry.requestFocus() }.isSuccess && screenHasFocus
+                    val returned = !screenHasFocus && entry.tryFocus() && screenHasFocus
                     if (!returned) focusManager.moveFocus(FocusDirection.Right)
                     railOpen = false
                     true

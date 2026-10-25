@@ -162,10 +162,7 @@ private fun <T> OptionPicker(
 ) {
     val first = remember { FocusRequester() }
     LaunchedEffect(Unit) {
-        repeat(30) {
-            if (runCatching { first.requestFocus() }.isSuccess) return@LaunchedEffect
-            delay(40)
-        }
+        first.focusSoon(withinMs = 1500)
     }
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.CenterEnd) {
@@ -227,7 +224,7 @@ internal fun ThemeGallery(onDismiss: () -> Unit) {
     val first = remember { FocusRequester() }
     LaunchedEffect(Unit) {
         repeat(30) {
-            if (runCatching { first.requestFocus() }.isSuccess) {
+            if (first.tryFocus()) {
                 // The dialog's own first focus (the first card) can land after ours and preview it:
                 // the cursor is on the current theme, so preview that.
                 delay(150)

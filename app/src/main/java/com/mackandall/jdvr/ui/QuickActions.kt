@@ -217,7 +217,7 @@ fun QuickActions(
         // early requestFocus silently does nothing: retry until it lands.
         repeat(40) {
             if (firstFocused) return@LaunchedEffect
-            runCatching { first.requestFocus() }
+            first.tryFocus()
             delay(50)
         }
     }

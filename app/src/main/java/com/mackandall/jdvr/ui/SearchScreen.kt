@@ -104,7 +104,7 @@ fun SearchScreen(
                 repeat(10) {
                     delay(60)
                     val r = rowFocus[id] ?: return@repeat
-                    if (runCatching { r.requestFocus() }.isSuccess) return@launch
+                    if (r.tryFocus()) return@launch
                 }
             }
         }

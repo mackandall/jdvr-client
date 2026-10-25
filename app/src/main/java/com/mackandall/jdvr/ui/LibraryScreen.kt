@@ -222,7 +222,7 @@ private fun LibraryGrid(
         if (restore != null && restoreIndex > 0) runCatching { grid.scrollToItem(restoreIndex) }
         letters = if (newest) emptyList() else attempt { Jdvr.backend.libraryLetters(library.id) } ?: emptyList()
     }
-    LaunchedEffect(items.isNotEmpty()) { if (items.isNotEmpty() && restore == null) runCatching { first.requestFocus() } }
+    LaunchedEffect(items.isNotEmpty()) { if (items.isNotEmpty() && restore == null) first.tryFocus() }
 
     var jumpJob by remember { mutableStateOf<Job?>(null) }
     // Scrolls the grid to the letter's first item; with [focus], puts the cursor on it.
@@ -240,7 +240,7 @@ private fun LibraryGrid(
                     repeat(20) {
                         delay(40)
                         val r = itemReqs[idx] ?: return@repeat
-                        if (runCatching { r.requestFocus() }.isSuccess) return@launch
+                        if (r.tryFocus()) return@launch
                     }
                 }
             }
@@ -269,7 +269,7 @@ private fun LibraryGrid(
                             onEnter = { l ->
                                 // Back to the poster it came from when the letter hasn't changed.
                                 val back = itemReqs[focusedIndex].takeIf { l == currentLetter }
-                                if (back == null || runCatching { back.requestFocus() }.isFailure) jump(l, focus = true)
+                                if (back == null || !back.tryFocus()) jump(l, focus = true)
                             },
                         )
                     }
@@ -287,7 +287,7 @@ private fun LibraryGrid(
                                 itemReqs[i] = back
                                 onDispose { if (itemReqs[i] === back) itemReqs.remove(i) }
                             }
-                            LaunchedEffect(Unit) { if (it.id == restore) runCatching { back.requestFocus() } }
+                            LaunchedEffect(Unit) { if (it.id == restore) back.tryFocus() }
                             val letter = letters.getOrNull(i) ?: letterOf(it.name)
                             Poster(
                                 it,

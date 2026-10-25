@@ -231,7 +231,7 @@ fun RecordedShowsScreen(
                         if (index >= 0) {
                             if (gridState.layoutInfo.visibleItemsInfo.none { it.index == index }) gridState.scrollToItem(index)
                             repeat(40) {
-                                if (runCatching { back.requestFocus() }.isSuccess) {
+                                if (back.tryFocus()) {
                                     returnTo = null
                                     return@LaunchedEffect
                                 }
@@ -244,10 +244,7 @@ fun RecordedShowsScreen(
                     }
                     if (focusedFirst) return@LaunchedEffect
                     focusedFirst = true
-                    repeat(40) {
-                        if (runCatching { entry.requestFocus() }.isSuccess) return@LaunchedEffect
-                        delay(50)
-                    }
+                    entry.focusSoon(withinMs = 2000)
                 }
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(5),

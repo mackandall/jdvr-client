@@ -63,10 +63,7 @@ fun SeriesOptions(
     // Focus on the first row once the options are in (not on Loading's Close, which then goes);
     // the dialog's window needs a frame or two before focus can land.
     LaunchedEffect(timer != null, problem) {
-        repeat(20) {
-            delay(50)
-            if (runCatching { first.requestFocus() }.isSuccess) return@LaunchedEffect
-        }
+        first.focusSoon()
     }
 
     Dialog(onDismissRequest = { onDone(null) }, properties = DialogProperties(usePlatformDefaultWidth = false)) {

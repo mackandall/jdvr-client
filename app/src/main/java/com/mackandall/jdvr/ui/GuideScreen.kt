@@ -242,7 +242,7 @@ fun GuideScreen(
                 repeat(10) {
                     delay(60)
                     val r = cellFocus[id] ?: return@repeat
-                    if (runCatching { r.requestFocus() }.isSuccess) return@launch
+                    if (r.tryFocus()) return@launch
                 }
             }
         }
@@ -326,21 +326,21 @@ fun GuideScreen(
         while (target == null) {
             t += dir
             // The edge: stay put (▲ off the top goes to the channel group button, when there is one).
-            if (t !in list.indices) return true.also { if (t < 0 && groups.size > 1) runCatching { groupFocus.requestFocus() } }
+            if (t !in list.indices) return true.also { if (t < 0 && groups.size > 1) groupFocus.tryFocus() }
             val row = programs[list[t].id].orEmpty().filter { it.end.isAfter(windowStart) && it.start.isBefore(windowEnd) }.sortedBy { it.start }
             target = row.firstOrNull { !it.start.isAfter(at) && it.end.isAfter(at) } ?: row.firstOrNull { it.start.isAfter(at) } ?: row.lastOrNull()
         }
         val goal = target
         val index = t
         verticalTo = goal.id
-        if (cellFocus[goal.id]?.let { runCatching { it.requestFocus() }.isSuccess } == true && focused?.id == goal.id) return true
+        if (cellFocus[goal.id]?.let { it.tryFocus() } == true && focused?.id == goal.id) return true
         // Its row isn't laid out yet (fast scrolling): bring it on screen, then focus it.
         guideScope.launch {
             val visible = listState.layoutInfo.visibleItemsInfo
             val shown = visible.size.coerceAtLeast(1)
             if (visible.none { it.index == index }) listState.scrollToItem(if (dir > 0) (index - shown + 2).coerceAtLeast(0) else index)
             repeat(20) {
-                if (cellFocus[goal.id]?.let { runCatching { it.requestFocus() }.isSuccess } == true && focused?.id == goal.id) return@launch
+                if (cellFocus[goal.id]?.let { it.tryFocus() } == true && focused?.id == goal.id) return@launch
                 kotlinx.coroutines.delay(16)
             }
         }
@@ -448,7 +448,7 @@ fun GuideScreen(
                                 if (e.type != KeyEventType.KeyDown || e.key != Key.DirectionDown) return@onPreviewKeyEvent false
                                 val first = channels?.firstOrNull() ?: return@onPreviewKeyEvent false
                                 val p = programs[first.id].orEmpty().firstOrNull { it.end.isAfter(windowStart) } ?: return@onPreviewKeyEvent false
-                                cellFocus[p.id]?.let { runCatching { it.requestFocus() }.isSuccess } == true
+                                cellFocus[p.id]?.let { it.tryFocus() } == true
                             },
                     ) {
                         Jdvr.prefs.changeChannelGroup(groups[(groups.indexOf(shown) + 1) % groups.size])
@@ -544,7 +544,7 @@ fun GuideScreen(
                     repeat(10) {
                         delay(60)
                         val r = cellFocus[p.id] ?: return@repeat
-                        if (runCatching { r.requestFocus() }.isSuccess) return@launch
+                        if (r.tryFocus()) return@launch
                     }
                 }
             },
@@ -819,7 +819,7 @@ private fun ProgramCell(
     }
     LaunchedEffect(requestFocus) {
         if (requestFocus) {
-            runCatching { focus.requestFocus() }
+            focus.tryFocus()
             onFocusTaken()
         }
     }
@@ -956,7 +956,7 @@ internal fun ProgramPanel(
         // Opened as a floating dialog, its window needs a frame or two before focus can land.
         repeat(20) {
             if (inside) return@LaunchedEffect
-            runCatching { first.requestFocus() }
+            first.tryFocus()
             delay(50)
         }
     }

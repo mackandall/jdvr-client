@@ -225,7 +225,7 @@ private fun TrashRow(
             var armed by remember(e.id) { mutableStateOf(false) }
             // Opening a row puts the remote on its first button, not wherever Down would land.
             val first = remember { FocusRequester() }
-            LaunchedEffect(Unit) { runCatching { first.requestFocus() } }
+            LaunchedEffect(Unit) { first.tryFocus() }
             LaunchedEffect(armed) {
                 if (armed) {
                     delay(4000)

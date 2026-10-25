@@ -24,6 +24,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.SolidColor
@@ -207,11 +208,15 @@ fun LoginScreen(
                 fontWeight = FontWeight.SemiBold,
             )
             if (saved.isNotEmpty()) {
+                // The first server has focus from the start, so OK picks it straight away.
+                val firstServer = remember { FocusRequester() }
+                LaunchedEffect(Unit) { firstServer.focusSoon() }
                 Text("Your servers", color = Jc.Muted, fontSize = 14.sp)
                 saved.forEach { s ->
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         val label = "Jellyfin – ${s.name}" + (s.userName?.let { " · $it" } ?: "")
-                        Button(label, primary = saved.first() == s) {
+                        val first = saved.first() == s
+                        Button(label, primary = first, modifier = if (first) Modifier.focusRequester(firstServer) else Modifier) {
                             if (s.token != null) {
                                 Jdvr.switchTo(s)
                                 onSignedIn()
@@ -445,10 +450,7 @@ private fun Field(
                         .padding(horizontal = 14.dp, vertical = 12.dp),
             )
             LaunchedEffect(Unit) {
-                repeat(20) {
-                    if (runCatching { field.requestFocus() }.isSuccess) return@LaunchedEffect
-                    delay(30)
-                }
+                field.focusSoon()
             }
         }
         // Done on the keyboard puts focus back on the box (only after typing, not when the screen opens).
@@ -457,7 +459,7 @@ private fun Field(
             if (editing) {
                 typed = true
             } else if (typed) {
-                runCatching { box.requestFocus() }
+                box.tryFocus()
             }
         }
     }

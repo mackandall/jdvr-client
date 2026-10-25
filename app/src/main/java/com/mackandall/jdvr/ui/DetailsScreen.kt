@@ -92,7 +92,7 @@ fun DetailsPage(
     LaunchedEffect(itemId, refresh) {
         attemptResult { Jdvr.backend.details(itemId) }.onSuccess { d = it }.onFailure { error = it.message }
     }
-    LaunchedEffect(d != null) { if (d != null) runCatching { play.requestFocus() } }
+    LaunchedEffect(d != null) { if (d != null) play.tryFocus() }
 
     val det = d
     Box(Modifier.fillMaxSize().screenBackground()) {

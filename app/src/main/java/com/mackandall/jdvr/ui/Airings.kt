@@ -140,10 +140,7 @@ fun AiringsDialog(
         loaded = true
     }
     LaunchedEffect(loaded) {
-        repeat(20) {
-            if (runCatching { first.requestFocus() }.isSuccess) return@LaunchedEffect
-            delay(50)
-        }
+        first.focusSoon()
     }
 
     fun doRerecord(pid: String?) {

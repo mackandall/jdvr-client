@@ -75,6 +75,7 @@ import com.mackandall.jdvr.data.ProgramStartResult
 import com.mackandall.jdvr.data.ProgramStartStatus
 import com.mackandall.jdvr.data.Segment
 import com.mackandall.jdvr.data.attempt
+import com.mackandall.jdvr.ui.tryFocus
 
 private fun clock(ms: Long): String {
     val s = (ms / 1000).coerceAtLeast(0)
@@ -279,19 +280,19 @@ fun RecordingPlayerScreen(
     LaunchedEffect(infoOpen) {
         if (infoOpen) {
             delay(80)
-            runCatching { infoFocus.requestFocus() }
+            infoFocus.tryFocus()
         } else {
-            runCatching { focus.requestFocus() }
+            focus.tryFocus()
         }
     }
 
     LaunchedEffect(controlsOpen) {
         if (controlsOpen) {
             delay(50)
-            runCatching { playFocus.requestFocus() }
+            playFocus.tryFocus()
         } else {
             osdUntil = System.currentTimeMillis() + 2000
-            runCatching { focus.requestFocus() }
+            focus.tryFocus()
         }
     }
     // The controls tuck away after 8 s untouched while playing.
@@ -363,7 +364,7 @@ fun RecordingPlayerScreen(
     LaunchedEffect(editFocus) {
         val target = editFocus ?: return@LaunchedEffect
         repeat(20) {
-            if (runCatching { target.requestFocus() }.isSuccess) {
+            if (target.tryFocus()) {
                 editFocus = null
                 return@LaunchedEffect
             }

@@ -147,10 +147,7 @@ fun RecordingsByDate(
 
     // Focus the first line the first time the list is there (the rail hands focus over with [entry]).
     LaunchedEffect(Unit) {
-        repeat(40) {
-            if (runCatching { entry.requestFocus() }.isSuccess) return@LaunchedEffect
-            delay(50)
-        }
+        entry.focusSoon(withinMs = 2000)
     }
 
     val firstItem = lines.indexOfFirst { it is DateLine.Item }

@@ -61,6 +61,7 @@ import java.time.LocalDateTime
 import java.util.UUID
 import com.mackandall.jdvr.data.MarkSymbols
 import com.mackandall.jdvr.data.attempt
+import com.mackandall.jdvr.ui.tryFocus
 
 private const val ROWS = 4
 private const val WINDOW_MIN = 90L
@@ -107,7 +108,7 @@ fun MiniGuide(
     var recentIndex by remember { mutableIntStateOf(0) }
     var typedAt by remember { mutableStateOf(0L) }
 
-    LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
+    LaunchedEffect(Unit) { focus.tryFocus() }
 
     // Fetch the visible rows (and a few either side) for the next few hours.
     LaunchedEffect(top, windowStart, reload) {
@@ -164,7 +165,7 @@ fun MiniGuide(
     val sel = selected()
     if (inRecent) androidx.activity.compose.BackHandler { inRecent = false }
     // The panel closed: the band has the remote again.
-    LaunchedEffect(detail) { if (detail == null) runCatching { focus.requestFocus() } }
+    LaunchedEffect(detail) { if (detail == null) focus.tryFocus() }
     Box(modifier) {
     Column(
         Modifier

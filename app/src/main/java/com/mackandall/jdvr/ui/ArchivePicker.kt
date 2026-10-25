@@ -107,7 +107,7 @@ fun ArchivePicker(choices: ArchiveChoices, onPick: (ArchiveChoice) -> Unit, onDi
         // focus, and an early requestFocus silently does nothing: retry until it lands.
         repeat(40) {
             if (hasFocus) return@LaunchedEffect
-            runCatching { first.requestFocus() }
+            first.tryFocus()
             kotlinx.coroutines.delay(50)
         }
     }

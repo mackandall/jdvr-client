@@ -70,7 +70,7 @@ fun SettingsScreen(
         return
     }
     // Back from the Menu page: focus where it was opened from.
-    androidx.compose.runtime.LaunchedEffect(Unit) { if (cameBack) runCatching { menuButton.requestFocus() } }
+    androidx.compose.runtime.LaunchedEffect(Unit) { if (cameBack) menuButton.tryFocus() }
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(start = 28.dp, top = 24.dp, end = 28.dp, bottom = 32.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -379,10 +379,7 @@ private fun TownRow() {
                     },
                 )
                 LaunchedEffect(Unit) {
-                    repeat(20) {
-                        if (runCatching { field.requestFocus() }.isSuccess) return@LaunchedEffect
-                        kotlinx.coroutines.delay(30)
-                    }
+                    field.focusSoon()
                 }
             }
             Button("Find", primary = true) { find() }
@@ -418,7 +415,7 @@ private fun MenuSettings(libraries: List<Library>) {
     // The order before the pick-up, for Back.
     var before by remember { mutableStateOf<Pair<List<String>, List<String>>?>(null) }
     val first = remember { FocusRequester() }
-    androidx.compose.runtime.LaunchedEffect(Unit) { runCatching { first.requestFocus() } }
+    androidx.compose.runtime.LaunchedEffect(Unit) { first.tryFocus() }
 
     fun move(
         key: String,

@@ -542,7 +542,7 @@ fun SageHome(
         BackHandler {
             picking = false
             // The picker's row had focus; give it back to the menu.
-            runCatching { entry.requestFocus() }
+            entry.tryFocus()
         }
         ChannelPicker(channels, last?.id, onPick = {
             picking = false
@@ -693,10 +693,7 @@ private fun ChannelPicker(
     val start = channels.indexOfFirst { it.id == current }.coerceAtLeast(0)
     val state = androidx.compose.foundation.lazy.rememberLazyListState((start - 3).coerceAtLeast(0))
     LaunchedEffect(channels.isNotEmpty()) {
-        repeat(30) {
-            if (runCatching { first.requestFocus() }.isSuccess) return@LaunchedEffect
-            delay(50)
-        }
+        first.focusSoon(withinMs = 1500)
     }
     Box(Modifier.fillMaxSize().background(Color(0xFF040C20).copy(alpha = 0.7f)), contentAlignment = Alignment.Center) {
         Column(

@@ -239,16 +239,13 @@ private fun ListView(
         if (index < 0) return
         scope.launch {
             if (listState.layoutInfo.visibleItemsInfo.none { it.key == id }) runCatching { listState.scrollToItem(index) }
-            repeat(40) {
-                if (runCatching { back.requestFocus() }.isSuccess) return@launch
-                kotlinx.coroutines.delay(50)
-            }
+            back.focusSoon(withinMs = 2000)
         }
     }
     // First showing: the remembered episode (scrolled to), or the first.
     LaunchedEffect(Unit) {
         if (returnTo == null) {
-            runCatching { first.requestFocus() }
+            first.tryFocus()
         } else {
             backToPressed()
         }
@@ -261,10 +258,7 @@ private fun ListView(
             return@LaunchedEffect
         }
         if (listState.layoutInfo.visibleItemsInfo.none { it.key == id }) runCatching { listState.scrollToItem(index) }
-        repeat(40) {
-            if (runCatching { back.requestFocus() }.isSuccess) return@LaunchedEffect
-            kotlinx.coroutines.delay(50)
-        }
+        back.focusSoon(withinMs = 2000)
     }
     // Descriptions the list didn't come with (recordings), fetched as episodes get focus.
     val more = remember { mutableStateMapOf<UUID, LibItem>() }
@@ -465,7 +459,7 @@ private fun TilesView(
     }
     val d = details[focused.id]
     val start = remember(season) { FocusRequester() }
-    LaunchedEffect(season) { runCatching { start.requestFocus() } }
+    LaunchedEffect(season) { start.tryFocus() }
 
     // The picture behind: the show's backdrop; without one, the focused recording's picture, once
     // focus has rested a moment (no flicker while moving along the row).

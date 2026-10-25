@@ -204,7 +204,7 @@ fun Rail(
     LaunchedEffect(Unit) {
         repeat(30) {
             if (hadFocus) return@LaunchedEffect
-            runCatching { current.requestFocus() }
+            current.tryFocus()
             kotlinx.coroutines.delay(50)
         }
     }

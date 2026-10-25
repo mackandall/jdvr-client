@@ -84,6 +84,7 @@ import com.mackandall.jdvr.data.MarkSymbols
 import com.mackandall.jdvr.data.TunerStatus
 import com.mackandall.jdvr.data.attempt
 import com.mackandall.jdvr.data.attemptResult
+import com.mackandall.jdvr.ui.tryFocus
 
 /** This visit's buffer: the one recording now (an older, finished one is the wrong place to land). */
 private fun List<Buffer>.currentBuffer() = lastOrNull { it.recording && it.itemId != null }
@@ -314,10 +315,10 @@ fun PlayerScreen(
         if (actionsOpen) {
             osdUntil = Long.MAX_VALUE
             delay(50)
-            runCatching { playFocus.requestFocus() }
+            playFocus.tryFocus()
         } else {
             osdUntil = System.currentTimeMillis() + 3000
-            runCatching { focus.requestFocus() }
+            focus.tryFocus()
         }
     }
     // The controls tuck away after 8 s untouched.
@@ -331,7 +332,7 @@ fun PlayerScreen(
     // The programme's full panel (Info): details plus Record, series, favourites, watched…
     var infoOpen by remember { mutableStateOf(false) }
     if (infoOpen) androidx.activity.compose.BackHandler { infoOpen = false }
-    LaunchedEffect(infoOpen) { if (!infoOpen) runCatching { focus.requestFocus() } }
+    LaunchedEffect(infoOpen) { if (!infoOpen) focus.tryFocus() }
     // The top info box's extras for the programme on now: ratings, genres, and what's next.
     var nowDetails by remember { mutableStateOf<ItemDetails?>(null) }
     var nextUp by remember { mutableStateOf<com.mackandall.jdvr.data.Program?>(null) }
@@ -343,7 +344,7 @@ fun PlayerScreen(
         nowDetails = attempt { Jdvr.backend.details(now.id) }
         nextUp = attempt { Jdvr.backend.programs(listOf(channelId), now.end, now.end.plusHours(3)) }?.firstOrNull { !it.start.isBefore(now.end) }
     }
-    LaunchedEffect(miniOpen) { if (!miniOpen) runCatching { focus.requestFocus() } }
+    LaunchedEffect(miniOpen) { if (!miniOpen) focus.tryFocus() }
 
     fun showOsd() {
         osdUntil = System.currentTimeMillis() + 5000
@@ -1043,7 +1044,7 @@ private fun TunersBusy(
     modifier: Modifier,
 ) {
     val first = remember { FocusRequester() }
-    LaunchedEffect(Unit) { runCatching { first.requestFocus() } }
+    LaunchedEffect(Unit) { first.tryFocus() }
     Column(
         modifier.width(640.dp).background(Jc.Sheet, RoundedCornerShape(16.dp)).padding(24.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),

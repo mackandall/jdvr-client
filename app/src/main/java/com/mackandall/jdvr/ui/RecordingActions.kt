@@ -257,10 +257,7 @@ fun RecordingActions(
         LaunchedEffect(c?.inFlight, c?.found) {
             if (comHadFocus || android.os.SystemClock.uptimeMillis() - comLostAt < 1000) {
                 // The new button needs a frame to be there.
-                repeat(10) {
-                    if (runCatching { comFocus.requestFocus() }.isSuccess) return@LaunchedEffect
-                    delay(30)
-                }
+                comFocus.focusSoon()
             }
         }
         when {
