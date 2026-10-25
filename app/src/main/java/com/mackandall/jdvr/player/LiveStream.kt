@@ -262,6 +262,9 @@ internal class LiveStream(
         val url = copyUrl ?: return
         // Leaving the live stream: it stays open (NextPVR would drop the buffer with it).
         if (!onHls) Jdvr.backend.holdLive(true)
+        // NextPVR's buffer is one file, opened anywhere: start (and rewind) on the full picture at or
+        // before the moment, or the first pictures are broken (green while paused, a hitch on Play).
+        if (Jdvr.backend.liveCopyIsFile) player.setSeekParameters(androidx.media3.exoplayer.SeekParameters.PREVIOUS_SYNC)
         player.setMediaItem(MediaItem.fromUri(Jdvr.backend.liveCopyOpenUrl(url)), positionMs)
         player.playWhenReady = play
         player.prepare()
@@ -284,6 +287,7 @@ internal class LiveStream(
         if (onHls && copyUrl != p.url) {
             // NextPVR: a fresh live stream starts a fresh buffer (the old one goes with the held stream).
             Jdvr.backend.holdLive(false)
+            player.setSeekParameters(androidx.media3.exoplayer.SeekParameters.DEFAULT)
             player.setMediaItem(MediaItem.fromUri(p.url))
             player.playWhenReady = true
             player.prepare()
