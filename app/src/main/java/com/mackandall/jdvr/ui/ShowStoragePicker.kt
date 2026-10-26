@@ -235,7 +235,7 @@ fun ShowStoragePicker(
                         chosen.isNotEmpty() -> "IN THIS ORDER"
                         !thisOne -> "IN THIS ORDER · none: it stays on the recording drive"
                         mode == "drive" -> "IN THIS ORDER · none: it stays on the recording drive"
-                        else -> "IN THIS ORDER · none: uses the show's setting (" + (showWhere ?: "recording drive") + ")"
+                        else -> "IN THIS ORDER · none: the default, the show's setting (" + (showWhere ?: "recording drive") + ")"
                     },
                 )
                 chosen.forEachIndexed { i, path ->
@@ -318,7 +318,7 @@ fun ShowStoragePicker(
                             }
                         }
                         if (chosen.isNotEmpty() || mode != "show") {
-                            Button("Use the show's setting") {
+                            Button("Restore default") {
                                 chosen = emptyList()
                                 mode = "show"
                             }
