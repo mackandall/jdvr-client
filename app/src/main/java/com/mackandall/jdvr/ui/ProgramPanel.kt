@@ -271,6 +271,8 @@ internal fun ProgramPanel(
                         if (airingsHere) {
                             AiringsDialog(programId = p.id, onNote = { msg -> if (onActed != null) onActed(msg) }, onDismiss = { airingsHere = false })
                         }
+                        // JellyDVR Space: where this show's recordings are kept.
+                        StoreShowButton(p.id, onNote = { msg -> if (onActed != null) onActed(msg) }, modifier = Modifier.fillMaxWidth())
                         if (schedule != null && rights.record) {
                             val fav = schedule?.favourite
                             Button(

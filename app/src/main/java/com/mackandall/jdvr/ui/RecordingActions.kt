@@ -430,6 +430,8 @@ fun RecordingActions(
             )
         }
     }
+    // JellyDVR Space: where this recording's show is kept (episodes only; the server says no for movies).
+    if (manage && cut == null) StoreShowButton(itemId, onNote)
     // An archive copy: only where this TV may delete from the archive, and it says where from.
     val from = place?.let { " from $it" } ?: " from the archive"
     val trashDays = rememberTrashDays()
@@ -576,6 +578,7 @@ fun ShowActions(
             )
         }
     }
+    StoreShowButton(seriesId, onNote)
     // Episode History's "Forget this show": its episodes record again (watched ones too).
     val f = forget
     if (f != null && f.episodes > 0) {

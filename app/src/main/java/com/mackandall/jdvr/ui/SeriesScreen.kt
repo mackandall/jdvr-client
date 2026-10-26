@@ -388,7 +388,7 @@ internal fun SeriesTimerRows(
 }
 
 @Composable
-private fun EditRow(
+internal fun EditRow(
     label: String,
     help: String,
     value: String,

@@ -85,6 +85,12 @@ fun DetailsPage(
                     .firstOrNull()
             }
     }
+    // Where this recording's show is stored, for "→ moves to …" under Stored.
+    val rights = deviceRights()
+    var storage by remember { mutableStateOf<com.mackandall.jdvr.data.ShowStorage?>(null) }
+    LaunchedEffect(itemId, refresh, rights.archive) {
+        storage = if (rights.archive) attempt { Jdvr.backend.showStorage(itemId) } else null
+    }
     LaunchedEffect(note) {
         if (note != null) {
             kotlinx.coroutines.delay(4000)
@@ -169,7 +175,7 @@ fun DetailsPage(
                     if (det.audio.isNotEmpty()) Info("Audio", det.audio.first() + if (det.audio.size > 1) "  +${det.audio.size - 1}" else "")
                     if (det.subtitles.isNotEmpty()) Info("Subtitles", det.subtitles.take(2).joinToString(", ") + if (det.subtitles.size > 2) "  +${det.subtitles.size - 2}" else "")
                     det.file?.let { Info("File", it) }
-                    det.location?.let { Info("Stored", it) }
+                    det.location?.let { Info("Stored", it, storage?.takeIf { s -> s.onRecordingDrive && s.sortMode == "active" }?.movesTo?.let { to -> "→ moves to $to" }) }
                     commercials?.let { Info("Commercials", it.label) }
                 }
 
@@ -196,10 +202,13 @@ fun DetailsPage(
 private fun Info(
     label: String,
     value: String,
+    // A second line, e.g. where a recording moves to.
+    sub: String? = null,
 ) {
     Column(Modifier.background(Jc.Panel.seeThrough(0.85f), RoundedCornerShape(8.dp)).padding(horizontal = 10.dp, vertical = 6.dp)) {
         Text(label.uppercase(), color = Jc.Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold)
         Text(value, color = Jc.Text, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        sub?.let { Text(it, color = Jc.Focus, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
     }
 }
 
