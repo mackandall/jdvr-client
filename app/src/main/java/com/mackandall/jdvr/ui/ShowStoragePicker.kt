@@ -148,7 +148,8 @@ fun ShowStoragePicker(
     val first = remember { FocusRequester() }
     val scope = rememberCoroutineScope()
     val byPath = storage.folders.associateBy { it.path }
-    val others = storage.folders.filter { it.path !in chosen }
+    // Movie-only folders aren't for shows (one already chosen still shows, to take it out).
+    val others = storage.folders.filter { it.path !in chosen && it.kind != "movies" }
 
     LaunchedEffect(Unit) { first.focusSoon() }
 
