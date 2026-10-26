@@ -138,6 +138,14 @@
     "imageUrl": "https://raw.githubusercontent.com/mackandall/jellyfin-plugin-jellydvr-space/master/icon.png",
     "versions": [
       {
+        "version": "1.1.0.0",
+        "changelog": "Store in: choose the storage folders for a show (Series options) or for one recording (Recording options), in Jellyfin's web client and JDVR; sorting puts each recording in the first of its folders with room. Each storage folder has its own floor; the settings page is in numbered sections. Devices: Remove takes a TV off the list and signs it out. Recordings still being recorded, or whose pieces Episode History has yet to join, stay where they are; moved recordings no longer get planned a second time.",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/mackandall/jellyfin-plugin-jellydvr-space/releases/download/v1.1.0.0/jellyfin-plugin-jellydvr-space_1.1.0.0.zip",
+        "checksum": "3cc6ecbe583a6c717edea24e25c7d088",
+        "timestamp": "2026-10-26T18:46:00.0000000Z"
+      },
+      {
         "version": "1.0.1.0",
         "changelog": "Keep at least … free is automatic by default: a tenth of the recordings drive, between 10 and 100 GB (0 in the setting); a saved number is kept.",
         "targetAbi": "12.0.0.0",
