@@ -36,7 +36,7 @@ interface Archiving {
         locations: List<String>,
     ): Message? = null
 
-    /** Saves one programme's or recording's own folders: [mode] "show" (follow the show), "drive" or "folders". */
+    /** Saves one programme's or recording's own folders: [mode] "show" (use the show's setting), "drive" or "folders". */
     suspend fun setRecordingStorage(
         itemId: UUID,
         mode: String,
@@ -137,7 +137,7 @@ data class RecordingStorage(
     @SerialName("Title") val title: String = "",
     // A guide programme: the choice waits for the recording.
     @SerialName("Upcoming") val upcoming: Boolean = false,
-    // "show" (follows the show's setting), "drive" (stays on the recording drive) or "folders".
+    // "show" (uses the show's setting), "drive" (stays on the recording drive) or "folders".
     @SerialName("Mode") val mode: String = "show",
     @SerialName("Locations") val locations: List<String> = emptyList(),
 )

@@ -170,7 +170,7 @@ fun ShowStoragePicker(
     val own = storage.recording.takeIf { onPicked == null && itemId != null }
     // From a programme or a recording, start on its own choice: that's what its menu is about.
     var thisOne by remember { mutableStateOf(own != null) }
-    // This recording: "show" (follow the show), "drive" or "folders".
+    // This recording: "show" (use the show's setting), "drive" or "folders".
     var mode by remember { mutableStateOf(own?.mode ?: "show") }
     var chosen by remember { mutableStateOf(if (own != null) own.locations else storage.locations) }
     var open by remember { mutableStateOf<String?>(null) }
@@ -235,7 +235,7 @@ fun ShowStoragePicker(
                         chosen.isNotEmpty() -> "IN THIS ORDER"
                         !thisOne -> "IN THIS ORDER · none: it stays on the recording drive"
                         mode == "drive" -> "IN THIS ORDER · none: it stays on the recording drive"
-                        else -> "IN THIS ORDER · none: follows the show (" + (showWhere ?: "recording drive") + ")"
+                        else -> "IN THIS ORDER · none: uses the show's setting (" + (showWhere ?: "recording drive") + ")"
                     },
                 )
                 chosen.forEachIndexed { i, path ->
@@ -318,7 +318,7 @@ fun ShowStoragePicker(
                             }
                         }
                         if (chosen.isNotEmpty() || mode != "show") {
-                            Button("Follow the show") {
+                            Button("Use the show's setting") {
                                 chosen = emptyList()
                                 mode = "show"
                             }
