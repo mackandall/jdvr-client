@@ -173,7 +173,6 @@ fun ShowStoragePicker(
                         color = Jc.Amber,
                     )
                 }
-                problem?.let { Text(it, fontSize = 15.sp, color = Jc.Amber) }
 
                 Caption(if (chosen.isEmpty()) "IN THIS ORDER · none: it stays on the recording drive" else "IN THIS ORDER")
                 chosen.forEachIndexed { i, path ->
@@ -238,6 +237,8 @@ fun ShowStoragePicker(
                     if (chosen.isNotEmpty()) Button("Keep on the recording drive") { chosen = emptyList() }
                     Button("Cancel", onClick = onDismiss)
                 }
+                // Beside the buttons, where the eye is after pressing Save.
+                problem?.let { Text(it, fontSize = 15.sp, color = Jc.Amber) }
             }
         }
     }
