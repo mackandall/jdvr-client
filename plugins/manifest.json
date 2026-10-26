@@ -103,6 +103,14 @@
     "imageUrl": "https://raw.githubusercontent.com/mackandall/jellyfin-plugin-jellydvr-guides/main/icon.png",
     "versions": [
       {
+        "version": "1.1.1.0",
+        "changelog": "Schedules Direct: the daily update runs at a time picked at random for each server (2:00 to 6:00, never on the hour) instead of 5:00 everywhere; Update now asks again at most every 15 minutes. Status lines on the settings page break properly again.",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/mackandall/jellyfin-plugin-jellydvr-guides/releases/download/v1.1.1.0/jellyfin-plugin-jellydvr-guides_1.1.1.0.zip",
+        "checksum": "8151e555f371a2b5b9c9953b5a4cc17d",
+        "timestamp": "2026-10-26T02:05:03.0000000Z"
+      },
+      {
         "version": "1.1.0.0",
         "changelog": "Renamed JellyDVR Guides (was XMLTV Guide Cleaner; settings carry over). Guide sources: each is an XMLTV guide (cleaning optional) or a Schedules Direct lineup fetched once a day, served at its own address, limited to its tuners' channels, with an optional Jellyfin guide provider created per tuner. Schedules Direct programme pictures are kept and re-checked every 14 days (setting).",
         "targetAbi": "12.0.0.0",
