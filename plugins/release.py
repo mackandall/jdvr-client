@@ -40,6 +40,8 @@ def add_version(path, plugin, entry):
     if item is None:
         item = dict(plugin, versions=[])
         manifest.append(item)
+    else:
+        item.update(plugin)  # a renamed plugin or moved repo shows its new name and icon
     if any(v["version"] == entry["version"] for v in item["versions"]):
         die(f"{path} already lists {plugin['name']} {entry['version']}")
     item["versions"].insert(0, entry)
