@@ -65,7 +65,7 @@ fun rememberStoredIn(
 ): String? {
     val rights = deviceRights()
     var stored by remember(programId) { mutableStateOf(ShowStorageCache.fresh(programId)?.summary()) }
-    LaunchedEffect(programId, rights.archive) {
+    LaunchedEffect(programId, rights.archive, ShowStorageCache.version) {
         if (!rights.archive || isMovie) {
             stored = null
             return@LaunchedEffect

@@ -3,6 +3,8 @@ package com.mackandall.jdvr.data
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import org.jellyfin.sdk.api.client.HttpMethod
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import java.util.UUID
 
 /**
@@ -209,7 +211,14 @@ object ShowStorageCache {
         byItem[itemId] = System.currentTimeMillis() to s
     }
 
-    fun clear() = byItem.clear()
+    /** Goes up on each save, so what shows storage reads it again. */
+    var version by androidx.compose.runtime.mutableIntStateOf(0)
+        private set
+
+    fun clear() {
+        byItem.clear()
+        version++
+    }
 
     /** The item's storage if read in the last two minutes, else null. */
     fun fresh(itemId: UUID): ShowStorage? = byItem[itemId]?.takeIf { System.currentTimeMillis() - it.first < FRESH_MS }?.second
