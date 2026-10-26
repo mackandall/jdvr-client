@@ -70,6 +70,8 @@ internal fun ProgramPanel(
     var airingsHere by remember(program.id) { mutableStateOf(false) }
     // Record series' options (Settings › Record series), shown over the panel.
     var seriesOptions by remember(program.id) { mutableStateOf(false) }
+    // The timer whose Recording options are open.
+    var recordingOptions by remember(program.id) { mutableStateOf<String?>(null) }
     // Episode History (watched mark, a copy to play, forget) and JellyDVR Live (is this only a buffer).
     var eh by remember(program.id) { mutableStateOf<EhProgram?>(null) }
     // What "Forget this show" would forget (administrators, a show with history).
@@ -144,6 +146,13 @@ internal fun ProgramPanel(
     if (seriesOptions) {
         SeriesOptions(programId = program.id, programName = program.name) { msg ->
             seriesOptions = false
+            if (msg != null) act { msg }
+        }
+    }
+
+    recordingOptions?.let { id ->
+        RecordingOptions(timerId = id, programId = program.id, programName = program.name) { msg ->
+            recordingOptions = null
             if (msg != null) act { msg }
         }
     }
@@ -226,6 +235,8 @@ internal fun ProgramPanel(
                                     if (p.isOn()) "Recording stopped: what was recorded so far is kept." else "Recording cancelled."
                                 }
                             }
+                            // Start early / end late, and (JellyDVR Space) where this one is stored.
+                            Button("Recording options…", modifier = Modifier.fillMaxWidth()) { recordingOptions = p.timerId }
                         } else {
                             Button("Record", modifier = recordModifier, leading = { Dot(Jc.Recording) }) {
                                 act {
@@ -271,8 +282,6 @@ internal fun ProgramPanel(
                         if (airingsHere) {
                             AiringsDialog(programId = p.id, onNote = { msg -> if (onActed != null) onActed(msg) }, onDismiss = { airingsHere = false })
                         }
-                        // JellyDVR Space: where this show's recordings are kept.
-                        StoreShowButton(p.id, onNote = { msg -> if (onActed != null) onActed(msg) }, modifier = Modifier.fillMaxWidth())
                         if (schedule != null && rights.record) {
                             val fav = schedule?.favourite
                             Button(

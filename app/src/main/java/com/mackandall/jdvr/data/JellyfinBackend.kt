@@ -689,6 +689,17 @@ class JellyfinBackend private constructor(
         maxHeight: Int,
     ): String? = itemId.toUuid()?.let { imageUrl(it, maxHeight) }
 
+    override suspend fun timer(timerId: String): org.jellyfin.sdk.model.api.TimerInfoDto? =
+        io {
+            runCatching { api.liveTvApi.getTimer(timerId).content }.getOrNull()
+                ?: api.liveTvApi
+                    .getTimers()
+                    .content.items
+                    .firstOrNull { it.id == timerId || it.externalId == timerId }
+        }
+
+    override suspend fun updateTimer(t: org.jellyfin.sdk.model.api.TimerInfoDto): Unit = io { api.liveTvApi.updateTimer(t.id!!, t) }
+
     override suspend fun updateSeriesTimer(t: org.jellyfin.sdk.model.api.SeriesTimerInfoDto): Unit = io { api.liveTvApi.updateSeriesTimer(t.id!!, t) }
 
     override suspend fun seriesScheduled(): Map<String, SeriesScheduled> =

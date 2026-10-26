@@ -30,6 +30,9 @@ interface Archiving {
     /** JellyDVR Space: where the show of [itemId] (series, episode or guide programme) is stored, and the folders to choose from. */
     suspend fun showStorage(itemId: UUID): ShowStorage? = null
 
+    /** The same for a show by its name (a series recording's options), with no one recording of it. */
+    suspend fun showStorage(show: String): ShowStorage? = null
+
     /** Saves a show's storage folders in order (empty: it stays on the recording drive). */
     suspend fun setShowStorage(
         show: String,
@@ -172,6 +175,8 @@ class SpacePlugin(
 
     override suspend fun showStorage(itemId: UUID): ShowStorage? =
         server.call<ShowStorage>(HttpMethod.GET, "/JellyDvrSpace/ShowStorage/$itemId")?.also { ShowStorageCache.put(itemId, it) }
+
+    override suspend fun showStorage(show: String): ShowStorage? = server.call(HttpMethod.GET, "/JellyDvrSpace/ShowStorage", mapOf("show" to show))
 
     override suspend fun setShowStorage(
         show: String,

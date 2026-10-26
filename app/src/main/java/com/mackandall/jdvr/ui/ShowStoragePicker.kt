@@ -166,6 +166,8 @@ fun ShowStoragePicker(
     onDismiss: () -> Unit,
     // Instead of saving: hand the show's list back (the Record series dialog saves it with the series).
     onPicked: ((List<String>) -> Unit)? = null,
+    // From Recording options: only this recording's choice, no switch to the whole show.
+    oneOnly: Boolean = false,
 ) {
     val own = storage.recording.takeIf { onPicked == null && itemId != null }
     // From a programme or a recording, start on its own choice: that's what its menu is about.
@@ -207,7 +209,7 @@ fun ShowStoragePicker(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 Text(if (thisOne) "Store this recording in" else "Store this show in", fontSize = 26.sp, color = Jc.Title, fontWeight = FontWeight.SemiBold)
-                if (own != null) {
+                if (own != null && !oneOnly) {
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         Button("This recording", primary = thisOne) { switchTo(true) }
                         Button("Every ${storage.show} recording", primary = !thisOne) { switchTo(false) }

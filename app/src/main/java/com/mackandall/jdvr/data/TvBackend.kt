@@ -146,6 +146,12 @@ interface TvBackend :
         maxHeight: Int,
     ): String?
 
+    /** One scheduled (or under way) recording's timer, by its id; null when it's gone. */
+    suspend fun timer(timerId: String): org.jellyfin.sdk.model.api.TimerInfoDto? = null
+
+    /** Saves one recording's options (start early, end late). */
+    suspend fun updateTimer(t: org.jellyfin.sdk.model.api.TimerInfoDto) {}
+
     /** Saves a series recording's options (new only, any channel / time, padding, keep…). */
     suspend fun updateSeriesTimer(t: org.jellyfin.sdk.model.api.SeriesTimerInfoDto)
 
