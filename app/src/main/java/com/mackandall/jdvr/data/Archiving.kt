@@ -33,6 +33,13 @@ interface Archiving {
         show: String,
         locations: List<String>,
     ): Message? = null
+
+    /** Saves one programme's or recording's own folders: [mode] "show" (follow the show), "drive" or "folders". */
+    suspend fun setRecordingStorage(
+        itemId: UUID,
+        mode: String,
+        locations: List<String>,
+    ): Message? = null
 }
 
 /**
@@ -113,10 +120,32 @@ data class ShowStorage(
     @SerialName("SortMode") val sortMode: String = "preview",
     // Set for a movie: shows only.
     @SerialName("Problem") val problem: String? = null,
+    // A guide programme's or a recording's own choice, which wins over the show's; null for a series.
+    @SerialName("Recording") val recording: RecordingStorage? = null,
 ) {
     /** The chosen folders' short names, in order. */
-    val labels get() = locations.map { p -> folders.firstOrNull { it.path == p }?.label ?: p }
+    val labels get() = labelsOf(locations)
+
+    fun labelsOf(paths: List<String>) = paths.map { p -> folders.firstOrNull { it.path == p }?.label ?: p }
 }
+
+/** One programme's or recording's own storage ("Store this recording in…"). */
+@Serializable
+data class RecordingStorage(
+    @SerialName("Title") val title: String = "",
+    // A guide programme: the choice waits for the recording.
+    @SerialName("Upcoming") val upcoming: Boolean = false,
+    // "show" (follows the show's setting), "drive" (stays on the recording drive) or "folders".
+    @SerialName("Mode") val mode: String = "show",
+    @SerialName("Locations") val locations: List<String> = emptyList(),
+)
+
+@Serializable
+private data class RecordingStorageRequest(
+    @SerialName("ItemId") val itemId: String,
+    @SerialName("Mode") val mode: String,
+    @SerialName("Locations") val locations: List<String>,
+)
 
 @Serializable
 private data class ShowStorageRequest(
@@ -140,7 +169,7 @@ class SpacePlugin(
     ): Message? = server.call(HttpMethod.POST, "/JellyDvrSpace/Archive/$itemId", mapOf("target" to target))
 
     override suspend fun showStorage(itemId: UUID): ShowStorage? =
-        server.call<ShowStorage>(HttpMethod.GET, "/JellyDvrSpace/ShowStorage/$itemId")?.also { ShowStorageCache.put(it) }
+        server.call<ShowStorage>(HttpMethod.GET, "/JellyDvrSpace/ShowStorage/$itemId")?.also { ShowStorageCache.put(itemId, it) }
 
     override suspend fun setShowStorage(
         show: String,
@@ -150,27 +179,38 @@ class SpacePlugin(
             HttpMethod.POST,
             "/JellyDvrSpace/ShowStorage",
             body = server.json.encodeToString(ShowStorageRequest.serializer(), ShowStorageRequest(show, locations)),
-        ).also { ShowStorageCache.forget(show) }
+        ).also { ShowStorageCache.clear() }
+
+    override suspend fun setRecordingStorage(
+        itemId: UUID,
+        mode: String,
+        locations: List<String>,
+    ): Message? =
+        server.call<Message>(
+            HttpMethod.POST,
+            "/JellyDvrSpace/RecordingStorage",
+            body = server.json.encodeToString(RecordingStorageRequest.serializer(), RecordingStorageRequest(itemId.toString(), mode, locations)),
+        ).also { ShowStorageCache.clear() }
 }
 
 /**
- * Shows' storage folders as last read, by show name: the guide's info band shows them without
- * asking the server (which checks every folder's space, network shares too) on each move.
+ * Storage as last read, by programme or recording (one airing can have its own choice): the
+ * guide's info band shows it without asking the server (which checks every folder's space,
+ * network shares too) each time the cursor comes back. Any save clears it all.
  */
 object ShowStorageCache {
     private const val FRESH_MS = 120_000L
-    private val byShow = java.util.concurrent.ConcurrentHashMap<String, Pair<Long, ShowStorage>>()
+    private val byItem = java.util.concurrent.ConcurrentHashMap<UUID, Pair<Long, ShowStorage>>()
 
-    private fun key(show: String) = show.trim().lowercase().replace(Regex("\\s+"), " ")
-
-    fun put(s: ShowStorage) {
-        if (s.show.isNotBlank()) byShow[key(s.show)] = System.currentTimeMillis() to s
+    fun put(
+        itemId: UUID,
+        s: ShowStorage,
+    ) {
+        byItem[itemId] = System.currentTimeMillis() to s
     }
 
-    fun forget(show: String) {
-        byShow.remove(key(show))
-    }
+    fun clear() = byItem.clear()
 
-    /** The show's storage if read in the last two minutes, else null. */
-    fun fresh(show: String): ShowStorage? = byShow[key(show)]?.takeIf { System.currentTimeMillis() - it.first < FRESH_MS }?.second
+    /** The item's storage if read in the last two minutes, else null. */
+    fun fresh(itemId: UUID): ShowStorage? = byItem[itemId]?.takeIf { System.currentTimeMillis() - it.first < FRESH_MS }?.second
 }

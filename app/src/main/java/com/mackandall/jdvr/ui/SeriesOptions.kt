@@ -99,14 +99,16 @@ fun SeriesOptions(
                 }
                 SeriesTimerRows(t, first) { timer = it }
                 storage?.let { st ->
-                    val now = st.copy(locations = storeIn ?: st.locations)
+                    // A series sets the show's folders, not one airing's.
+                    val now = st.copy(locations = storeIn ?: st.locations, recording = null)
                     EditRow("Store in", "Where finished recordings go (JellyDVR Space's storage folders).", now.summary() ?: "The recording drive") {
                         pickingStore = true
                     }
                     if (pickingStore) {
                         ShowStoragePicker(
                             now,
-                            onSaved = { _, _ -> pickingStore = false },
+                            itemId = null,
+                            onSaved = { pickingStore = false },
                             onDismiss = { pickingStore = false },
                             onPicked = {
                                 storeIn = it

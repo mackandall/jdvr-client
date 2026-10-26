@@ -659,7 +659,7 @@ private fun InfoBand(
                     Text(second, color = Jc.Muted, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
-            val storedIn = rememberStoredIn(p.id, p.name, p.isMovie)
+            val storedIn = rememberStoredIn(p.id, p.isMovie)
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 GuideChips(p)
                 if (p.isRepeat) Chip("repeat", Jc.Muted)

@@ -40,6 +40,7 @@ import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
 import com.mackandall.jdvr.data.Jdvr
 import com.mackandall.jdvr.data.ShowStorage
+import com.mackandall.jdvr.data.ShowStorageCache
 import com.mackandall.jdvr.data.StorageFolder
 import com.mackandall.jdvr.data.attempt
 import kotlinx.coroutines.launch
@@ -53,23 +54,23 @@ private fun size(bytes: Long): String =
 private fun floor(gb: Int): String = if (gb >= 1024) "%.1f TB".format(gb / 1024.0) else "$gb GB"
 
 /**
- * The folder the show of guide programme [p] is stored in ("USBShareD / ArchivedTV"), or null:
- * from what was read lately, else asked once the cursor has rested on it.
+ * The folder guide programme [programId] will be stored in ("USBShareD / ArchivedTV"): its own
+ * choice, else its show's; null when it stays put. From what was read lately, else asked once
+ * the cursor has rested on it.
  */
 @Composable
 fun rememberStoredIn(
     programId: UUID,
-    show: String,
     isMovie: Boolean,
 ): String? {
     val rights = deviceRights()
-    var stored by remember(programId) { mutableStateOf(com.mackandall.jdvr.data.ShowStorageCache.fresh(show)?.summary()) }
+    var stored by remember(programId) { mutableStateOf(ShowStorageCache.fresh(programId)?.summary()) }
     LaunchedEffect(programId, rights.archive) {
-        if (!rights.archive || isMovie || show.isBlank()) {
+        if (!rights.archive || isMovie) {
             stored = null
             return@LaunchedEffect
         }
-        com.mackandall.jdvr.data.ShowStorageCache.fresh(show)?.let {
+        ShowStorageCache.fresh(programId)?.let {
             stored = it.summary()
             return@LaunchedEffect
         }
@@ -80,13 +81,35 @@ fun rememberStoredIn(
     return stored
 }
 
-/** What the show's storage comes to, in a few words: "USBShareD / ArchivedTV, then …", or null when it stays put. */
-fun ShowStorage.summary(): String? = labels.takeIf { it.isNotEmpty() }?.joinToString(", then ")
+/**
+ * Where this item's recordings go, in a few words: "USBShareD / ArchivedTV, then …" (its own
+ * choice if it has one, else the show's), or null when it stays put.
+ */
+fun ShowStorage.summary(): String? {
+    val own = recording
+    val paths = if (own != null && own.mode != "show") own.locations else locations
+    return labelsOf(paths).takeIf { it.isNotEmpty() }?.joinToString(", then ")
+}
+
+/** The menu button's words: whose setting applies and where it goes. */
+private fun ShowStorage.buttonLabel(): String {
+    val own = recording
+    val base = if (own != null) "Store in…" else "Store this show in…"
+    val where = summary()
+    return when {
+        own?.mode == "drive" -> "$base · recording drive (this recording)"
+        own?.mode == "folders" && where != null -> "$base · $where (this recording)"
+        where != null && own != null -> "$base · $where (whole show)"
+        where != null -> "$base · $where"
+        else -> base
+    }
+}
 
 /**
- * "Store this show in…" (JellyDVR Space) for the show of [itemId]: a button showing the show's
- * folders, opening [ShowStoragePicker]. Shown only to TVs allowed to move recordings to the
- * archive, and not for movies.
+ * "Store in…" (JellyDVR Space) for [itemId]: a guide programme or a recording can have its own
+ * folders, or follow its show's; a series sets the show's. A button saying what applies, opening
+ * [ShowStoragePicker]. Shown only to TVs allowed to move recordings to the archive, and not for
+ * movies.
  */
 @Composable
 fun StoreShowButton(
@@ -104,7 +127,7 @@ fun StoreShowButton(
     }
     val s = storage ?: return
     if (s.problem != null || s.folders.isEmpty()) return
-    Button(s.summary()?.let { "Store this show in… · $it" } ?: "Store this show in…", modifier = modifier) {
+    Button(s.buttonLabel(), modifier = modifier) {
         scope.launch {
             // Ask again: free space may have changed since the menu opened.
             storage = attempt { Jdvr.backend.showStorage(itemId) } ?: storage
@@ -114,11 +137,12 @@ fun StoreShowButton(
     if (picking) {
         ShowStoragePicker(
             s,
-            onSaved = { locations, message ->
+            itemId = itemId,
+            onSaved = { message ->
                 picking = false
                 onNote(message)
                 scope.launch {
-                    storage = attempt { Jdvr.backend.showStorage(itemId) } ?: s.copy(locations = locations)
+                    storage = attempt { Jdvr.backend.showStorage(itemId) } ?: storage
                     onChanged(storage)
                 }
             },
@@ -128,20 +152,27 @@ fun StoreShowButton(
 }
 
 /**
- * The show's storage folders, in order (finished recordings go to the first with room), and the
- * other storage folders to add. OK on a chosen folder: try it first or later, or take it out.
- * Folders themselves are set up on the web page. [onSaved] gets the new list and what to tell
- * the viewer.
+ * Where recordings go, for this one recording ([ShowStorage.recording], when there is one) or for
+ * every recording of the show on any channel. The chosen folders in order (a finished recording
+ * goes to the first with room) and the other storage folders to add. OK on a chosen folder: try
+ * it first or later, or take it out. Folders themselves are set up on the web page. [onSaved]
+ * gets what to tell the viewer.
  */
 @Composable
 fun ShowStoragePicker(
     storage: ShowStorage,
-    onSaved: (List<String>, String) -> Unit,
+    itemId: UUID?,
+    onSaved: (String) -> Unit,
     onDismiss: () -> Unit,
-    // Instead of saving: hand the list back (the Record series dialog saves it with the series).
+    // Instead of saving: hand the show's list back (the Record series dialog saves it with the series).
     onPicked: ((List<String>) -> Unit)? = null,
 ) {
-    var chosen by remember { mutableStateOf(storage.locations) }
+    val own = storage.recording.takeIf { onPicked == null && itemId != null }
+    // From a programme or a recording, start on its own choice: that's what its menu is about.
+    var thisOne by remember { mutableStateOf(own != null) }
+    // This recording: "show" (follow the show), "drive" or "folders".
+    var mode by remember { mutableStateOf(own?.mode ?: "show") }
+    var chosen by remember { mutableStateOf(if (own != null) own.locations else storage.locations) }
     var open by remember { mutableStateOf<String?>(null) }
     var saving by remember { mutableStateOf(false) }
     var problem by remember { mutableStateOf<String?>(null) }
@@ -150,6 +181,16 @@ fun ShowStoragePicker(
     val byPath = storage.folders.associateBy { it.path }
     // Movie-only folders aren't for shows (one already chosen still shows, to take it out).
     val others = storage.folders.filter { it.path !in chosen && it.kind != "movies" }
+    val showWhere = storage.labels.takeIf { it.isNotEmpty() }?.joinToString(", then ")
+
+    fun switchTo(one: Boolean) {
+        if (one == thisOne) return
+        thisOne = one
+        chosen = if (one) own?.locations.orEmpty() else storage.locations
+        mode = if (one) own?.mode ?: "show" else "show"
+        open = null
+        problem = null
+    }
 
     LaunchedEffect(Unit) { first.focusSoon() }
 
@@ -158,15 +199,29 @@ fun ShowStoragePicker(
             Column(
                 Modifier
                     .width(760.dp)
-                    .heightIn(max = 500.dp)
+                    .heightIn(max = 520.dp)
                     .clip(RoundedCornerShape(16.dp))
                     .background(Jc.Sheet)
                     .verticalScroll(rememberScrollState())
                     .padding(horizontal = 28.dp, vertical = 22.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                Text("Store this show in", fontSize = 26.sp, color = Jc.Title, fontWeight = FontWeight.SemiBold)
-                Text("${storage.show} · each finished recording goes to the first folder with room", fontSize = 15.sp, color = Jc.Muted)
+                Text(if (thisOne) "Store this recording in" else "Store this show in", fontSize = 26.sp, color = Jc.Title, fontWeight = FontWeight.SemiBold)
+                if (own != null) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Button("This recording", primary = thisOne) { switchTo(true) }
+                        Button("Every ${storage.show} recording", primary = !thisOne) { switchTo(false) }
+                    }
+                }
+                Text(
+                    if (thisOne) {
+                        "${own!!.title} · only this one; it wins over the show's setting"
+                    } else {
+                        "${storage.show} · every recording of the show, on any channel; each goes to the first folder with room"
+                    },
+                    fontSize = 15.sp,
+                    color = Jc.Muted,
+                )
                 if (storage.sortMode != "active") {
                     Text(
                         "Sorting is ${if (storage.sortMode == "off") "off" else "in Preview"} on the server (JellyDVR Space settings), so nothing moves until it's Active.",
@@ -175,7 +230,14 @@ fun ShowStoragePicker(
                     )
                 }
 
-                Caption(if (chosen.isEmpty()) "IN THIS ORDER · none: it stays on the recording drive" else "IN THIS ORDER")
+                Caption(
+                    when {
+                        chosen.isNotEmpty() -> "IN THIS ORDER"
+                        !thisOne -> "IN THIS ORDER · none: it stays on the recording drive"
+                        mode == "drive" -> "IN THIS ORDER · none: it stays on the recording drive"
+                        else -> "IN THIS ORDER · none: follows the show (" + (showWhere ?: "recording drive") + ")"
+                    },
+                )
                 chosen.forEachIndexed { i, path ->
                     val f = byPath[path] ?: StorageFolder(path = path, label = path, problem = "no longer a storage folder")
                     FolderRow(
@@ -199,6 +261,7 @@ fun ShowStoragePicker(
                             }
                             Button("Take out") {
                                 chosen = chosen - path
+                                if (chosen.isEmpty() && mode == "folders") mode = "show"
                                 open = null
                             }
                         }
@@ -213,7 +276,12 @@ fun ShowStoragePicker(
                             number = "+",
                             dashed = true,
                             modifier = if (chosen.isEmpty() && i == 0) Modifier.focusRequester(first) else Modifier,
-                        ) { if (f.problem == null) chosen = chosen + f.path }
+                        ) {
+                            if (f.problem == null) {
+                                chosen = chosen + f.path
+                                mode = "folders"
+                            }
+                        }
                     }
                 }
 
@@ -226,16 +294,38 @@ fun ShowStoragePicker(
                         }
                         saving = true
                         scope.launch {
-                            val r = attempt { Jdvr.backend.setShowStorage(storage.show, chosen) }
+                            val r =
+                                attempt {
+                                    if (thisOne && itemId != null) {
+                                        Jdvr.backend.setRecordingStorage(itemId, if (chosen.isEmpty()) mode.takeIf { it == "drive" } ?: "show" else "folders", chosen)
+                                    } else {
+                                        Jdvr.backend.setShowStorage(storage.show, chosen)
+                                    }
+                                }
                             if (r == null) {
                                 problem = "Couldn't save it."
                                 saving = false
                             } else {
-                                onSaved(chosen, r.message)
+                                onSaved(r.message)
                             }
                         }
                     }
-                    if (chosen.isNotEmpty()) Button("Keep on the recording drive") { chosen = emptyList() }
+                    if (thisOne) {
+                        if (chosen.isNotEmpty() || mode != "drive") {
+                            Button("Keep on the recording drive") {
+                                chosen = emptyList()
+                                mode = "drive"
+                            }
+                        }
+                        if (chosen.isNotEmpty() || mode != "show") {
+                            Button("Follow the show") {
+                                chosen = emptyList()
+                                mode = "show"
+                            }
+                        }
+                    } else if (chosen.isNotEmpty()) {
+                        Button("Keep on the recording drive") { chosen = emptyList() }
+                    }
                     Button("Cancel", onClick = onDismiss)
                 }
                 // Beside the buttons, where the eye is after pressing Save.
