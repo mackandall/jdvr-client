@@ -239,11 +239,19 @@ fun SettingsScreen(
             help = "The servers signed in to before are remembered: pick one to go back to it without signing in, or add another.",
             value = (if (Jdvr.isNextPvr) "NextPVR – " else "Jellyfin – ") + (Jdvr.servers.firstOrNull { Jdvr.isCurrent(it) }?.name ?: Jdvr.session.serverUrl ?: "?") + " · Switch…",
         ) { onSwitchServer() }
-        Section("Server features")
-        ServerFeaturesList()
+        // The server features are Jellyfin plugins; NextPVR has none of them.
+        if (!Jdvr.isNextPvr) {
+            Section("Server features")
+            ServerFeaturesList()
+        }
         Section("About")
         Text(
-            "JDVR ${BuildConfig.VERSION_NAME} · signed in as ${Jdvr.session.userName ?: "?"} on ${Jdvr.session.serverUrl ?: "?"}",
+            "JDVR ${BuildConfig.VERSION_NAME} · " +
+                if (Jdvr.isNextPvr) {
+                    "signed in with the PIN to NextPVR at ${Jdvr.session.serverUrl ?: "?"}"
+                } else {
+                    "signed in as ${Jdvr.session.userName ?: "?"} on ${Jdvr.session.serverUrl ?: "?"}"
+                },
             color = Jc.Muted,
             fontSize = 15.sp,
         )
