@@ -57,18 +57,16 @@ repository, below.)
 
 ## Screenshots
 
-Taken on a real server, TV shows only, in two of the themes: *Midnight* (the default) and
-*MythTV Blue*.
+Taken on a real NextPVR server (over-the-air channels) in the *NextPVR* theme.
 
-| | Midnight | MythTV Blue |
-|---|---|---|
-| Home | ![Home, Midnight theme](screenshots/midnight-1-home.jpg) | ![Home, MythTV Blue theme](screenshots/mythtv-1-home.jpg) |
-| Home, a library's row | ![Home library row, Midnight theme](screenshots/midnight-1b-home-rows.jpg) | ![Home library row, MythTV Blue theme](screenshots/mythtv-1b-home-rows.jpg) |
-| Menu | ![Menu, Midnight theme](screenshots/midnight-2-menu.jpg) | ![Menu, MythTV Blue theme](screenshots/mythtv-2-menu.jpg) |
-| Guide | ![Guide, Midnight theme](screenshots/midnight-3-guide.jpg) | ![Guide, MythTV Blue theme](screenshots/mythtv-3-guide.jpg) |
-| TV library | ![TV library, Midnight theme](screenshots/midnight-4-tv-library.jpg) | ![TV library, MythTV Blue theme](screenshots/mythtv-4-tv-library.jpg) |
-| A show's recordings | ![Show episodes, Midnight theme](screenshots/midnight-5-show-episodes.jpg) | ![Show episodes, MythTV Blue theme](screenshots/mythtv-5-show-episodes.jpg) |
-| TV episode details | ![TV details, Midnight theme](screenshots/midnight-6-tv-details.jpg) | ![TV details, MythTV Blue theme](screenshots/mythtv-6-tv-details.jpg) |
+| | |
+|---|---|
+| Home | ![Home](screenshots/nextpvr-1-home.jpg) |
+| Menu | ![Menu](screenshots/nextpvr-2-menu.jpg) |
+| Guide | ![Guide](screenshots/nextpvr-3-guide.jpg) |
+| Recorded Shows, by show | ![Recorded Shows by show, with commercial badges](screenshots/nextpvr-4-recorded-shows.jpg) |
+| Recorded Shows, by date | ![Recorded Shows by date](screenshots/nextpvr-5-by-date.jpg) |
+| A recording's details | ![Recording details](screenshots/nextpvr-6-details.jpg) |
 
 Build: `JAVA_HOME=~/opt/jdk21 ANDROID_HOME=~/Android/Sdk ./gradlew :app:assembleDebug`
 (installs as `com.mackandall.jdvr.debug`, beside Wholphin).
