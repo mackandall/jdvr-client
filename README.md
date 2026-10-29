@@ -67,6 +67,8 @@ Taken on a real NextPVR server (over-the-air channels) in the *NextPVR* theme.
 | Recorded Shows, by show | ![Recorded Shows by show, with commercial badges](screenshots/nextpvr-4-recorded-shows.jpg) |
 | Recorded Shows, by date | ![Recorded Shows by date](screenshots/nextpvr-5-by-date.jpg) |
 | A recording's details | ![Recording details](screenshots/nextpvr-6-details.jpg) |
+| Playing, with the commercial breaks marked | ![A recording playing, paused, with its commercial breaks in amber on the seek bar](screenshots/nextpvr-7-playing.jpg) |
+| Settings: the NextPVR server | ![The bottom of Settings: the NextPVR server and the About line](screenshots/nextpvr-8-settings.jpg) |
 
 Build: `JAVA_HOME=~/opt/jdk21 ANDROID_HOME=~/Android/Sdk ./gradlew :app:assembleDebug`
 (installs as `com.mackandall.jdvr.debug`, beside Wholphin).
