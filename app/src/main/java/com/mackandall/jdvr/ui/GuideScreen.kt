@@ -625,13 +625,20 @@ private fun InfoBand(
     val marks = Marks.parse(p.rawEpisodeTitle, symbols)
     val now = LocalDateTime.now()
     val on = p.isOn(now)
+    // The picture once the cursor has rested a moment: NextPVR fetches each show it hasn't seen from
+    // Schedules Direct, so scrolling past shouldn't ask for every one.
+    var pictureFor by remember { mutableStateOf<UUID?>(null) }
+    LaunchedEffect(p.id) {
+        delay(400)
+        pictureFor = p.id
+    }
     Row(Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 14.dp), horizontalArrangement = Arrangement.spacedBy(22.dp)) {
         Column(Modifier.width(PictureWidth), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             // The channel's logo underneath: it shows when the programme has no picture.
             Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f).background(Jc.Panel2, RoundedCornerShape(10.dp)), contentAlignment = Alignment.Center) {
                 channel?.logoUrl?.let { AsyncImage(model = it, contentDescription = null, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize(0.5f)) }
                 AsyncImage(
-                    model = Jdvr.backend.imageUrl(p.id, 300),
+                    model = if (pictureFor == p.id) Jdvr.backend.wideImageUrl(p.id, 300) else null,
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(10.dp)),

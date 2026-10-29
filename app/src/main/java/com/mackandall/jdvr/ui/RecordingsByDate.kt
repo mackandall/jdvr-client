@@ -355,7 +355,7 @@ private fun Chip(
 private fun DateDetails(r: DateRecording) {
     val at = localTime(r.recordedUtc)
     Column(Modifier.fillMaxSize().padding(top = 6.dp, bottom = 10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        val image = (r.imageId ?: r.id).let { Jdvr.backend.imageUrl(it, 360) }
+        val image = (r.imageId ?: r.id).let { Jdvr.backend.wideImageUrl(it, 360) }
         Box(Modifier.weight(1f, fill = false).aspectRatio(16f / 9f, matchHeightConstraintsFirst = true).background(Jc.Panel2, RoundedCornerShape(12.dp))) {
             if (image != null) {
                 AsyncImage(model = image, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize().background(Jc.Panel2, RoundedCornerShape(12.dp)))

@@ -366,7 +366,7 @@ private fun EpisodePane(
 ) {
     Column(modifier.background(Jc.Panel.seeThrough(0.9f), RoundedCornerShape(12.dp)).padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         AsyncImage(
-            model = Jdvr.backend.imageUrl(e.id, 300),
+            model = Jdvr.backend.wideImageUrl(e.id, 300),
             contentDescription = null,
             contentScale = ContentScale.Crop,
             modifier =
@@ -623,7 +623,7 @@ private fun EpisodeCard(
             scale = ClickableSurfaceDefaults.scale(focusedScale = 1.1f),
         ) {
             Box(Modifier.fillMaxSize()) {
-                AsyncImage(model = Jdvr.backend.imageUrl(e.id, 300), contentDescription = e.name, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+                AsyncImage(model = Jdvr.backend.wideImageUrl(e.id, 300), contentDescription = e.name, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
                 movingFor(e.id.toString())?.let { MovingOverlay(it) } ?: cuttingFor(e.id.toString())?.let { CuttingOverlay(it) }
                 e.episode?.let {
                     Text(

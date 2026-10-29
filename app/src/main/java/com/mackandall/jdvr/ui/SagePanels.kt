@@ -119,7 +119,7 @@ internal fun LivePanel(
     ) {
         Box(Modifier.fillMaxWidth().height(150.dp).background(if (LocalGemLook.current) Color(0xFF14161B) else Color(0xFF050B1C)), contentAlignment = Alignment.Center) {
             val p = c.now
-            val image = p?.let { Jdvr.backend.imageUrl(it.id, 360) } ?: c.logoUrl
+            val image = p?.let { Jdvr.backend.wideImageUrl(it.id, 360) } ?: c.logoUrl
             if (image != null) AsyncImage(model = image, contentDescription = null, contentScale = if (p != null) ContentScale.Crop else ContentScale.Fit, modifier = Modifier.fillMaxSize())
         }
         Column(Modifier.padding(horizontal = 12.dp, vertical = 9.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {

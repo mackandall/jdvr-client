@@ -275,12 +275,32 @@ class NextPvrBackend(
         }
     }
 
+    // NextPVR's landscape art (the show's wide picture, with its title), as its own web page asks for
+    // a recording's; it falls back to the logo, fanart, the poster, then NextPVR's placeholder. A
+    // guide entry's falls back to the poster.
+    override fun wideImageUrl(
+        itemId: UUID,
+        maxHeight: Int,
+    ): String {
+        val session = sid ?: return ""
+        return when (itemId.mostSignificantBits) {
+            PROGRAM -> serviceUrl("channel.show.artwork", mapOf("event_id" to nextPvrId(itemId), "prefer" to "landscape"), session)
+            RECORDING -> serviceUrl("recording.artwork", mapOf("recording_id" to nextPvrId(itemId), "landscape" to true, "with_placeholder" to true), session)
+            else -> imageUrl(itemId, maxHeight)
+        }
+    }
+
     override fun personImageUrl(personId: UUID): String = ""
 
     override fun imageUrl(
         itemId: String,
         maxHeight: Int,
     ): String? = runCatching { UUID.fromString(itemId) }.getOrNull()?.let { imageUrl(it, maxHeight) }?.ifEmpty { null }
+
+    override fun wideImageUrl(
+        itemId: String,
+        maxHeight: Int,
+    ): String? = runCatching { UUID.fromString(itemId) }.getOrNull()?.let { wideImageUrl(it, maxHeight) }?.ifEmpty { null }
 
     // ---- recording --------------------------------------------------------------------------
 

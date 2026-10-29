@@ -38,6 +38,12 @@ interface TvBackend :
         maxHeight: Int,
     ): String
 
+    /** A picture for a 16:9 box: on NextPVR the show's landscape art, not its poster cropped; elsewhere [imageUrl]. */
+    fun wideImageUrl(
+        itemId: UUID,
+        maxHeight: Int,
+    ): String = imageUrl(itemId, maxHeight)
+
     suspend fun record(
         programId: UUID,
         series: Boolean,
@@ -173,6 +179,11 @@ interface TvBackend :
         itemId: String,
         maxHeight: Int,
     ): String?
+
+    fun wideImageUrl(
+        itemId: String,
+        maxHeight: Int,
+    ): String? = imageUrl(itemId, maxHeight)
 
     /** One scheduled (or under way) recording's timer, by its id; null when it's gone. */
     suspend fun timer(timerId: String): org.jellyfin.sdk.model.api.TimerInfoDto? = null

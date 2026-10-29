@@ -661,7 +661,7 @@ private fun NewCard(
             scale = ClickableSurfaceDefaults.scale(focusedScale = 1.05f),
         ) {
             Box(Modifier.fillMaxSize()) {
-                Jdvr.backend.imageUrl(c.imageId ?: c.id, 300)?.let { AsyncImage(model = it, contentDescription = c.name, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize()) }
+                Jdvr.backend.wideImageUrl(c.imageId ?: c.id, 300)?.let { AsyncImage(model = it, contentDescription = c.name, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize()) }
                 Text(
                     if (c.count > 1) "${c.unplayedCount} new" else "New",
                     color = Jc.Text,
