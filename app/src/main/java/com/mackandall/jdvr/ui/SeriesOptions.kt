@@ -28,6 +28,8 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.tv.material3.Text
 import com.mackandall.jdvr.data.Jdvr
+import com.mackandall.jdvr.data.ShowStorage
+import com.mackandall.jdvr.data.attempt
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import org.jellyfin.sdk.model.api.SeriesTimerInfoDto
@@ -49,6 +51,14 @@ fun SeriesOptions(
     var saving by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val first = remember { FocusRequester() }
+    // JellyDVR Space: where the show's recordings go, saved with the series.
+    val rights = deviceRights()
+    var storage by remember { mutableStateOf<ShowStorage?>(null) }
+    var storeIn by remember { mutableStateOf<List<String>?>(null) }
+    var pickingStore by remember { mutableStateOf(false) }
+    LaunchedEffect(rights.archive) {
+        storage = if (rights.archive) attempt { Jdvr.backend.showStorage(programId) }?.takeIf { it.problem == null && it.folders.isNotEmpty() } else null
+    }
 
     LaunchedEffect(Unit) {
         try {
@@ -88,6 +98,25 @@ fun SeriesOptions(
                     return@Column
                 }
                 SeriesTimerRows(t, first) { timer = it }
+                storage?.let { st ->
+                    // A series sets the show's folders, not one airing's.
+                    val now = st.copy(locations = storeIn ?: st.locations, recording = null)
+                    EditRow("Store in", "Where finished recordings go (JellyDVR Space's storage folders).", now.summary() ?: "The recording drive") {
+                        pickingStore = true
+                    }
+                    if (pickingStore) {
+                        ShowStoragePicker(
+                            now,
+                            itemId = null,
+                            onSaved = { pickingStore = false },
+                            onDismiss = { pickingStore = false },
+                            onPicked = {
+                                storeIn = it
+                                pickingStore = false
+                            },
+                        )
+                    }
+                }
                 Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     Button(if (saving) "Saving…" else "Record series", primary = true, leading = { SeriesDots() }) {
                         if (saving) return@Button
@@ -95,7 +124,15 @@ fun SeriesOptions(
                         scope.launch {
                             try {
                                 Jdvr.backend.createSeriesTimer(t)
-                                onDone("Series recording set up.")
+                                val st = storage
+                                val picked = storeIn
+                                val stored =
+                                    if (st != null && picked != null && picked != st.locations) {
+                                        attempt { Jdvr.backend.setShowStorage(st.show, picked) }?.message
+                                    } else {
+                                        null
+                                    }
+                                onDone("Series recording set up." + (stored?.let { " $it" } ?: ""))
                             } catch (e: CancellationException) {
                                 throw e
                             } catch (e: Exception) {

@@ -70,6 +70,8 @@ internal fun ProgramPanel(
     var airingsHere by remember(program.id) { mutableStateOf(false) }
     // Record series' options (Settings › Record series), shown over the panel.
     var seriesOptions by remember(program.id) { mutableStateOf(false) }
+    // The timer whose Recording options are open.
+    var recordingOptions by remember(program.id) { mutableStateOf<String?>(null) }
     // Episode History (watched mark, a copy to play, forget) and JellyDVR Live (is this only a buffer).
     var eh by remember(program.id) { mutableStateOf<EhProgram?>(null) }
     // What "Forget this show" would forget (administrators, a show with history).
@@ -181,6 +183,13 @@ internal fun ProgramPanel(
         }
     }
 
+    recordingOptions?.let { id ->
+        RecordingOptions(timerId = id, programId = program.id, programName = program.name) { msg ->
+            recordingOptions = null
+            if (msg != null) act { msg }
+        }
+    }
+
     // The panel is as wide as its two columns of buttons need; the header and note wrap to that.
     Column(
         modifier =
@@ -259,6 +268,8 @@ internal fun ProgramPanel(
                                     if (p.isOn()) "Recording stopped: what was recorded so far is kept." else "Recording cancelled."
                                 }
                             }
+                            // Start early / end late, and (JellyDVR Space) where this one is stored. Jellyfin only.
+                            if (!Jdvr.isNextPvr) Button("Recording options…", modifier = Modifier.fillMaxWidth()) { recordingOptions = p.timerId }
                         } else {
                             Button("Record", modifier = recordModifier, leading = { Dot(Jc.Recording) }) {
                                 act {

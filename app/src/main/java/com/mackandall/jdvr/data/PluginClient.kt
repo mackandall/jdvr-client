@@ -45,7 +45,9 @@ class PluginClient(
         body: String? = null,
     ): ByteArray? =
         try {
-            withContext(Dispatchers.IO) { apiOf().request(method = method, pathTemplate = path, queryParameters = query, requestBody = body) }.body
+            // As a JSON element: the SDK sends a plain String as text/plain, which the plugins' [FromBody] refuses (415).
+            val json = body?.let { json.parseToJsonElement(it) }
+            withContext(Dispatchers.IO) { apiOf().request(method = method, pathTemplate = path, queryParameters = query, requestBody = json) }.body
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {

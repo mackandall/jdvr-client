@@ -95,13 +95,29 @@
   },
   {
     "guid": "110ae7e3-0c55-4684-b0f8-3e86eb2b53af",
-    "name": "XMLTV Guide Cleaner",
-    "description": "Serves a cleaned copy of an upstream XMLTV guide: strips a year that is already baked into a movie's title (e.g. \"Movie (2001)\") when it matches the programme's <date>, so Jellyfin stops naming recordings \"Movie (2001) (2001)\".",
-    "overview": "Serves a cleaned copy of an upstream XMLTV guide: strips a year that is already baked into a movie's title (e.g. \"Movie (2001)\") when it matches the programme's <date>, so Jellyfin stops naming recordings \"Movie (2001) (2001)\".",
+    "name": "JellyDVR Guides",
+    "description": "Guide sources for Jellyfin's Live TV: XMLTV guides (cleaned of what Jellyfin misreads, such as \"Movie (2001) (2001)\" titles and missing episode ids, if asked) and Schedules Direct lineups fetched once a day, each served as one guide for one Jellyfin guide provider limited to its tuners.",
+    "overview": "Guide sources for Jellyfin's Live TV: XMLTV guides (cleaned of what Jellyfin misreads, such as \"Movie (2001) (2001)\" titles and missing episode ids, if asked) and Schedules Direct lineups fetched once a day, each served as one guide for one Jellyfin guide provider limited to its tuners.",
     "owner": "mackandall",
     "category": "Live TV",
-    "imageUrl": "https://raw.githubusercontent.com/mackandall/jellyfin-plugin-xmltv-cleaner/main/icon.png",
+    "imageUrl": "https://raw.githubusercontent.com/mackandall/jellyfin-plugin-jellydvr-guides/main/icon.png",
     "versions": [
+      {
+        "version": "1.1.1.0",
+        "changelog": "Schedules Direct: the daily update runs at a time picked at random for each server (2:00 to 6:00, never on the hour) instead of 5:00 everywhere; Update now asks again at most every 15 minutes. Status lines on the settings page break properly again.",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/mackandall/jellyfin-plugin-jellydvr-guides/releases/download/v1.1.1.0/jellyfin-plugin-jellydvr-guides_1.1.1.0.zip",
+        "checksum": "8151e555f371a2b5b9c9953b5a4cc17d",
+        "timestamp": "2026-10-26T02:05:03.0000000Z"
+      },
+      {
+        "version": "1.1.0.0",
+        "changelog": "Renamed JellyDVR Guides (was XMLTV Guide Cleaner; settings carry over). Guide sources: each is an XMLTV guide (cleaning optional) or a Schedules Direct lineup fetched once a day, served at its own address, limited to its tuners' channels, with an optional Jellyfin guide provider created per tuner. Schedules Direct programme pictures are kept and re-checked every 14 days (setting).",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/mackandall/jellyfin-plugin-jellydvr-guides/releases/download/v1.1.0.0/jellyfin-plugin-jellydvr-guides_1.1.0.0.zip",
+        "checksum": "59a8a1d9284db9be858d1c8f8af28a69",
+        "timestamp": "2026-10-26T00:00:13.0000000Z"
+      },
       {
         "version": "1.0.0.0",
         "changelog": "First public release.",
@@ -121,6 +137,14 @@
     "category": "Live TV",
     "imageUrl": "https://raw.githubusercontent.com/mackandall/jellyfin-plugin-jellydvr-space/master/icon.png",
     "versions": [
+      {
+        "version": "1.1.0.0",
+        "changelog": "Store in: choose the storage folders for a show (Series options) or for one recording (Recording options), in Jellyfin's web client and JDVR; sorting puts each recording in the first of its folders with room. Each storage folder has its own floor; the settings page is in numbered sections. Devices: Remove takes a TV off the list and signs it out. Recordings still being recorded, or whose pieces Episode History has yet to join, stay where they are; moved recordings no longer get planned a second time.",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/mackandall/jellyfin-plugin-jellydvr-space/releases/download/v1.1.0.0/jellyfin-plugin-jellydvr-space_1.1.0.0.zip",
+        "checksum": "3cc6ecbe583a6c717edea24e25c7d088",
+        "timestamp": "2026-10-26T18:46:00.0000000Z"
+      },
       {
         "version": "1.0.1.0",
         "changelog": "Keep at least … free is automatic by default: a tenth of the recordings drive, between 10 and 100 GB (0 in the setting); a saved number is kept.",

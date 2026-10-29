@@ -668,16 +668,18 @@ private fun InfoBand(
                     Text(second, color = Jc.Muted, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
+            val storedIn = rememberStoredIn(p.id, p.isMovie)
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 GuideChips(p)
                 if (p.isRepeat) Chip("repeat", Jc.Muted)
                 if (p.isMovie) Chip("movie", Jc.Muted)
                 MarkChips(marks)
+                storedIn?.let { Chip("stored in $it", Jc.Focus) }
             }
         }
         Column(Modifier.weight(0.6f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(p.overview ?: "", color = Jc.Text.copy(alpha = 0.85f), fontSize = 15.sp, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-            Text(if (Jdvr.isNextPvr) "OK  Watch · record" else "OK  Watch · record · favourites", color = Jc.Muted, fontSize = 13.sp)
+            Text(if (Jdvr.isNextPvr) "OK  Watch · record" else "OK  Watch · record · favourites" + if (deviceRights().archive && !p.isMovie) " · store" else "", color = Jc.Muted, fontSize = 13.sp)
         }
     }
 }

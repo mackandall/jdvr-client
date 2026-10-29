@@ -396,16 +396,16 @@ private fun FavouriteRow(
     }
 }
 
-private fun padding(
+internal fun padding(
     seconds: Int?,
     word: String,
 ): String? = seconds?.takeIf { it > 0 }?.let { "${(it + 30) / 60} min $word" }
 
-private val PrePad = listOf(0, 60, 120, 300, 600)
-private val PostPad = listOf(0, 60, 120, 300, 600, 900, 1800, 3600)
+internal val PrePad = listOf(0, 60, 120, 300, 600)
+internal val PostPad = listOf(0, 60, 120, 300, 600, 900, 1800, 3600)
 private val KeepCounts = listOf(0, 1, 3, 5, 10)
 
-private fun <T> nextOf(
+internal fun <T> nextOf(
     list: List<T>,
     current: T,
 ): T = list[(list.indexOf(current) + 1).mod(list.size)]
@@ -424,6 +424,22 @@ private fun SeriesEditor(
     var t by remember { mutableStateOf(timer) }
     val first = remember { FocusRequester() }
     LaunchedEffect(Unit) { first.tryFocus() }
+    // JellyDVR Space: where every recording of the show goes (saved on the picker's own Save).
+    val rights = deviceRights()
+    val scope = rememberCoroutineScope()
+    var storage by remember { mutableStateOf<com.mackandall.jdvr.data.ShowStorage?>(null) }
+    var pickingStore by remember { mutableStateOf(false) }
+    var storeNote by remember { mutableStateOf<String?>(null) }
+    suspend fun loadStorage() {
+        val show = timer.name
+        storage =
+            if (rights.archive && !show.isNullOrBlank()) {
+                com.mackandall.jdvr.data.attempt { Jdvr.backend.showStorage(show) }?.takeIf { it.problem == null && it.folders.isNotEmpty() }
+            } else {
+                null
+            }
+    }
+    LaunchedEffect(rights.archive) { loadStorage() }
     Column(
         Modifier.fillMaxSize().verticalScroll(androidx.compose.foundation.rememberScrollState()).padding(start = 28.dp, top = 24.dp, end = 28.dp, bottom = 32.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -432,6 +448,22 @@ private fun SeriesEditor(
         Text("Series recording options · OK changes a row · Back cancels", color = Jc.Muted, fontSize = 14.sp)
         Spacer(4)
         SeriesTimerRows(t, first) { t = it }
+        storage?.let { st ->
+            EditRow("Store in", "Where finished recordings go (JellyDVR Space's storage folders).", st.summary() ?: "The recording drive") { pickingStore = true }
+            if (pickingStore) {
+                ShowStoragePicker(
+                    st,
+                    itemId = null,
+                    onSaved = { msg ->
+                        pickingStore = false
+                        storeNote = msg
+                        scope.launch { loadStorage() }
+                    },
+                    onDismiss = { pickingStore = false },
+                )
+            }
+        }
+        storeNote?.let { Text(it, color = Jc.Green, fontSize = 14.sp) }
         Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Button("Save", primary = true) { onSave(t) }
             Button("Cancel", onClick = onCancel)
