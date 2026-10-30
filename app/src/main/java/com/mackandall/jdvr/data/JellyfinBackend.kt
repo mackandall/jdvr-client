@@ -148,7 +148,7 @@ class JellyfinBackend private constructor(
             isSeries = dto.isSeries == true,
             isRepeat = dto.isRepeat == true,
             season = dto.parentIndexNumber,
-            episode = dto.indexNumber,
+            episode = realEpisode(dto.parentIndexNumber, dto.indexNumber),
             timerId = dto.timerId,
             seriesTimerId = dto.seriesTimerId,
         )
@@ -507,7 +507,7 @@ class JellyfinBackend private constructor(
             resumeMs = (d.userData?.playbackPositionTicks ?: 0L) / 10_000L,
             unplayed = d.userData?.unplayedItemCount,
             season = d.parentIndexNumber,
-            episode = d.indexNumber,
+            episode = realEpisode(d.parentIndexNumber, d.indexNumber),
             seriesId = d.seriesId,
             seriesName = d.seriesName,
             officialRating = d.officialRating,
@@ -853,3 +853,9 @@ class JellyfinBackend private constructor(
         plugins.call<DeletedRecording>(HttpMethod.DELETE, "/EpisodeHistory/Item/${itemId.plain()}/Recording")
             ?: deleteItem(itemId).let { DeletedRecording(deleted = 1) }
 }
+
+/**
+ * The episode number, or null for the stand-in 0 (no season) that JellyDVR Guides gives news,
+ * talk and other shows without numbers so Jellyfin counts them as series.
+ */
+internal fun realEpisode(season: Int?, episode: Int?): Int? = if (season == null && episode == 0) null else episode
