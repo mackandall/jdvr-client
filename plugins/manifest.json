@@ -84,6 +84,14 @@
     "imageUrl": "https://raw.githubusercontent.com/mackandall/jellyfin-plugin-episode-history/main/icon.png",
     "versions": [
       {
+        "version": "1.1.1.0",
+        "changelog": "Search page List view: shorter rows, so more airings fit on screen.",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/mackandall/jellyfin-plugin-episode-history/releases/download/v1.1.1.0/jellyfin-plugin-episode-history_1.1.1.0.zip",
+        "checksum": "0bb2adfa5dff32a106b3bac33827bedd",
+        "timestamp": "2026-10-31T04:14:41.0000000Z"
+      },
+      {
         "version": "1.1.0.0",
         "changelog": "Search page: an On TV Posters/List switch; List shows the next airings soonest first, grouped by day, with channel logos, Will record/New/Live marks and the same ⋮ menu as the posters. Recordings by show: one card per show. Recording now lists a re-record or resumed piece. Tidy up after deletes also covers archive libraries, emptied seasons and leftover .ts.properties/.ini/pictures. Trash lets API-key deletes through. A favourite's recording of an episode already in the library is cancelled.",
         "targetAbi": "12.0.0.0",
