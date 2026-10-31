@@ -125,6 +125,15 @@ class Prefs(
         p.edit().putBoolean("guideLaterTabs", v).apply()
     }
 
+    /** The player's progress bar: silver (the theme's text colour), apart from the amber commercial marks; off: the theme's focus colour. */
+    var progressSilver by mutableStateOf(p.getBoolean("progressSilver", true))
+        private set
+
+    fun changeProgressSilver(v: Boolean) {
+        progressSilver = v
+        p.edit().putBoolean("progressSilver", v).apply()
+    }
+
     /** Record series opens the series options first (which episodes, channel, keep…); off: set up with the server's defaults. */
     var seriesOptionsFirst by mutableStateOf(p.getBoolean("seriesOptionsFirst", true))
         private set

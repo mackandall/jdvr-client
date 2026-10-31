@@ -38,9 +38,11 @@ import androidx.compose.ui.input.key.nativeKeyCode
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -524,7 +526,11 @@ private fun RecordingBar(
     }
 }
 
-/** The progress bar with commercials (amber) and intros / recaps / previews (purple) marked. */
+/**
+ * The progress bar with commercials (amber) and intros / recaps / previews (purple) marked. The
+ * watched part is drawn under the marks (silver, Settings › Progress bar), marks already played are
+ * dimmed, a white tick shows the position, and near a commercial a bubble says how far its edge is.
+ */
 @Composable
 private fun SegmentBar(
     position: Long,
@@ -536,27 +542,64 @@ private fun SegmentBar(
         val w = maxWidth
         Box(Modifier.fillMaxSize().padding(vertical = 2.dp).background(Jc.Line, RoundedCornerShape(3.dp)))
         if (duration > 0) {
-            segments.forEach { s ->
-                val from = (s.startMs.toFloat() / duration).coerceIn(0f, 1f)
-                val to = (s.endMs.toFloat() / duration).coerceIn(0f, 1f)
-                if (to > from) {
-                    Box(
-                        Modifier
-                            .offset(x = w * from)
-                            .width(w * (to - from))
-                            .fillMaxHeight()
-                            .background(if (isCommercial(s)) Jc.Amber else Color(0xFF9B7BFF)),
-                    )
-                }
-            }
             val f = (position.toFloat() / duration).coerceIn(0f, 1f)
             Box(
                 Modifier
                     .fillMaxHeight()
                     .fillMaxWidth(f)
                     .padding(vertical = 3.dp)
-                    .background(Jc.Focus.copy(alpha = 0.85f), RoundedCornerShape(3.dp)),
+                    .background(if (Jdvr.prefs.progressSilver) Jc.Text.copy(alpha = 0.9f) else Jc.Focus.copy(alpha = 0.85f), RoundedCornerShape(3.dp)),
             )
+            segments.forEach { s ->
+                val from = (s.startMs.toFloat() / duration).coerceIn(0f, 1f)
+                val to = (s.endMs.toFloat() / duration).coerceIn(0f, 1f)
+                val color = if (isCommercial(s)) Jc.Amber else Color(0xFF9B7BFF)
+                // The played part of a mark dimmed, the rest full.
+                listOf(from to minOf(to, f) to 0.55f, maxOf(from, f) to to to 1f).forEach { (span, alpha) ->
+                    val (a, b) = span
+                    if (b > a) Box(Modifier.offset(x = w * a).width(w * (b - a)).fillMaxHeight().background(color.copy(alpha = alpha)))
+                }
+            }
+            Box(
+                Modifier
+                    .offset(x = w * f - 3.dp, y = (-4).dp)
+                    .width(6.dp)
+                    .height(18.dp)
+                    .background(Jc.Ink, RoundedCornerShape(3.dp))
+                    .padding(horizontal = 1.dp, vertical = 1.dp)
+                    .background(Color.White, RoundedCornerShape(2.dp)),
+            )
+            commercialEdge(position, segments)?.let { note ->
+                Text(
+                    "${clock(position)} · $note",
+                    color = Jc.Ink,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    softWrap = false,
+                    modifier =
+                        Modifier
+                            .layout { m, c ->
+                                // Centred over the tick, kept inside the bar.
+                                val pl = m.measure(c.copy(minWidth = 0, maxWidth = Constraints.Infinity))
+                                val x = ((w * f).roundToPx() - pl.width / 2).coerceIn(0, maxOf(0, w.roundToPx() - pl.width))
+                                layout(0, 0) { pl.place(x, -pl.height - 10.dp.roundToPx()) }
+                            }.background(Color.White, RoundedCornerShape(4.dp))
+                            .padding(horizontal = 7.dp, vertical = 2.dp),
+                )
+            }
         }
     }
+}
+
+/** Inside a commercial, or within 15 s of one: how far its edge is (for the bubble over the tick). */
+private fun commercialEdge(
+    position: Long,
+    segments: List<Segment>,
+): String? {
+    val c = segments.filter { isCommercial(it) }
+    c.firstOrNull { position >= it.startMs && position < it.endMs }?.let { return "${(it.endMs - position + 999) / 1000} s before the break ends" }
+    c.firstOrNull { it.startMs > position && it.startMs - position <= 15_000 }?.let { return "break in ${(it.startMs - position + 999) / 1000} s" }
+    c.lastOrNull { it.endMs <= position && position - it.endMs <= 15_000 }?.let { return "${(position - it.endMs) / 1000} s after the break" }
+    return null
 }

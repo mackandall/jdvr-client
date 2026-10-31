@@ -153,6 +153,12 @@ fun SettingsScreen(
             options = SkipOptions,
             selected = prefs.introSkip,
         ) { prefs.changeIntroSkip(it) }
+        Options(
+            label = "Progress bar",
+            help = "The watched part of the player's bar. Silver keeps it apart from the amber commercial marks; a white tick shows where you are.",
+            options = listOf(Opt(true, "Silver"), Opt(false, "Theme colour")),
+            selected = prefs.progressSilver,
+        ) { prefs.changeProgressSilver(it) }
         Section("Menu")
         Choice(
             label = "Menu entries",
