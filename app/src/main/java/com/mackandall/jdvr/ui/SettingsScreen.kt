@@ -105,6 +105,24 @@ fun SettingsScreen(
             selected = prefs.guideInfo,
         ) { prefs.changeGuideInfo(it) }
         Options(
+            label = "Hours shown",
+            help = "How much of the evening the guide spans. Wider guides fit more on screen with narrower cells; ⏪/⏩ or the Hours button in the guide change it too.",
+            options = Prefs.GUIDE_HOURS.map { Opt(it, if (it == 2) "2 hours" else "$it hours") },
+            selected = prefs.guideHours,
+        ) { prefs.changeGuideHours(it) }
+        Options(
+            label = "Programme names",
+            help = "In narrow cells: shortened to fit (“Law & Order: Special Victims Unit” → “L&O: SVU”), or cut off with “…”. The details always show the full title.",
+            options = listOf(Opt(true, "Shorten to fit"), Opt(false, "Full names")),
+            selected = prefs.guideShortNames,
+        ) { prefs.changeGuideShortNames(it) }
+        Options(
+            label = "Recordings later",
+            help = "A red tab at the end of a channel's row: how many of its recordings come after the hours shown, and when the next starts.",
+            options = listOf(Opt(true, "Show"), Opt(false, "Hide")),
+            selected = prefs.guideLaterTabs,
+        ) { prefs.changeGuideLaterTabs(it) }
+        Options(
             label = "Programme actions",
             help = "What OK on a programme opens (in the guide and in search): a panel on the right, ◄ back to the guide; or a card in the middle over the dimmed guide, like the other menus.",
             options = listOf(Opt(Prefs.DOCKED, "Docked on the right"), Opt(Prefs.FLOATING, "Floating")),

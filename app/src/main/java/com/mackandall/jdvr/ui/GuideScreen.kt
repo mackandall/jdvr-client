@@ -34,6 +34,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
@@ -68,7 +69,8 @@ import java.time.LocalDateTime
 import java.time.temporal.ChronoUnit
 import java.util.UUID
 
-private const val WINDOW_MINUTES = 120L
+// The span shown (Settings › Guide › Hours shown; ⏪/⏩ in the guide). A state read, so it redraws.
+private val windowMinutes: Long get() = Jdvr.prefs.guideHours * 60L
 private const val STEP_MINUTES = 30L
 
 // Programmes are fetched in blocks reaching well past the window, so moving it never shows empty
@@ -76,7 +78,7 @@ private const val STEP_MINUTES = 30L
 // presses at the right edge kept cancelling it, the focused programme scrolled out of a row with
 // nothing new in it, and focus fell to another channel.
 private const val BLOCK_HOURS = 3L
-private const val FETCH_HOURS = 9L
+private val fetchHours: Long get() = maxOf(9L, Jdvr.prefs.guideHours + BLOCK_HOURS + 1)
 
 private fun blockStart(t: LocalDateTime): LocalDateTime = t.truncatedTo(ChronoUnit.HOURS).let { it.minusHours(it.hour % BLOCK_HOURS) }
 
@@ -180,6 +182,7 @@ fun GuideScreen(
     // Channel groups (all, favourites): a button by the title picks the one shown, and it's kept.
     var groups by remember { mutableStateOf<List<String>>(emptyList()) }
     val groupFocus = remember { FocusRequester() }
+    val hoursFocus = remember { FocusRequester() }
     LaunchedEffect(Unit) { groups = attempt { Jdvr.backend.channelGroups() } ?: emptyList() }
     val group = Jdvr.prefs.channelGroup
     LaunchedEffect(group) {
@@ -194,10 +197,10 @@ fun GuideScreen(
     }
 
     val block = blockStart(windowStart)
-    LaunchedEffect(channels, block, reload) {
+    LaunchedEffect(channels, block, reload, Jdvr.prefs.guideHours) {
         val list = channels ?: return@LaunchedEffect
         val from = block
-        val to = block.plusHours(FETCH_HOURS)
+        val to = block.plusHours(fetchHours)
         try {
             val fetched = Jdvr.backend.programs(list.map { it.id }, from, to).groupBy { it.channelId }
             // Keep what was loaded outside this block (moving back shows it at once); drop what has ended.
@@ -320,14 +323,14 @@ fun GuideScreen(
         val list = channels ?: return false
         val from = focused ?: return false
         val at = maxOf(anchor ?: from.start, windowStart)
-        val windowEnd = windowStart.plusMinutes(WINDOW_MINUTES)
+        val windowEnd = windowStart.plusMinutes(windowMinutes)
         var t = list.indexOfFirst { it.id == from.channelId }
         if (t < 0) return false
         var target: Program? = null
         while (target == null) {
             t += dir
-            // The edge: stay put (▲ off the top goes to the channel group button, when there is one).
-            if (t !in list.indices) return true.also { if (t < 0 && groups.size > 1) groupFocus.tryFocus() }
+            // The edge: stay put (▲ off the top goes to the channel group button, else the Hours button).
+            if (t !in list.indices) return true.also { if (t < 0) (if (groups.size > 1) groupFocus else hoursFocus).tryFocus() }
             val row = programs[list[t].id].orEmpty().filter { it.end.isAfter(windowStart) && it.start.isBefore(windowEnd) }.sortedBy { it.start }
             target = row.firstOrNull { !it.start.isAfter(at) && it.end.isAfter(at) } ?: row.firstOrNull { it.start.isAfter(at) } ?: row.lastOrNull()
         }
@@ -358,10 +361,22 @@ fun GuideScreen(
         if (next == windowStart) return false
         // Not past what's loaded: wait for the next block rather than show rows with nothing to focus.
         val end = loaded?.second
-        if (minutes > 0 && (end == null || next.plusMinutes(WINDOW_MINUTES).isAfter(end))) return true
+        if (minutes > 0 && (end == null || next.plusMinutes(windowMinutes).isAfter(end))) return true
         windowStart = next
-        pendingFocus = channelId to (if (minutes > 0) next.plusMinutes(WINDOW_MINUTES - STEP_MINUTES) else next)
+        pendingFocus = channelId to (if (minutes > 0) next.plusMinutes(windowMinutes - STEP_MINUTES) else next)
         return true
+    }
+
+    // Wider or narrower (⏪/⏩, the Hours button): the focused programme stays focused, or, when the
+    // narrower window no longer reaches it, its channel's last programme in the window takes focus.
+    fun zoom(dir: Int) {
+        val options = com.mackandall.jdvr.data.Prefs.GUIDE_HOURS
+        val i = options.indexOf(Jdvr.prefs.guideHours).coerceAtLeast(0)
+        val next = options[(i + dir).coerceIn(0, options.lastIndex)]
+        if (next == Jdvr.prefs.guideHours) return
+        Jdvr.prefs.changeGuideHours(next)
+        val f = focused ?: return
+        if (!f.start.isBefore(windowStart.plusMinutes(next * 60L))) pendingFocus = f.channelId to windowStart.plusMinutes(next * 60L - STEP_MINUTES)
     }
 
     // Opening: the channel last focused in the guide, else the one last watched; its row scrolled
@@ -409,6 +424,13 @@ fun GuideScreen(
         Box(
             Modifier.fillMaxSize().onPreviewKeyEvent { e ->
                 if (e.type == KeyEventType.KeyDown) returnTo = null
+                // ⏩ shows more hours, ⏪ fewer (not while a programme's actions are open).
+                if (e.type == KeyEventType.KeyDown && selected == null) {
+                    when (e.key) {
+                        Key.MediaFastForward -> return@onPreviewKeyEvent true.also { zoom(1) }
+                        Key.MediaRewind -> return@onPreviewKeyEvent true.also { zoom(-1) }
+                    }
+                }
                 // ▲▼ in the grid (not in the actions panel over it).
                 if (e.type == KeyEventType.KeyDown && gridHasFocus && selected == null) {
                     when (e.key) {
@@ -437,6 +459,14 @@ fun GuideScreen(
                             Text(windowStart.day(), color = Jc.Muted, fontSize = 16.sp, modifier = Modifier.padding(bottom = 4.dp))
                             error?.let { Text(it, color = Jc.Amber, fontSize = 14.sp, modifier = Modifier.padding(bottom = 4.dp)) }
                             guideNote?.let { Text(it, color = Jc.Focus, fontSize = 15.sp, modifier = Modifier.padding(bottom = 4.dp)) }
+                            // ▼ from the title row's buttons: the first channel's programme on now (Compose's own search lands rows lower).
+                            val downToFirstRow =
+                                Modifier.onPreviewKeyEvent { e ->
+                                    if (e.type != KeyEventType.KeyDown || e.key != Key.DirectionDown) return@onPreviewKeyEvent false
+                                    val first = channels?.firstOrNull() ?: return@onPreviewKeyEvent false
+                                    val p = programs[first.id].orEmpty().firstOrNull { it.end.isAfter(windowStart) } ?: return@onPreviewKeyEvent false
+                                    cellFocus[p.id]?.let { it.tryFocus() } == true
+                                }
                             if (groups.size > 1) {
                                 val shown = group.takeIf { it in groups } ?: groups.first()
                                 // OK steps to the next group.
@@ -452,16 +482,26 @@ fun GuideScreen(
                                             .focusRequester(groupFocus)
                                             .then(way)
                                             .onFocusChanged { if (it.isFocused) guideScope.launch { listState.scrollToItem(0) } }
-                                            // ▼: the first channel's programme on now (Compose's own search lands rows lower).
-                                            .onPreviewKeyEvent { e ->
-                                                if (e.type != KeyEventType.KeyDown || e.key != Key.DirectionDown) return@onPreviewKeyEvent false
-                                                val first = channels?.firstOrNull() ?: return@onPreviewKeyEvent false
-                                                val p = programs[first.id].orEmpty().firstOrNull { it.end.isAfter(windowStart) } ?: return@onPreviewKeyEvent false
-                                                cellFocus[p.id]?.let { it.tryFocus() } == true
-                                            },
+                                            .then(downToFirstRow),
                                 ) {
                                     Jdvr.prefs.changeChannelGroup(groups[(groups.indexOf(shown) + 1) % groups.size])
                                 }
+                            }
+                            // OK: the next width (wider, then back to the narrowest). ⏪/⏩ do the same from anywhere in the guide.
+                            Button(
+                                "Hours: ${Jdvr.prefs.guideHours}",
+                                compact = true,
+                                modifier =
+                                    Modifier
+                                        .padding(bottom = 2.dp)
+                                        .focusRequester(hoursFocus)
+                                        // Not until the programmes are in: opening, focus is for the grid (it took this button, drawn unfocused).
+                                        .focusProperties { canFocus = loaded != null }
+                                        .onFocusChanged { if (it.isFocused) guideScope.launch { listState.scrollToItem(0) } }
+                                        .then(downToFirstRow),
+                            ) {
+                                val options = com.mackandall.jdvr.data.Prefs.GUIDE_HOURS
+                                Jdvr.prefs.changeGuideHours(options[(options.indexOf(Jdvr.prefs.guideHours) + 1) % options.size])
                             }
                         }
                         val list = channels
@@ -482,7 +522,7 @@ fun GuideScreen(
                         }
                         androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize()) {
                             val gridWidth = maxWidth - ChannelColumn - 12.dp
-                            val perMinute = gridWidth / WINDOW_MINUTES.toFloat()
+                            val perMinute = gridWidth / windowMinutes.toFloat()
                             Column {
                                 TimeRuler(windowStart, perMinute)
                                 Box {
@@ -730,11 +770,13 @@ private fun TimeRuler(
     perMinute: Dp,
 ) {
     Box(Modifier.fillMaxWidth().height(30.dp)) {
-        var t = windowStart
-        while (t.isBefore(windowStart.plusMinutes(WINDOW_MINUTES))) {
+        // Every half hour up to 3 hours; on the hour when wider, or the labels run together.
+        val step = if (windowMinutes <= 180) STEP_MINUTES else 60L
+        var t = if (step == 60L && windowStart.minute != 0) windowStart.plusMinutes(60L - windowStart.minute) else windowStart
+        while (t.isBefore(windowStart.plusMinutes(windowMinutes))) {
             val x = ChannelColumn + perMinute * Duration.between(windowStart, t).toMinutes().toFloat()
             Text(t.time(), color = Jc.Muted, fontSize = 14.sp, modifier = Modifier.offset(x = x + 6.dp))
-            t = t.plusMinutes(STEP_MINUTES)
+            t = t.plusMinutes(step)
         }
     }
 }
@@ -745,7 +787,7 @@ private fun NowLine(
     perMinute: Dp,
 ) {
     val minutes = Duration.between(windowStart, LocalDateTime.now()).toMinutes()
-    if (minutes < 0 || minutes > WINDOW_MINUTES) return
+    if (minutes < 0 || minutes > windowMinutes) return
     Box(
         Modifier
             .offset(x = ChannelColumn + perMinute * minutes.toFloat())
@@ -771,49 +813,68 @@ private fun GuideRow(
     entryProgram: UUID? = null,
     onShift: (Long) -> Boolean,
 ) {
-    val windowEnd = windowStart.plusMinutes(WINDOW_MINUTES)
+    val windowEnd = windowStart.plusMinutes(windowMinutes)
     val visible = programs.filter { it.end.isAfter(windowStart) && it.start.isBefore(windowEnd) }.sortedBy { it.start }
-    Row(Modifier.height(RowHeight).fillMaxWidth().padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
-        Row(Modifier.width(ChannelColumn).fillMaxHeight(), verticalAlignment = Alignment.CenterVertically) {
-            Text(channel.number, color = Jc.Text, fontSize = 15.sp, fontWeight = FontWeight.Bold, modifier = Modifier.width(48.dp))
-            if (channel.logoUrl != null) {
-                AsyncImage(model = channel.logoUrl, contentDescription = channel.name, modifier = Modifier.height(34.dp).width(84.dp))
-            } else {
-                Text(channel.name, color = Jc.Muted, fontSize = 12.sp, maxLines = 2, modifier = Modifier.width(90.dp))
+    // Recordings past the window (as far as the guide has loaded): counted on a tab at the row's end.
+    val extras = LocalGuideExtras.current
+    val later = if (Jdvr.prefs.guideLaterTabs) programs.filter { !it.start.isBefore(windowEnd) && extras.realRecording(it) }.sortedBy { it.start } else emptyList()
+    Box(Modifier.height(RowHeight).fillMaxWidth()) {
+        Row(Modifier.fillMaxSize().padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.width(ChannelColumn).fillMaxHeight(), verticalAlignment = Alignment.CenterVertically) {
+                Text(channel.number, color = Jc.Text, fontSize = 15.sp, fontWeight = FontWeight.Bold, modifier = Modifier.width(48.dp))
+                if (channel.logoUrl != null) {
+                    AsyncImage(model = channel.logoUrl, contentDescription = channel.name, modifier = Modifier.height(34.dp).width(84.dp))
+                } else {
+                    Text(channel.name, color = Jc.Muted, fontSize = 12.sp, maxLines = 2, modifier = Modifier.width(90.dp))
+                }
+            }
+            if (visible.isEmpty()) {
+                Box(Modifier.width(gridWidth).fillMaxHeight().background(Jc.Panel, RoundedCornerShape(8.dp)), contentAlignment = Alignment.CenterStart) {
+                    Text("No guide data", color = Jc.Muted, fontSize = 14.sp, modifier = Modifier.padding(start = 12.dp))
+                }
+                return@Row
+            }
+            visible.forEachIndexed { i, p ->
+                val from = if (p.start.isBefore(windowStart)) windowStart else p.start
+                val to = if (p.end.isAfter(windowEnd)) windowEnd else p.end
+                val width = perMinute * Duration.between(from, to).toMinutes().toFloat()
+                // A gap before the first programme (missing guide data).
+                if (i == 0 && from.isAfter(windowStart)) {
+                    androidx.compose.foundation.layout
+                        .Spacer(Modifier.width(perMinute * Duration.between(windowStart, from).toMinutes().toFloat()))
+                }
+                val wantFocus = pendingFocus != null && !p.start.isAfter(pendingFocus) && p.end.isAfter(pendingFocus)
+                // Keyed by programme: without it, moving the window reused the focused cell for another
+                // programme, so focus never moved and the info panel kept showing the old one.
+                androidx.compose.runtime.key(p.id) {
+                    ProgramCell(
+                        program = p,
+                        width = width,
+                        symbols = symbols,
+                        requestFocus = wantFocus,
+                        onFocusTaken = onFocusTaken,
+                        onClick = { onSelect(p) },
+                        onFocused = { onFocused(p) },
+                        entry = if (p.id == entryProgram || (i == 0 && visible.none { it.id == entryProgram })) entry else null,
+                        onEdgeRight = if (i == visible.lastIndex) ({ onShift(STEP_MINUTES) }) else null,
+                        onEdgeLeft = if (i == 0) ({ onShift(-STEP_MINUTES) }) else null,
+                    )
+                }
             }
         }
-        if (visible.isEmpty()) {
-            Box(Modifier.width(gridWidth).fillMaxHeight().background(Jc.Panel, RoundedCornerShape(8.dp)), contentAlignment = Alignment.CenterStart) {
-                Text("No guide data", color = Jc.Muted, fontSize = 14.sp, modifier = Modifier.padding(start = 12.dp))
-            }
-            return@Row
-        }
-        visible.forEachIndexed { i, p ->
-            val from = if (p.start.isBefore(windowStart)) windowStart else p.start
-            val to = if (p.end.isAfter(windowEnd)) windowEnd else p.end
-            val width = perMinute * Duration.between(from, to).toMinutes().toFloat()
-            // A gap before the first programme (missing guide data).
-            if (i == 0 && from.isAfter(windowStart)) {
-                androidx.compose.foundation.layout
-                    .Spacer(Modifier.width(perMinute * Duration.between(windowStart, from).toMinutes().toFloat()))
-            }
-            val wantFocus = pendingFocus != null && !p.start.isAfter(pendingFocus) && p.end.isAfter(pendingFocus)
-            // Keyed by programme: without it, moving the window reused the focused cell for another
-            // programme, so focus never moved and the info panel kept showing the old one.
-            androidx.compose.runtime.key(p.id) {
-                ProgramCell(
-                    program = p,
-                    width = width,
-                    symbols = symbols,
-                    requestFocus = wantFocus,
-                    onFocusTaken = onFocusTaken,
-                    onClick = { onSelect(p) },
-                    onFocused = { onFocused(p) },
-                    entry = if (p.id == entryProgram || (i == 0 && visible.none { it.id == entryProgram })) entry else null,
-                    onEdgeRight = if (i == visible.lastIndex) ({ onShift(STEP_MINUTES) }) else null,
-                    onEdgeLeft = if (i == 0) ({ onShift(-STEP_MINUTES) }) else null,
-                )
-            }
+        later.firstOrNull()?.let { next ->
+            Text(
+                "● ${later.size} later · ${next.start.time()}",
+                color = Color.White,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                modifier =
+                    Modifier
+                        .align(Alignment.CenterEnd)
+                        .background(Jc.Recording.copy(alpha = 0.85f), RoundedCornerShape(topStart = 10.dp, bottomStart = 10.dp))
+                        .padding(start = 8.dp, end = 6.dp, top = 2.dp, bottom = 2.dp),
+            )
         }
     }
 }
@@ -847,6 +908,23 @@ private fun ProgramCell(
     }
     val marks = Marks.parse(program.rawEpisodeTitle, symbols)
     val extras = LocalGuideExtras.current
+    // The name that fits the cell (wider guides make cells narrow): its room is the cell less the
+    // padding, the recording dot and the CS tag.
+    val measurer = androidx.compose.ui.text.rememberTextMeasurer()
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val shortNames = Jdvr.prefs.guideShortNames
+    val pad = if (width < 60.dp) 4.dp else 8.dp
+    val room = width - 4.dp - pad * 2 - (if (program.isRecording) 14.dp else 0.dp) - (if (extras.scanning(program)) 28.dp else 0.dp)
+    val name =
+        remember(program.name, room, shortNames) {
+            if (!shortNames) {
+                program.name
+            } else {
+                val style = androidx.compose.ui.text.TextStyle(fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                val roomPx = with(density) { room.toPx() }
+                GuideNames.pick(program.name) { measurer.measure(it, style, maxLines = 1).size.width <= roomPx }
+            }
+        }
     // SageTV: red cells will record, green ones a Recording Favourite will; the focused one is glossy.
     val sage = Jc.Style == UiStyle.Sage
     // NextPVR: deep red cells will record; the focused cell turns green, or bright red if it records.
@@ -906,7 +984,7 @@ private fun ProgramCell(
         border = ClickableSurfaceDefaults.border(focusedBorder = if (npvr) Border.None else Border(BorderStroke(2.dp, Jc.Focus))),
         scale = ClickableSurfaceDefaults.scale(focusedScale = 1f),
     ) {
-        Column((if (sage && cellFocused) Modifier.sageGloss() else Modifier).fillMaxSize().padding(horizontal = 8.dp, vertical = 5.dp), verticalArrangement = Arrangement.Center) {
+        Column((if (sage && cellFocused) Modifier.sageGloss() else Modifier).fillMaxSize().padding(horizontal = pad, vertical = 5.dp), verticalArrangement = Arrangement.Center) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 // Red for a recording, two dots when a series records it; faint for a live TV buffer
                 // (only kept if someone presses Record).
@@ -917,7 +995,7 @@ private fun ProgramCell(
                         Box(Modifier.size(8.dp).background(Jc.Recording.copy(alpha = if (extras.isBuffer(program)) 0.35f else 1f), CircleShape))
                     }
                 }
-                Text(program.name, color = titleColor, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                Text(name, color = titleColor, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
                 if (extras.scanning(program)) Text("CS", color = Jc.OnAmber, fontSize = 10.sp, fontWeight = FontWeight.Bold, modifier = Modifier.background(Jc.Amber, RoundedCornerShape(4.dp)).padding(horizontal = 4.dp))
             }
             val sub = marks.title ?: if (program.isMovie) "Movie" else null

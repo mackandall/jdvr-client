@@ -98,6 +98,33 @@ class Prefs(
         p.edit().putInt("guideArtSeconds", v).apply()
     }
 
+    /** How many hours the guide spans (SageTV's wider guide); programme names shorten to fit. */
+    var guideHours by mutableStateOf(p.getInt("guideHours", 2).takeIf { it in GUIDE_HOURS } ?: 2)
+        private set
+
+    fun changeGuideHours(v: Int) {
+        guideHours = v
+        p.edit().putInt("guideHours", v).apply()
+    }
+
+    /** Shorter programme names in narrow guide cells ("Law & Order: Special Victims Unit" → "L&O: SVU"). */
+    var guideShortNames by mutableStateOf(p.getBoolean("guideShortNames", true))
+        private set
+
+    fun changeGuideShortNames(v: Boolean) {
+        guideShortNames = v
+        p.edit().putBoolean("guideShortNames", v).apply()
+    }
+
+    /** A tab at the end of a guide row counting that channel's recordings past the window. */
+    var guideLaterTabs by mutableStateOf(p.getBoolean("guideLaterTabs", true))
+        private set
+
+    fun changeGuideLaterTabs(v: Boolean) {
+        guideLaterTabs = v
+        p.edit().putBoolean("guideLaterTabs", v).apply()
+    }
+
     /** Record series opens the series options first (which episodes, channel, keep…); off: set up with the server's defaults. */
     var seriesOptionsFirst by mutableStateOf(p.getBoolean("seriesOptionsFirst", true))
         private set
@@ -389,6 +416,8 @@ class Prefs(
         const val HOLD_OFF = "off"
         const val HOLD_MENU = "menu"
         const val HOLD_DETAILS = "details"
+        // The guide's widths, in hours (Settings › Guide, ⏪/⏩ and the Hours button in the guide).
+        val GUIDE_HOURS = listOf(2, 3, 4, 6, 8)
         const val SIDE = "side"
         const val TOP = "top"
         const val BOTTOM = "bottom"
