@@ -579,19 +579,42 @@ class JellyfinBackend private constructor(
                 .map { toLibItem(it) }
         }
 
+    /**
+     * The next 200 airings matching [term], soonest first. Jellyfin's matches come in no order and
+     * include ones that aired (1445 for "news" here), and /Items ignores date filters for programmes,
+     * so they're asked for sorted by start, and the first that may still be on is found by bisecting
+     * with one-item pages (about 11 requests for 1445).
+     */
     override suspend fun searchGuide(term: String): List<Program> =
         io {
             val now = LocalDateTime.now()
-            api.itemsApi
+            suspend fun page(
+                start: Int,
+                limit: Int,
+            ) = api.itemsApi
                 .getItems(
                     userId = Jdvr.userId,
                     searchTerm = term,
                     recursive = true,
                     includeItemTypes = listOf(BaseItemKind.LIVE_TV_PROGRAM),
-                    limit = 200,
+                    sortBy = listOf(ItemSortBy.START_DATE, ItemSortBy.SORT_NAME),
+                    sortOrder = listOf(org.jellyfin.sdk.model.api.SortOrder.ASCENDING, org.jellyfin.sdk.model.api.SortOrder.ASCENDING),
+                    startIndex = start,
+                    limit = limit,
                     fields = listOf(ItemFields.OVERVIEW),
                     enableImages = false,
-                ).content.items
+                    enableTotalRecordCount = true,
+                ).content
+            // Programmes that started up to 6 h ago may still be on; ended ones are dropped below.
+            val since = now.minusHours(6)
+            var lo = 0
+            var hi = page(0, 1).totalRecordCount
+            while (lo < hi) {
+                val mid = (lo + hi) / 2
+                val started = page(mid, 1).items.firstOrNull()?.startDate
+                if (started != null && started.isBefore(since)) lo = mid + 1 else hi = mid
+            }
+            page(lo, 200).items
                 .mapNotNull { toProgram(it) }
                 .filter { it.end.isAfter(now) }
                 .sortedBy { it.start }
