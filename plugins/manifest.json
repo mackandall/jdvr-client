@@ -84,6 +84,14 @@
     "imageUrl": "https://raw.githubusercontent.com/mackandall/jellyfin-plugin-episode-history/main/icon.png",
     "versions": [
       {
+        "version": "1.1.0.0",
+        "changelog": "Search page: an On TV Posters/List switch; List shows the next airings soonest first, grouped by day, with channel logos, Will record/New/Live marks and the same ⋮ menu as the posters. Recordings by show: one card per show. Recording now lists a re-record or resumed piece. Tidy up after deletes also covers archive libraries, emptied seasons and leftover .ts.properties/.ini/pictures. Trash lets API-key deletes through. A favourite's recording of an episode already in the library is cancelled.",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/mackandall/jellyfin-plugin-episode-history/releases/download/v1.1.0.0/jellyfin-plugin-episode-history_1.1.0.0.zip",
+        "checksum": "8dfbce6389ff0ffb28c54375fbdde024",
+        "timestamp": "2026-10-31T03:52:59.0000000Z"
+      },
+      {
         "version": "1.0.0.0",
         "changelog": "First public release.",
         "targetAbi": "12.0.0.0",
@@ -102,6 +110,14 @@
     "category": "Live TV",
     "imageUrl": "https://raw.githubusercontent.com/mackandall/jellyfin-plugin-jellydvr-guides/main/icon.png",
     "versions": [
+      {
+        "version": "1.2.0.0",
+        "changelog": "Schedules Direct: shows without episode numbers (news, talk, sports magazines) count as series, so Jellyfin offers Record series for them. New per-source setting, on by default; they get a stand-in episode 0.",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/mackandall/jellyfin-plugin-jellydvr-guides/releases/download/v1.2.0.0/jellyfin-plugin-jellydvr-guides_1.2.0.0.zip",
+        "checksum": "f46871fbabf3708130df6537a60e950f",
+        "timestamp": "2026-10-31T03:53:04.0000000Z"
+      },
       {
         "version": "1.1.1.0",
         "changelog": "Schedules Direct: the daily update runs at a time picked at random for each server (2:00 to 6:00, never on the hour) instead of 5:00 everywhere; Update now asks again at most every 15 minutes. Status lines on the settings page break properly again.",
