@@ -566,14 +566,15 @@ private fun SegmentBar(
                     .offset(x = w * f - 3.dp)
                     .width(6.dp)
                     .fillMaxHeight()
-                    .background(Jc.Ink, RoundedCornerShape(3.dp))
+                    // White edged in ink; a light theme's pale track needs the reverse.
+                    .background(if (Jc.Light) Color.White else Jc.Ink, RoundedCornerShape(3.dp))
                     .padding(1.dp)
-                    .background(Color.White, RoundedCornerShape(2.dp)),
+                    .background(if (Jc.Light) Jc.Text else Color.White, RoundedCornerShape(2.dp)),
             )
             commercialEdge(position, segments)?.let { note ->
                 Text(
                     "${clock(position)} · $note",
-                    color = Jc.Ink,
+                    color = if (Jc.Light) Jc.Text else Jc.Ink,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
                     maxLines = 1,
