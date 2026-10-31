@@ -291,7 +291,8 @@ private fun LibraryGrid(
                         columns = GridCells.Fixed(7),
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                         verticalArrangement = Arrangement.spacedBy(14.dp),
-                        contentPadding = PaddingValues(bottom = 40.dp),
+                        // Top: room for the focused poster, which grows (the grid crops what's above it).
+                        contentPadding = PaddingValues(top = 12.dp, bottom = 40.dp),
                     ) {
                         itemsIndexed(items, key = { _, it -> it.id }) { i, it ->
                             if (i >= items.size - 14) LaunchedEffect(items.size) { loadMore() }
