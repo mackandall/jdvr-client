@@ -32,6 +32,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.nativeKeyCode
@@ -538,35 +539,35 @@ private fun SegmentBar(
     segments: List<Segment>,
     modifier: Modifier,
 ) {
-    BoxWithConstraints(modifier.height(10.dp)) {
+    // 18 dp tall so the tick fits; the track and watched part 6 dp, the marks 10 dp, centred.
+    BoxWithConstraints(modifier.height(18.dp), contentAlignment = Alignment.CenterStart) {
         val w = maxWidth
-        Box(Modifier.fillMaxSize().padding(vertical = 2.dp).background(Jc.Line, RoundedCornerShape(3.dp)))
+        Box(Modifier.fillMaxWidth().height(6.dp).background(Jc.Line, RoundedCornerShape(3.dp)))
         if (duration > 0) {
             val f = (position.toFloat() / duration).coerceIn(0f, 1f)
             Box(
                 Modifier
-                    .fillMaxHeight()
                     .fillMaxWidth(f)
-                    .padding(vertical = 3.dp)
+                    .height(6.dp)
                     .background(if (Jdvr.prefs.progressSilver) Jc.Text.copy(alpha = 0.9f) else Jc.Focus.copy(alpha = 0.85f), RoundedCornerShape(3.dp)),
             )
             segments.forEach { s ->
                 val from = (s.startMs.toFloat() / duration).coerceIn(0f, 1f)
                 val to = (s.endMs.toFloat() / duration).coerceIn(0f, 1f)
                 val color = if (isCommercial(s)) Jc.Amber else Color(0xFF9B7BFF)
-                // The played part of a mark dimmed, the rest full.
-                listOf(from to minOf(to, f) to 0.55f, maxOf(from, f) to to to 1f).forEach { (span, alpha) ->
+                // The played part of a mark darkened (solid, so nothing shows through), the rest full.
+                listOf(from to minOf(to, f) to lerp(color, Jc.Ink, 0.45f), maxOf(from, f) to to to color).forEach { (span, c) ->
                     val (a, b) = span
-                    if (b > a) Box(Modifier.offset(x = w * a).width(w * (b - a)).fillMaxHeight().background(color.copy(alpha = alpha)))
+                    if (b > a) Box(Modifier.offset(x = w * a).width(w * (b - a)).height(10.dp).background(c))
                 }
             }
             Box(
                 Modifier
-                    .offset(x = w * f - 3.dp, y = (-4).dp)
+                    .offset(x = w * f - 3.dp)
                     .width(6.dp)
-                    .height(18.dp)
+                    .fillMaxHeight()
                     .background(Jc.Ink, RoundedCornerShape(3.dp))
-                    .padding(horizontal = 1.dp, vertical = 1.dp)
+                    .padding(1.dp)
                     .background(Color.White, RoundedCornerShape(2.dp)),
             )
             commercialEdge(position, segments)?.let { note ->
@@ -583,7 +584,7 @@ private fun SegmentBar(
                                 // Centred over the tick, kept inside the bar.
                                 val pl = m.measure(c.copy(minWidth = 0, maxWidth = Constraints.Infinity))
                                 val x = ((w * f).roundToPx() - pl.width / 2).coerceIn(0, maxOf(0, w.roundToPx() - pl.width))
-                                layout(0, 0) { pl.place(x, -pl.height - 10.dp.roundToPx()) }
+                                layout(0, 0) { pl.place(x, -pl.height - 13.dp.roundToPx()) }
                             }.background(Color.White, RoundedCornerShape(4.dp))
                             .padding(horizontal = 7.dp, vertical = 2.dp),
                 )
