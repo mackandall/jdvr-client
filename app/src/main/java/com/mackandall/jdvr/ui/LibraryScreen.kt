@@ -492,6 +492,7 @@ internal fun ShowPage(
             }
         },
         onHold = { quick = it },
+        onPlayItem = onPlay,
     )
     quick?.let { q ->
         QuickActions(

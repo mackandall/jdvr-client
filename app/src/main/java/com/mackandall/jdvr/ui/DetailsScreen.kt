@@ -1,5 +1,6 @@
 package com.mackandall.jdvr.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -105,6 +106,14 @@ fun DetailsPage(
     }
     LaunchedEffect(d != null) { if (d != null) play.tryFocus() }
 
+    // A cast member's page, over this one; Back returns to their card.
+    val people = rememberPersonReturn()
+    people.opened?.let { p ->
+        BackHandler { people.opened = null }
+        PersonPage(p, onPlay)
+        return
+    }
+
     val det = d
     Box(Modifier.fillMaxSize().screenBackground()) {
         if (det == null) {
@@ -190,7 +199,7 @@ fun DetailsPage(
                 if (det.cast.isNotEmpty()) {
                     Text("Cast", color = Jc.Text, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 4.dp))
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        items(det.cast.take(30), key = { it.id.toString() + it.role }) { p -> CastCard(p) }
+                        items(det.cast.take(30), key = { it.id.toString() + it.role }) { p -> CastCard(p, people.card(p.id)) { people.open(p) } }
                     }
                 }
             }
@@ -212,12 +221,16 @@ private fun Info(
     }
 }
 
-/** One cast member; focusable only so the row can be scrolled with the remote. */
+/** One cast member: OK opens their page. */
 @Composable
-private fun CastCard(p: Person) {
+private fun CastCard(
+    p: Person,
+    modifier: Modifier,
+    onClick: () -> Unit,
+) {
     Surface(
-        onClick = {},
-        modifier = Modifier.width(96.dp),
+        onClick = onClick,
+        modifier = modifier.width(96.dp),
         shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(10.dp)),
         colors = ClickableSurfaceDefaults.colors(containerColor = Jc.Ink.copy(alpha = 0f), focusedContainerColor = Jc.FocusFill, contentColor = Jc.Text, focusedContentColor = Jc.Text),
         border = ClickableSurfaceDefaults.border(focusedBorder = Border(BorderStroke(2.dp, Jc.Focus))),

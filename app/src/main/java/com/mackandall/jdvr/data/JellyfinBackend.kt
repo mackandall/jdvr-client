@@ -682,6 +682,38 @@ class JellyfinBackend private constructor(
 
     override fun personImageUrl(personId: UUID): String = api.imageApi.getItemImageUrl(personId, ImageType.PRIMARY, maxHeight = 240)
 
+    override suspend fun person(id: UUID): PersonDetails =
+        io {
+            val d = api.userLibraryApi.getItem(id, Jdvr.userId).content
+            PersonDetails(
+                id = d.id,
+                name = d.name ?: "",
+                overview = d.overview?.takeIf { it.isNotBlank() },
+                // Jellyfin keeps a person's birth as the premiere date and death as the end date.
+                born = d.premiereDate?.toLocalDate(),
+                died = d.endDate?.toLocalDate(),
+                birthplace = d.productionLocations?.firstOrNull { it.isNotBlank() },
+                hasImage = d.imageTags?.containsKey(ImageType.PRIMARY) == true,
+            )
+        }
+
+    override suspend fun personCredits(id: UUID): List<LibItem> =
+        io {
+            api.itemsApi
+                .getItems(
+                    userId = Jdvr.userId,
+                    personIds = listOf(id),
+                    recursive = true,
+                    includeItemTypes = listOf(BaseItemKind.MOVIE, BaseItemKind.SERIES, BaseItemKind.EPISODE, BaseItemKind.VIDEO),
+                    sortBy = listOf(ItemSortBy.PREMIERE_DATE, ItemSortBy.SORT_NAME),
+                    sortOrder = listOf(org.jellyfin.sdk.model.api.SortOrder.DESCENDING, org.jellyfin.sdk.model.api.SortOrder.ASCENDING),
+                    limit = 200,
+                    fields = listOf(ItemFields.OVERVIEW),
+                    enableUserData = true,
+                ).content.items
+                .map { toLibItem(it) }
+        }
+
     override suspend fun libItem(id: UUID): LibItem = io { toLibItem(api.userLibraryApi.getItem(id, Jdvr.userId).content) }
 
     override suspend fun latestIn(

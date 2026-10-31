@@ -526,6 +526,7 @@ private fun ShowEpisodes(
         actions = { e, say -> RecordingActions(e.id, say, onDeleted = { reload++ }, tools = false, manage = !e.inArchive) },
         emptyText = "No recordings of this show here.",
         onHold = { quick = it },
+        onPlayItem = onPlayItem,
     )
     quick?.let { q ->
         QuickActions(

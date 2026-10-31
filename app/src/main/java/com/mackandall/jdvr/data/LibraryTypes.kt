@@ -38,6 +38,17 @@ data class Person(
     val hasImage: Boolean,
 )
 
+/** A person's own page: photo, life dates, where they were born and their biography (from TMDB, once Jellyfin has fetched it). */
+data class PersonDetails(
+    val id: UUID,
+    val name: String,
+    val overview: String?,
+    val born: java.time.LocalDate?,
+    val died: java.time.LocalDate?,
+    val birthplace: String?,
+    val hasImage: Boolean,
+)
+
 /** Everything a details page shows: art, credits, ratings and what's in the file. */
 data class ItemDetails(
     val item: LibItem,

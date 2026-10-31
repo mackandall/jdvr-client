@@ -117,6 +117,12 @@ interface TvBackend :
 
     fun personImageUrl(personId: UUID): String
 
+    /** A cast or crew member's page (null when the backend has no people). */
+    suspend fun person(id: UUID): PersonDetails? = null
+
+    /** What a person is in, in the libraries: movies, shows and episodes, newest first. */
+    suspend fun personCredits(id: UUID): List<LibItem> = emptyList()
+
     suspend fun libItem(id: UUID): LibItem
 
     /** A library's latest additions, as the web client's "Recently added in …" rows (episodes grouped by show). */
