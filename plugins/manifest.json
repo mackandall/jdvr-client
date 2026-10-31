@@ -84,6 +84,14 @@
     "imageUrl": "https://raw.githubusercontent.com/mackandall/jellyfin-plugin-episode-history/main/icon.png",
     "versions": [
       {
+        "version": "1.1.2.0",
+        "changelog": "Cancelling a whole series recording no longer logs a warning for its already-deleted episode timers.",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/mackandall/jellyfin-plugin-episode-history/releases/download/v1.1.2.0/jellyfin-plugin-episode-history_1.1.2.0.zip",
+        "checksum": "bc19f27981b8b7d2504c5fd28ef05da5",
+        "timestamp": "2026-10-31T04:33:03.0000000Z"
+      },
+      {
         "version": "1.1.1.0",
         "changelog": "Search page List view: shorter rows, so more airings fit on screen.",
         "targetAbi": "12.0.0.0",
@@ -162,6 +170,14 @@
     "imageUrl": "https://raw.githubusercontent.com/mackandall/jellyfin-plugin-jellydvr-space/master/icon.png",
     "versions": [
       {
+        "version": "1.1.1.0",
+        "changelog": "Archiving a re-recorded movie no longer fails on the old .nfo and poster left in the archive folder; the archive popup says when a recording has already moved.",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/mackandall/jellyfin-plugin-jellydvr-space/releases/download/v1.1.1.0/jellyfin-plugin-jellydvr-space_1.1.1.0.zip",
+        "checksum": "fec4753dc151f24f9a4b6c2a22d88793",
+        "timestamp": "2026-10-31T04:33:07.0000000Z"
+      },
+      {
         "version": "1.1.0.0",
         "changelog": "Store in: choose the storage folders for a show (Series options) or for one recording (Recording options), in Jellyfin's web client and JDVR; sorting puts each recording in the first of its folders with room. Each storage folder has its own floor; the settings page is in numbered sections. Devices: Remove takes a TV off the list and signs it out. Recordings still being recorded, or whose pieces Episode History has yet to join, stay where they are; moved recordings no longer get planned a second time.",
         "targetAbi": "12.0.0.0",
@@ -197,6 +213,14 @@
     "imageUrl": "https://raw.githubusercontent.com/mackandall/jellyfin-plugin-jellydvr-schedule/main/icon.png",
     "versions": [
       {
+        "version": "1.0.2.0",
+        "changelog": "Favourites that skip episodes already in the library wait until Episode History has marked the guide again after a guide refresh or restart, so they no longer record episodes you have.",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/mackandall/jellyfin-plugin-jellydvr-schedule/releases/download/v1.0.2.0/jellyfin-plugin-jellydvr-schedule_1.0.2.0.zip",
+        "checksum": "90b856c0abab71e3e6ccb927039a8498",
+        "timestamp": "2026-10-31T04:32:59.0000000Z"
+      },
+      {
         "version": "1.0.1.0",
         "changelog": "Settings page: the Remove and ▲▼ buttons are readable again on Jellyfin 12.2.",
         "targetAbi": "12.0.0.0",
@@ -223,6 +247,14 @@
     "category": "Live TV",
     "imageUrl": "https://raw.githubusercontent.com/mackandall/jellyfin-plugin-jellydvr-live/main/icon.png",
     "versions": [
+      {
+        "version": "1.0.1.0",
+        "changelog": "Settings page: the buttons are readable again on Jellyfin 12.2.",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/mackandall/jellyfin-plugin-jellydvr-live/releases/download/v1.0.1.0/jellyfin-plugin-jellydvr-live_1.0.1.0.zip",
+        "checksum": "2a055fc4f178f3d967f34bbce4159f1a",
+        "timestamp": "2026-10-31T04:33:11.0000000Z"
+      },
       {
         "version": "1.0.0.0",
         "changelog": "First public release.",
