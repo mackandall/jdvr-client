@@ -152,6 +152,14 @@ interface TvBackend :
         maxHeight: Int,
     ): String?
 
+    /** An item's image of a given kind ("Primary", "Thumb", "Backdrop"); null when the server can't say. */
+    fun imageUrl(
+        itemId: String,
+        type: String,
+        maxHeight: Int,
+        tag: String?,
+    ): String? = imageUrl(itemId, maxHeight)
+
     /** One scheduled (or under way) recording's timer, by its id; null when it's gone. */
     suspend fun timer(timerId: String): org.jellyfin.sdk.model.api.TimerInfoDto? = null
 

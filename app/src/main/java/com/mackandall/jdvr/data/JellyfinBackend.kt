@@ -744,6 +744,22 @@ class JellyfinBackend private constructor(
         maxHeight: Int,
     ): String? = itemId.toUuid()?.let { imageUrl(it, maxHeight) }
 
+    override fun imageUrl(
+        itemId: String,
+        type: String,
+        maxHeight: Int,
+        tag: String?,
+    ): String? =
+        itemId.toUuid()?.let {
+            val kind =
+                when (type.lowercase()) {
+                    "thumb" -> ImageType.THUMB
+                    "backdrop" -> ImageType.BACKDROP
+                    else -> ImageType.PRIMARY
+                }
+            api.imageApi.getItemImageUrl(it, kind, maxHeight = maxHeight, tag = tag)
+        }
+
     override suspend fun timer(timerId: String): org.jellyfin.sdk.model.api.TimerInfoDto? =
         io {
             runCatching { api.liveTvApi.getTimer(timerId).content }.getOrNull()
