@@ -237,6 +237,14 @@
     "imageUrl": "https://raw.githubusercontent.com/mackandall/jellyfin-plugin-jellydvr-schedule/main/icon.png",
     "versions": [
       {
+        "version": "1.1.0.0",
+        "changelog": "Recording rules: Live TV > Series shows series recordings and Recording Favourites in one list (Cards or Grouped layout, follows the Jellyfin theme). Pause a series recording (for a while, until a date, skip the next episode, or until the season starts) and resume it; Pause all / Resume all; switch a favourite off until a date. The JDVR 0.4.0 Recording rules screen uses it.",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/mackandall/jellyfin-plugin-jellydvr-schedule/releases/download/v1.1.0.0/jellyfin-plugin-jellydvr-schedule_1.1.0.0.zip",
+        "checksum": "d863bf2edc6adfb4eb7865ee62b73685",
+        "timestamp": "2026-11-03T04:23:49.0000000Z"
+      },
+      {
         "version": "1.0.2.0",
         "changelog": "Favourites that skip episodes already in the library wait until Episode History has marked the guide again after a guide refresh or restart, so they no longer record episodes you have.",
         "targetAbi": "12.0.0.0",
