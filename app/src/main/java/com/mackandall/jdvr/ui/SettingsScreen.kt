@@ -250,6 +250,44 @@ fun SettingsScreen(
             options = listOf(Opt(true, "On"), Opt(false, "Off")),
             selected = prefs.infoBoxTop,
         ) { prefs.changeInfoBoxTop(it) }
+        Options(
+            label = "Up next",
+            help = "Near the end of a show's recording or archive episode, a card in the bottom right names the next one: from the credits mark if there is one, else from just before the last commercial break, else from near the end of the file.",
+            options = listOf(Opt(true, "On"), Opt(false, "Off")),
+            selected = prefs.upNext,
+        ) { prefs.changeUpNext(it) }
+        if (prefs.upNext) {
+            Options(
+                label = "   Play next automatically",
+                help = "The card counts down, then plays the next episode, skipping the last commercials and the padding. OK plays it now, Back hides the card.",
+                options = listOf(5, 10, 15, 20, 30).map { Opt(it, "After $it s") } + Opt(0, "No, wait for OK"),
+                selected = prefs.upNextCountdown,
+            ) { prefs.changeUpNextCountdown(it) }
+            Options(
+                label = "   Show it before the last break",
+                help = "A recording's credits run just before its last commercial break: the card shows this long before the break.",
+                options = listOf(20, 30, 40, 60, 90).map { Opt(it, "$it s") },
+                selected = prefs.upNextBeforeBreak,
+            ) { prefs.changeUpNextBeforeBreak(it) }
+            Options(
+                label = "   Show it before the end",
+                help = "For a file without commercial marks (a cut archive, or one never scanned): this long before its end.",
+                options = listOf(30, 45, 60, 90, 120).map { Opt(it, "$it s") },
+                selected = prefs.upNextBeforeEnd,
+            ) { prefs.changeUpNextBeforeEnd(it) }
+            Options(
+                label = "   Missing episodes",
+                help = "When the next recorded episode isn't the next one (S4:E13 never recorded), the card says so. Play on counts down to it anyway; Wait asks for OK.",
+                options = listOf(Opt(true, "Play on"), Opt(false, "Wait for OK")),
+                selected = prefs.upNextSkipGaps,
+            ) { prefs.changeUpNextSkipGaps(it) }
+            Options(
+                label = "   Still watching?",
+                help = "After this many episodes in a row played with no key pressed, ask before playing another, so a show doesn't play all night.",
+                options = listOf(2, 3, 4, 5).map { Opt(it, "After $it episodes") } + Opt(0, "Never ask"),
+                selected = prefs.stillWatchingAfter,
+            ) { prefs.changeStillWatchingAfter(it) }
+        }
         Section("Remote")
         Options(
             label = "Hold OK on a poster or episode",

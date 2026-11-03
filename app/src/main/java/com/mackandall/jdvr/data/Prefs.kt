@@ -197,6 +197,60 @@ class Prefs(
         p.edit().putBoolean("infoBoxTop", v).apply()
     }
 
+    /** Up Next: near the end of a show's recording or archive episode, a card naming the next one. */
+    var upNext by mutableStateOf(p.getBoolean("upNext", true))
+        private set
+
+    fun changeUpNext(v: Boolean) {
+        upNext = v
+        p.edit().putBoolean("upNext", v).apply()
+    }
+
+    /** Seconds the Up Next card counts down before playing the next episode; 0: it waits for OK. */
+    var upNextCountdown by mutableStateOf(p.getInt("upNextCountdown", 10))
+        private set
+
+    fun changeUpNextCountdown(v: Int) {
+        upNextCountdown = v
+        p.edit().putInt("upNextCountdown", v).apply()
+    }
+
+    /** Seconds before the last commercial break (where the show ends) that the card shows: the credits. */
+    var upNextBeforeBreak by mutableStateOf(p.getInt("upNextBeforeBreak", 40))
+        private set
+
+    fun changeUpNextBeforeBreak(v: Int) {
+        upNextBeforeBreak = v
+        p.edit().putInt("upNextBeforeBreak", v).apply()
+    }
+
+    /** Seconds before the end of a file without commercial marks (cut archives) that the card shows. */
+    var upNextBeforeEnd by mutableStateOf(p.getInt("upNextBeforeEnd", 45))
+        private set
+
+    fun changeUpNextBeforeEnd(v: Int) {
+        upNextBeforeEnd = v
+        p.edit().putInt("upNextBeforeEnd", v).apply()
+    }
+
+    /** Count down to the next recorded episode even when episodes between are missing; off: wait for OK then. */
+    var upNextSkipGaps by mutableStateOf(p.getBoolean("upNextSkipGaps", true))
+        private set
+
+    fun changeUpNextSkipGaps(v: Boolean) {
+        upNextSkipGaps = v
+        p.edit().putBoolean("upNextSkipGaps", v).apply()
+    }
+
+    /** After this many episodes played by Up Next with no key pressed, ask "Still watching?"; 0: never. */
+    var stillWatchingAfter by mutableStateOf(p.getInt("stillWatchingAfter", 3))
+        private set
+
+    fun changeStillWatchingAfter(v: Int) {
+        stillWatchingAfter = v
+        p.edit().putInt("stillWatchingAfter", v).apply()
+    }
+
     /** Weather on Home (Open-Meteo): on/off, the town (name and coordinates), °F or °C. */
     var weatherOn by mutableStateOf(p.getBoolean("weatherOn", true))
         private set

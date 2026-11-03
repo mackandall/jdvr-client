@@ -61,6 +61,7 @@ import com.mackandall.jdvr.data.Buffer
 import com.mackandall.jdvr.data.Jdvr
 import com.mackandall.jdvr.data.Prefs
 import com.mackandall.jdvr.data.Segment
+import com.mackandall.jdvr.data.attempt
 import com.mackandall.jdvr.ui.Button
 import com.mackandall.jdvr.ui.Jc
 import com.mackandall.jdvr.ui.tryFocus
@@ -69,7 +70,7 @@ import kotlinx.coroutines.launch
 import timber.log.Timber
 import android.view.KeyEvent as AndroidKeyEvent
 
-private fun isCommercial(s: Segment) = s.type.equals("Commercial", ignoreCase = true)
+internal fun isCommercial(s: Segment) = s.type.equals("Commercial", ignoreCase = true)
 
 private fun skippable(s: Segment) = s.type.lowercase() in setOf("commercial", "intro", "recap", "preview")
 
@@ -118,6 +119,13 @@ fun RecordingPlayerScreen(
     var infoOpen by remember { mutableStateOf(false) }
     var infoNote by remember { mutableStateOf<String?>(null) }
     val infoFocus = remember { FocusRequester() }
+    // Up Next: hidden with Back (until the end, or a seek back before it), the button picked, the countdown left.
+    var ended by remember { mutableStateOf(false) }
+    var upHidden by remember { mutableStateOf(false) }
+    var upSelected by remember { mutableIntStateOf(0) }
+    var upLeftMs by remember { mutableStateOf<Long?>(null) }
+    var upScheduled by remember { mutableStateOf<String?>(null) }
+    var stillWatching by remember { mutableStateOf(false) }
     val player = remember { recordingPlayer(context, paused = recording.paused) }
     val formats = rememberPlayingFormats(player)
     val rec = remember { RecordingSession(recording, player) }
@@ -156,6 +164,10 @@ fun RecordingPlayerScreen(
                 override fun onPlayerError(e: PlaybackException) {
                     Timber.w(e, "Recording playback error")
                     rec.error = "Playback stopped: ${e.errorCodeName}"
+                }
+
+                override fun onPlaybackStateChanged(state: Int) {
+                    ended = state == Player.STATE_ENDED
                 }
             }
         player.addListener(listener)
@@ -224,7 +236,28 @@ fun RecordingPlayerScreen(
             flash("Skipped " + (if (isCommercial(a)) "a commercial break" else a.type.lowercase()))
         }
     }
-    val prompt = active?.takeIf { mode == Prefs.ASK && it.startMs !in handled }
+
+    // Up Next, for a show's recording or archive episode (not a live TV buffer, nor one still recording).
+    val duration = player.duration.takeIf { it > 0 } ?: rec.playback?.durationMs ?: 0L
+    val nextItem = rec.nextItem
+    val upTiming =
+        if (prefs.upNext && live == null && !rec.inProgress && rec.error == null && rec.neighboursLoaded &&
+            (nextItem != null || rec.details?.item?.seriesName != null)
+        ) {
+            upNextTiming(duration, rec.segments, prefs.upNextBeforeBreak * 1000L, prefs.upNextBeforeEnd * 1000L)
+        } else {
+            null
+        }
+    val inUpWindow = upTiming != null && (ended || position >= upTiming.showAtMs)
+    // Seeking back well before it brings the card back next time.
+    if (upTiming != null && !ended && position < upTiming.showAtMs - 5000 && (upHidden || stillWatching)) {
+        upHidden = false
+        stillWatching = false
+    }
+    val upShowing = (inUpWindow && (!upHidden || ended) || stillWatching) && !infoOpen && !controlsOpen
+    val gap = nextItem?.let { n -> rec.details?.item?.let { c -> missingEpisodes(c.season, c.episode, n.season, n.episode) } }
+    val countsDown = upShowing && !stillWatching && !upHidden && nextItem != null && prefs.upNextCountdown > 0 && (gap == null || prefs.upNextSkipGaps)
+    val prompt = active?.takeIf { mode == Prefs.ASK && it.startMs !in handled && !upShowing }
 
     if (controlsOpen) BackHandler { controlsOpen = false }
     if (infoOpen) BackHandler { infoOpen = false }
@@ -280,6 +313,44 @@ fun RecordingPlayerScreen(
             }
         }
 
+    fun playNextNow() {
+        rec.next?.let { playNext(it) }
+    }
+
+    // The countdown runs while playing (or at the end); at zero the next episode plays, unless
+    // enough have played with no key pressed: then "Still watching?" asks first.
+    LaunchedEffect(countsDown, upTiming?.showAtMs) {
+        if (!countsDown) {
+            upLeftMs = null
+            return@LaunchedEffect
+        }
+        var left = prefs.upNextCountdown * 1000L
+        upLeftMs = left
+        while (left > 0) {
+            delay(250)
+            if (player.isPlaying || ended) left -= 250
+            upLeftMs = left
+        }
+        val limit = prefs.stillWatchingAfter
+        if (limit > 0 && UpNextChain.autoPlayed >= limit) {
+            player.pause()
+            upSelected = 0
+            stillWatching = true
+        } else {
+            UpNextChain.autoPlayed++
+            Timber.i("Up next: playing %s (%s)", rec.nextTitle, upTiming?.source)
+            playNextNow()
+        }
+    }
+    // Nothing more recorded: when the show records next.
+    LaunchedEffect(upShowing && nextItem == null) {
+        if (upShowing && nextItem == null && upScheduled == null) {
+            upScheduled = nextScheduled(rec.details?.item?.seriesName, attempt { Jdvr.backend.upcoming() })
+        }
+    }
+    LaunchedEffect(upShowing) { if (upShowing) upSelected = 0 }
+    if (upShowing && !stillWatching && !upHidden) BackHandler { upHidden = true }
+
     Box(
         Modifier
             .fillMaxSize()
@@ -288,9 +359,35 @@ fun RecordingPlayerScreen(
             .focusable()
             .onPreviewKeyEvent { e ->
                 lastKeyAt = System.currentTimeMillis()
+                UpNextChain.autoPlayed = 0
                 e.type == KeyEventType.KeyDown && rec.error == null && actions.onMediaKey(e.key.nativeKeyCode, player.isPlaying)
             }.onKeyEvent { e ->
                 if (e.type != KeyEventType.KeyDown || rec.error != null || controlsOpen || infoOpen) return@onKeyEvent false
+                // The Up Next card (or "Still watching?"): ◄ ► pick a button, OK presses it.
+                if (upShowing) {
+                    when (e.key.nativeKeyCode) {
+                        AndroidKeyEvent.KEYCODE_DPAD_LEFT -> {
+                            upSelected = 0
+                            return@onKeyEvent true
+                        }
+
+                        AndroidKeyEvent.KEYCODE_DPAD_RIGHT -> {
+                            upSelected = 1
+                            return@onKeyEvent true
+                        }
+
+                        AndroidKeyEvent.KEYCODE_DPAD_CENTER, AndroidKeyEvent.KEYCODE_ENTER -> {
+                            when {
+                                stillWatching && upSelected == 0 -> playNextNow()
+                                stillWatching -> onExit()
+                                upSelected == 1 -> upHidden = true
+                                nextItem != null -> playNextNow()
+                                else -> onExit()
+                            }
+                            return@onKeyEvent true
+                        }
+                    }
+                }
                 when (e.key.nativeKeyCode) {
                     AndroidKeyEvent.KEYCODE_DPAD_LEFT -> {
                         actions.seek(false)
@@ -429,6 +526,19 @@ fun RecordingPlayerScreen(
                     EditRow(editor, edit)
                 }
             }
+        }
+        if (upShowing) {
+            val card =
+                when {
+                    stillWatching -> UpNextCard.StillWatching(rec.details?.item?.seriesName, prefs.stillWatchingAfter)
+                    nextItem != null -> UpNextCard.Next(nextItem, gap, upLeftMs?.let { ((it + 999) / 1000).toInt() }, prefs.upNextCountdown)
+                    else -> UpNextCard.Last(rec.details?.item?.seriesName, upScheduled)
+                }
+            UpNextCardView(
+                card,
+                upSelected,
+                if (stillWatching) Modifier else Modifier.align(Alignment.BottomEnd).padding(bottom = if (osd) 150.dp else 0.dp),
+            )
         }
         rec.error?.let {
             Column(Modifier.align(Alignment.Center).background(Jc.Sheet, RoundedCornerShape(14.dp)).padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {

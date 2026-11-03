@@ -53,6 +53,12 @@ internal class RecordingSession(
         private set
     var nextTitle by mutableStateOf<String?>(null)
         private set
+
+    // The next episode itself (Up Next's card), and whether the neighbours are known yet.
+    var nextItem by mutableStateOf<com.mackandall.jdvr.data.LibItem?>(null)
+        private set
+    var neighboursLoaded by mutableStateOf(false)
+        private set
     var commercialsLabel by mutableStateOf<String?>(null)
         private set
     private var opened: ItemPlayback? = null
@@ -120,12 +126,22 @@ internal class RecordingSession(
             }
         val i = ids.indexOf(itemId)
         if (i < 0) return
+        try {
+            neighbours(ids, i, live)
+        } finally {
+            neighboursLoaded = true
+        }
+    }
+
+    private suspend fun neighbours(
+        ids: List<java.util.UUID>,
+        i: Int,
+        live: java.util.UUID?,
+    ) {
         previous = ids.getOrNull(i - 1)?.let { PlayRecording(it, startMs = if (live != null) 0L else null, liveChannelId = live) }
         next = ids.getOrNull(i + 1)?.let { PlayRecording(it, startMs = if (live != null) 0L else null, liveChannelId = live) }
-        nextTitle =
-            next?.takeIf { live == null }?.let { n ->
-                attempt { Jdvr.backend.libItem(n.itemId) }?.let { listOfNotNull(it.seasonEpisode, it.name).joinToString(" ") }
-            }
+        nextItem = next?.takeIf { live == null }?.let { n -> attempt { Jdvr.backend.libItem(n.itemId) } }
+        nextTitle = nextItem?.let { listOfNotNull(it.seasonEpisode, it.name).joinToString(" ") }
     }
 
     // The show's recordings in episode order (else by date); for a library or archive episode, not
