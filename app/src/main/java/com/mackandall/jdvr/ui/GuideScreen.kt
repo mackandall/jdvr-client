@@ -146,6 +146,9 @@ fun GuideScreen(
     var returnTo by remember { mutableStateOf<Program?>(null) }
     // The channel whose schedule is open (◄ from now to its logo, OK): shown in place of the grid.
     var scheduleFor by remember { mutableStateOf<Channel?>(null) }
+    // Its programmes (for the menu's "more on this channel"), and one picked there to bring on screen.
+    var scheduleList by remember { mutableStateOf<List<Program>>(emptyList()) }
+    var scheduleScrollTo by remember { mutableStateOf<UUID?>(null) }
     // The channel logos' focus handles (Settings › Guide › Channel schedule), and which one has focus.
     val channelSchedule = Jdvr.prefs.guideChannelSchedule
     val tileFocus = remember { mutableMapOf<UUID, FocusRequester>() }
@@ -298,6 +301,21 @@ fun GuideScreen(
             onChanged = { reload++ },
             onClose = { closePanel() },
             onOtherAirings = { airingsFor = it },
+            // The channel schedule has no details band: its menu shows the picture and every tag,
+            // and the show's next airings on the channel.
+            rich = scheduleFor != null,
+            extra =
+                if (scheduleFor != null) {
+                    {
+                        MoreOnChannel(p, scheduleList, symbols) { o ->
+                            scheduleScrollTo = o.id
+                            focused = o
+                            selected = o
+                        }
+                    }
+                } else {
+                    null
+                },
             // An action that worked: close the panel, say what happened, refresh the guide.
             onActed = { msg ->
                 guideNote = msg
@@ -407,6 +425,8 @@ fun GuideScreen(
     fun closeSchedule() {
         val ch = scheduleFor ?: return
         scheduleFor = null
+        scheduleList = emptyList()
+        scheduleScrollTo = null
         returnTo = null
         programs[ch.id].orEmpty().firstOrNull { it.end.isAfter(windowStart) }?.let { focused = it }
         guideScope.launch {
@@ -517,7 +537,8 @@ fun GuideScreen(
                         focused?.let { InfoBand(it, channels?.firstOrNull { c -> c.id == it.channelId }, symbols, hint = if (tileFocused != null) TILE_HINT else null) }
                             ?: if (channels?.isEmpty() != true) Text("Move through the guide to see a programme here; OK for what you can do with it.", color = Jc.Muted, fontSize = 15.sp, modifier = Modifier.padding(22.dp)) else Unit
                     }
-                if (infoOnTop) band()
+                // Not in a channel's schedule: its list takes the whole height, its menu the details.
+                if (infoOnTop && scheduleFor == null) band()
                 Row(Modifier.weight(1f).fillMaxWidth()) {
                     val sched = scheduleFor
                     if (sched != null) {
@@ -531,7 +552,9 @@ fun GuideScreen(
                             onFocused = { focused = it },
                             onSelect = { selected = it },
                             onClose = { closeSchedule() },
-                            modifier = Modifier.weight(if (infoBand) 1f else 0.74f).fillMaxHeight(),
+                            modifier = Modifier.weight(1f).fillMaxHeight(),
+                            onLoaded = { scheduleList = it },
+                            scrollTo = scheduleScrollTo,
                         )
                     } else {
                         Column(Modifier.weight(if (infoBand) 1f else 0.74f).fillMaxHeight().padding(start = 20.dp, top = if (infoOnTop) 8.dp else 20.dp)) {
@@ -655,7 +678,7 @@ fun GuideScreen(
                         }
                     }
                     // Side layout: the right quarter shows the programme the cursor is on, or its actions after OK.
-                    if (!infoBand) {
+                    if (!infoBand && scheduleFor == null) {
                         Box(Modifier.weight(0.26f).fillMaxHeight().background(guidePanel(0.6f))) {
                             val p = selected
                             if (p == null) {
@@ -668,7 +691,7 @@ fun GuideScreen(
                         }
                     }
                 }
-                if (infoBelow) band()
+                if (infoBelow && scheduleFor == null) band()
             }
             // A programme's actions: a panel over the right of the grid, its buttons in two columns.
             selected?.let { p ->

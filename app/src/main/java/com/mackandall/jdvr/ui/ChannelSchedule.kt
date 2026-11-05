@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -92,6 +94,10 @@ internal fun ChannelSchedule(
     onSelect: (Program) -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
+    // What was loaded (the menu's "more of this show on this channel" comes from it).
+    onLoaded: (List<Program>) -> Unit = {},
+    // A programme to bring on screen (picked in the menu's "more" list).
+    scrollTo: UUID? = null,
 ) {
     BackHandler(enabled = !actionsOpen) { onClose() }
     var programs by remember(channel.id) { mutableStateOf<List<Program>?>(null) }
@@ -106,6 +112,7 @@ internal fun ChannelSchedule(
                     .distinctBy { it.id }
                     .sortedBy { it.start }
             error = null
+            programs?.let(onLoaded)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -135,6 +142,13 @@ internal fun ChannelSchedule(
         entry.focusSoon()
     }
 
+    LaunchedEffect(scrollTo) {
+        val id = scrollTo ?: return@LaunchedEffect
+        val index = lines.indexOfFirst { it is ScheduleLine.Show && it.program.id == id }
+        if (index < 0) return@LaunchedEffect
+        if (listState.layoutInfo.visibleItemsInfo.none { it.index == index }) listState.scrollToItem((index - 1).coerceAtLeast(0))
+    }
+
     Column(modifier.padding(start = 20.dp, top = 20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             Box(Modifier.width(120.dp).height(64.dp).background(Jc.Panel2, RoundedCornerShape(10.dp)).padding(8.dp), contentAlignment = Alignment.Center) {
@@ -146,7 +160,7 @@ internal fun ChannelSchedule(
             }
             Column {
                 Text("${channel.number} ${channel.name}", color = Jc.Title, fontSize = 28.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text("Coming up on this channel · Back: the guide", color = Jc.Muted, fontSize = 15.sp)
+                Text("Coming up on this channel · OK: watch, record, favourites · Back: the guide", color = Jc.Muted, fontSize = 15.sp)
             }
         }
         error?.let { Text(it, color = Jc.Amber, fontSize = 15.sp) }
@@ -209,6 +223,19 @@ private fun ScheduleRow(
     val npvr = Jc.Style == UiStyle.NextPvr
     val sage = Jc.Style == UiStyle.Sage
     var rowFocused by remember { mutableStateOf(false) }
+    // Rested on (not passed over while ▼ is held): the row opens up to show what it's about.
+    var open by remember(p.id) { mutableStateOf(false) }
+    val bring = remember { androidx.compose.foundation.relocation.BringIntoViewRequester() }
+    LaunchedEffect(rowFocused) {
+        if (!rowFocused) {
+            open = false
+            return@LaunchedEffect
+        }
+        kotlinx.coroutines.delay(500)
+        open = true
+        kotlinx.coroutines.delay(50) // once it has grown
+        bring.bringIntoView()
+    }
     val records = extras.realRecording(p)
     val darkType = npvr && rowFocused && !records
     val titleColor = if (darkType) NextPvrInk else Jc.Text
@@ -218,7 +245,8 @@ private fun ScheduleRow(
         modifier =
             Modifier
                 .fillMaxWidth()
-                .height(64.dp)
+                .then(if (open) Modifier.heightIn(min = 64.dp) else Modifier.height(64.dp))
+                .bringIntoViewRequester(bring)
                 .focusRequester(focus)
                 .then(if (entry != null) Modifier.focusRequester(entry) else Modifier)
                 .onFocusChangedCompat {
@@ -243,8 +271,8 @@ private fun ScheduleRow(
         scale = ClickableSurfaceDefaults.scale(focusedScale = 1f),
     ) {
         Row(
-            (if (sage && rowFocused) Modifier.sageGloss() else Modifier).padding(horizontal = 14.dp),
-            verticalAlignment = Alignment.CenterVertically,
+            (if (sage && rowFocused) Modifier.sageGloss() else Modifier).padding(horizontal = 14.dp, vertical = if (open) 10.dp else 0.dp),
+            verticalAlignment = if (open) Alignment.Top else Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             Column(Modifier.width(96.dp)) {
@@ -273,18 +301,73 @@ private fun ScheduleRow(
                     if (marks.watched) Text("✓", color = Jc.Green, fontSize = 12.sp)
                     if (sub.isNotEmpty()) Text(sub, color = subColor, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
+                if (open) {
+                    p.overview?.takeIf { it.isNotBlank() }?.let {
+                        Text(it, color = titleColor.copy(alpha = 0.85f), fontSize = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 4.dp))
+                    }
+                    val storedIn = rememberStoredIn(p.id, p.isMovie)
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 4.dp)) {
+                        if (records) Chip(if (p.seriesTimerId != null) "● series recording" else "● recording", Jc.Recording)
+                        if (extras.isBuffer(p)) Chip("live TV buffer", Jc.Muted)
+                        if (p.isRepeat) Chip("repeat", Jc.Muted)
+                        if (p.isMovie) Chip("movie", Jc.Muted)
+                        MarkChips(marks)
+                        storedIn?.let { Chip("stored in $it", Jc.Focus) }
+                    }
+                }
             }
             val minutes =
                 java.time.Duration
                     .between(p.start, p.end)
                     .toMinutes()
             Text(
-                listOfNotNull(if (p.isRepeat) "repeat" else null, "$minutes min").joinToString(" · "),
+                // Open, the chips say it's a repeat.
+                listOfNotNull(if (p.isRepeat && !open) "repeat" else null, "$minutes min").joinToString(" · "),
                 color = subColor,
                 fontSize = 13.sp,
                 maxLines = 1,
                 softWrap = false,
             )
+        }
+    }
+}
+
+/**
+ * Under the menu's buttons in the channel schedule: the show's next airings on this channel (from
+ * the schedule already loaded). OK on one moves the list and the menu to it.
+ */
+@Composable
+internal fun MoreOnChannel(
+    p: Program,
+    schedule: List<Program>,
+    symbols: MarkSymbols?,
+    onPick: (Program) -> Unit,
+) {
+    val more = schedule.filter { it.id != p.id && it.name == p.name && it.start.isAfter(p.start) }.take(3)
+    if (more.isEmpty()) return
+    Column(Modifier.padding(top = 10.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+        Box(Modifier.fillMaxWidth().height(1.dp).background(Jc.Line))
+        Text("More ${p.name} on this channel".uppercase(), color = Jc.Muted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 6.dp))
+        more.forEach { o ->
+            val marks = Marks.parse(o.rawEpisodeTitle, symbols)
+            val day =
+                when (ChronoUnit.DAYS.between(LocalDate.now(), o.start.toLocalDate())) {
+                    0L -> "Today"
+                    1L -> "Tomorrow"
+                    else -> o.start.format(java.time.format.DateTimeFormatter.ofPattern("EEE"))
+                }
+            val what = listOfNotNull(o.seasonEpisode, marks.title?.takeIf { it.isNotBlank() }).joinToString(" · ").ifEmpty { o.name }
+            Button(
+                (if (marks.watched) "✓ " else "") + what,
+                compact = true,
+                modifier = Modifier.fillMaxWidth(),
+                leading = {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        if (o.isRecording) Box(Modifier.size(8.dp).background(Jc.Recording, CircleShape))
+                        Text("$day ${o.start.time()}", color = Jc.Muted, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, softWrap = false)
+                    }
+                },
+            ) { onPick(o) }
         }
     }
 }

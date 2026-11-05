@@ -5,6 +5,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -48,6 +50,7 @@ import kotlinx.coroutines.launch
 import java.util.UUID
 
 /** The selected programme: details and what can be done with it. */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 internal fun ProgramPanel(
     program: Program,
@@ -65,6 +68,11 @@ internal fun ProgramPanel(
     // "Other airings": the caller shows them (the guide, whose panel closes when focus leaves
     // it); without it the panel opens them itself.
     onOtherAirings: ((Program) -> Unit)? = null,
+    // The channel schedule's fuller header: the programme's picture beside its titles, and all its
+    // tags (the schedule has no details band).
+    rich: Boolean = false,
+    // Under the buttons (the channel schedule: more of the show on this channel).
+    extra: (@Composable () -> Unit)? = null,
 ) {
     var p by remember(program.id) { mutableStateOf(program) }
     var airingsHere by remember(program.id) { mutableStateOf(false) }
@@ -158,6 +166,9 @@ internal fun ProgramPanel(
     }
 
     // The panel is as wide as its two columns of buttons need; the header and note wrap to that.
+    // Scrolled only as far as focus needs (the TV default puts the focused button a third of the
+    // way down, which pushed the titles off the top of a tall panel).
+    androidx.compose.runtime.CompositionLocalProvider(androidx.compose.foundation.gestures.LocalBringIntoViewSpec provides MinimalScroll) {
     Column(
         modifier =
             modifier
@@ -167,20 +178,67 @@ internal fun ProgramPanel(
     ) {
         FitToButtons(
             header = {
-                Text(p.name, color = Jc.Title, fontSize = 24.sp, fontWeight = FontWeight.SemiBold, maxLines = 2)
-                val episode = listOfNotNull(p.seasonEpisode, marks.title).joinToString(" · ")
-                if (episode.isNotEmpty()) Text(episode, color = Jc.Text, fontSize = 16.sp)
-                Text(
-                    "${p.start.day()} · ${p.start.time()} – ${p.end.time()}" + (channel?.let { " · ${it.number} ${it.name}" } ?: ""),
-                    color = Jc.Muted,
-                    fontSize = 15.sp,
-                )
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    MarkChips(marks)
-                    if (isBuffer) Chip("Live TV buffer", Jc.Muted)
-                    if (eh?.markedWatched == true) Chip("marked watched", Jc.Green)
+                @Composable
+                fun titles() {
+                    Text(p.name, color = Jc.Title, fontSize = 24.sp, fontWeight = FontWeight.SemiBold, maxLines = 2)
+                    val episode = listOfNotNull(p.seasonEpisode, marks.title).joinToString(" · ")
+                    if (episode.isNotEmpty()) Text(episode, color = Jc.Text, fontSize = 16.sp)
+                    // Rich (the channel schedule, a narrower column beside the picture): "Today" or
+                    // "Tomorrow" for the date, and the length in place of the channel it's on.
+                    val day =
+                        if (!rich) {
+                            p.start.day()
+                        } else {
+                            when (java.time.temporal.ChronoUnit.DAYS.between(java.time.LocalDate.now(), p.start.toLocalDate())) {
+                                0L -> "Today"
+                                1L -> "Tomorrow"
+                                else -> p.start.day()
+                            }
+                        }
+                    Text(
+                        (if (rich) "$day ${p.start.time()} – ${p.end.time()}" else "$day · ${p.start.time()} – ${p.end.time()}") +
+                            if (rich) " · ${java.time.Duration.between(p.start, p.end).toMinutes()} min" else (channel?.let { " · ${it.number} ${it.name}" } ?: ""),
+                        color = Jc.Muted,
+                        fontSize = 15.sp,
+                    )
                 }
-                p.overview?.let { Text(it, color = Jc.Muted, fontSize = 14.sp, maxLines = 4, overflow = TextOverflow.Ellipsis) }
+
+                @Composable
+                fun chips() {
+                    androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        if (rich) {
+                            if (p.isRecording && !isBuffer) Chip(if (p.seriesTimerId != null) "● series recording" else "● recording", Jc.Recording)
+                            if (p.isRepeat) Chip("repeat", Jc.Muted)
+                            if (p.isMovie) Chip("movie", Jc.Muted)
+                        }
+                        MarkChips(marks)
+                        if (isBuffer) Chip("Live TV buffer", Jc.Muted)
+                        if (eh?.markedWatched == true) Chip("marked watched", Jc.Green)
+                        if (rich) rememberStoredIn(p.id, p.isMovie)?.let { Chip("stored in $it", Jc.Focus) }
+                    }
+                }
+                if (rich) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                        // The channel's logo underneath: it shows when the programme has no picture.
+                        Box(Modifier.width(160.dp).aspectRatio(16f / 9f).background(Jc.Panel2, RoundedCornerShape(10.dp)), contentAlignment = Alignment.Center) {
+                            channel?.logoUrl?.let { coil3.compose.AsyncImage(model = it, contentDescription = null, contentScale = androidx.compose.ui.layout.ContentScale.Fit, modifier = Modifier.fillMaxSize(0.5f)) }
+                            coil3.compose.AsyncImage(
+                                model = Jdvr.backend.imageUrl(p.id, 300),
+                                contentDescription = null,
+                                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(10.dp)),
+                            )
+                        }
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            titles()
+                            chips()
+                        }
+                    }
+                } else {
+                    titles()
+                    chips()
+                }
+                p.overview?.let { Text(it, color = Jc.Muted, fontSize = 14.sp, maxLines = if (rich) 6 else 4, overflow = TextOverflow.Ellipsis) }
                 schedule?.outcome?.let {
                     Text(
                         it.detail,
@@ -337,8 +395,10 @@ internal fun ProgramPanel(
             },
             footer = {
                 note?.let { Text(it, color = Jc.Muted, fontSize = 14.sp) }
+                extra?.invoke()
             },
         )
+    }
     }
 }
 
