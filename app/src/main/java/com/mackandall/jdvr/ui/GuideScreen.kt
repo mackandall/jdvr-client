@@ -786,11 +786,20 @@ private fun NowLine(
     windowStart: LocalDateTime,
     perMinute: Dp,
 ) {
-    val minutes = Duration.between(windowStart, LocalDateTime.now()).toMinutes()
+    // Its own clock: "now" read once stayed where it was when the guide opened (nothing
+    // else redraws the line until the window moves on at the half hour).
+    var now by remember { mutableStateOf(LocalDateTime.now()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(15_000)
+            now = LocalDateTime.now()
+        }
+    }
+    val minutes = Duration.between(windowStart, now).seconds / 60f
     if (minutes < 0 || minutes > windowMinutes) return
     Box(
         Modifier
-            .offset(x = ChannelColumn + perMinute * minutes.toFloat())
+            .offset(x = ChannelColumn + perMinute * minutes)
             .width(2.dp)
             .fillMaxHeight()
             .background(Jc.Focus.copy(alpha = 0.7f)),
