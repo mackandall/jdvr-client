@@ -86,7 +86,7 @@ private val ChannelColumn = 150.dp
 private val RowHeight = 62.dp
 
 /** Marks the guide adds from our plugins: unkept live TV buffers (faint) and live Comskip scans (CS). */
-private data class GuideExtras(
+internal data class GuideExtras(
     val buffers: Set<String> = emptySet(),
     val scanning: Map<String, Int?> = emptyMap(),
     // Programmes a Recording Favourite will record (JellyDVR Schedule): SageTV's green cells.
@@ -101,13 +101,13 @@ private data class GuideExtras(
     fun scanning(p: Program) = p.id.toString().plainId() in scanning
 }
 
-private val LocalGuideExtras = androidx.compose.runtime.compositionLocalOf { GuideExtras() }
+internal val LocalGuideExtras = androidx.compose.runtime.compositionLocalOf { GuideExtras() }
 
 /** The channel last focused in the guide (this run): where the guide opens next time. */
 private var lastGuideChannel: Pair<String, UUID>? = null
 
 /** Each programme cell's own focus handle, by programme id: to put focus back on exactly that cell. */
-private val LocalCellFocus = androidx.compose.runtime.staticCompositionLocalOf { mutableMapOf<UUID, FocusRequester>() }
+internal val LocalCellFocus = androidx.compose.runtime.staticCompositionLocalOf { mutableMapOf<UUID, FocusRequester>() }
 
 private fun floorToHalfHour(t: LocalDateTime): LocalDateTime = t.truncatedTo(ChronoUnit.HOURS).plusMinutes(if (t.minute >= 30) 30 else 0)
 
@@ -144,6 +144,12 @@ fun GuideScreen(
     // from `focused`, because as the panel and then the player go away, focus falls on whatever
     // cell is at that spot on screen (rows above), and the guide scrolls to it.
     var returnTo by remember { mutableStateOf<Program?>(null) }
+    // The channel whose schedule is open (◄ from now to its logo, OK): shown in place of the grid.
+    var scheduleFor by remember { mutableStateOf<Channel?>(null) }
+    // The channel logos' focus handles (Settings › Guide › Channel schedule), and which one has focus.
+    val channelSchedule = Jdvr.prefs.guideChannelSchedule
+    val tileFocus = remember { mutableMapOf<UUID, FocusRequester>() }
+    var tileFocused by remember { mutableStateOf<UUID?>(null) }
     val listState =
         androidx.compose.foundation.lazy
             .rememberLazyListState()
@@ -351,6 +357,66 @@ fun GuideScreen(
         return true
     }
 
+    // A channel's logo (its row scrolled on screen first when it isn't laid out).
+    fun focusTile(
+        index: Int,
+        dir: Int = 0,
+    ): Boolean {
+        val ch = channels?.getOrNull(index) ?: return false
+        if (tileFocus[ch.id]?.tryFocus() == true && tileFocused == ch.id) return true
+        guideScope.launch {
+            val visible = listState.layoutInfo.visibleItemsInfo
+            val shown = visible.size.coerceAtLeast(1)
+            if (visible.none { it.index == index }) listState.scrollToItem(if (dir > 0) (index - shown + 2).coerceAtLeast(0) else index)
+            repeat(20) {
+                if (tileFocus[ch.id]?.tryFocus() == true && tileFocused == ch.id) return@launch
+                delay(16)
+            }
+        }
+        return true
+    }
+
+    // ▲▼ go logo to logo; ► back to what's on now; ◄ isn't used, so it opens the menu.
+    fun onTileKey(
+        ch: Channel,
+        key: Key,
+    ): Boolean {
+        val list = channels ?: return false
+        val i = list.indexOfFirst { it.id == ch.id }
+        return when (key) {
+            Key.DirectionUp -> if (i <= 0) true.also { (if (groups.size > 1) groupFocus else hoursFocus).tryFocus() } else focusTile(i - 1, -1)
+            Key.DirectionDown -> if (i >= list.lastIndex) true else focusTile(i + 1, 1)
+            Key.DirectionRight -> {
+                val windowEnd = windowStart.plusMinutes(windowMinutes)
+                val p = programs[ch.id].orEmpty().firstOrNull { it.end.isAfter(windowStart) && it.start.isBefore(windowEnd) }
+                p != null && cellFocus[p.id]?.tryFocus() == true
+            }
+            else -> false
+        }
+    }
+
+    fun onTileFocused(ch: Channel) {
+        tileFocused = ch.id
+        lastGuideChannel = Jdvr.serverKey to ch.id
+        // The details show what's on it now; ▲▼ after ► keep to now.
+        programs[ch.id].orEmpty().firstOrNull { it.end.isAfter(windowStart) }?.let { focused = it }
+        anchor = windowStart
+    }
+
+    // Back from a channel's schedule: the guide, on that channel's logo.
+    fun closeSchedule() {
+        val ch = scheduleFor ?: return
+        scheduleFor = null
+        returnTo = null
+        programs[ch.id].orEmpty().firstOrNull { it.end.isAfter(windowStart) }?.let { focused = it }
+        guideScope.launch {
+            repeat(20) {
+                delay(50)
+                if (tileFocus[ch.id]?.tryFocus() == true && tileFocused == ch.id) return@launch
+            }
+        }
+    }
+
     // Moves the window; false when it can't (already at now), so Left can open the rail instead.
     fun shift(
         minutes: Long,
@@ -432,7 +498,7 @@ fun GuideScreen(
                     }
                 }
                 // ▲▼ in the grid (not in the actions panel over it).
-                if (e.type == KeyEventType.KeyDown && gridHasFocus && selected == null) {
+                if (e.type == KeyEventType.KeyDown && gridHasFocus && selected == null && tileFocused == null && scheduleFor == null) {
                     when (e.key) {
                         Key.DirectionDown -> return@onPreviewKeyEvent moveVertical(1)
                         Key.DirectionUp -> return@onPreviewKeyEvent moveVertical(-1)
@@ -448,108 +514,140 @@ fun GuideScreen(
                 fun band() =
                     // Light: the picture sits behind the details.
                     Box(Modifier.fillMaxWidth().height(BandHeight).background(guidePanel(0.3f))) {
-                        focused?.let { InfoBand(it, channels?.firstOrNull { c -> c.id == it.channelId }, symbols) }
+                        focused?.let { InfoBand(it, channels?.firstOrNull { c -> c.id == it.channelId }, symbols, hint = if (tileFocused != null) TILE_HINT else null) }
                             ?: if (channels?.isEmpty() != true) Text("Move through the guide to see a programme here; OK for what you can do with it.", color = Jc.Muted, fontSize = 15.sp, modifier = Modifier.padding(22.dp)) else Unit
                     }
                 if (infoOnTop) band()
                 Row(Modifier.weight(1f).fillMaxWidth()) {
-                    Column(Modifier.weight(if (infoBand) 1f else 0.74f).fillMaxHeight().padding(start = 20.dp, top = if (infoOnTop) 8.dp else 20.dp)) {
-                        Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                            Text("Guide", color = Jc.Title, fontSize = 28.sp, fontWeight = FontWeight.SemiBold)
-                            Text(windowStart.day(), color = Jc.Muted, fontSize = 16.sp, modifier = Modifier.padding(bottom = 4.dp))
-                            error?.let { Text(it, color = Jc.Amber, fontSize = 14.sp, modifier = Modifier.padding(bottom = 4.dp)) }
-                            guideNote?.let { Text(it, color = Jc.Focus, fontSize = 15.sp, modifier = Modifier.padding(bottom = 4.dp)) }
-                            // ▼ from the title row's buttons: the first channel's programme on now (Compose's own search lands rows lower).
-                            val downToFirstRow =
-                                Modifier.onPreviewKeyEvent { e ->
-                                    if (e.type != KeyEventType.KeyDown || e.key != Key.DirectionDown) return@onPreviewKeyEvent false
-                                    val first = channels?.firstOrNull() ?: return@onPreviewKeyEvent false
-                                    val p = programs[first.id].orEmpty().firstOrNull { it.end.isAfter(windowStart) } ?: return@onPreviewKeyEvent false
-                                    cellFocus[p.id]?.let { it.tryFocus() } == true
+                    val sched = scheduleFor
+                    if (sched != null) {
+                        ChannelSchedule(
+                            channel = sched,
+                            symbols = symbols,
+                            reload = reload,
+                            entry = entry,
+                            home = (returnTo ?: focused)?.id,
+                            actionsOpen = selected != null || airingsFor != null,
+                            onFocused = { focused = it },
+                            onSelect = { selected = it },
+                            onClose = { closeSchedule() },
+                            modifier = Modifier.weight(if (infoBand) 1f else 0.74f).fillMaxHeight(),
+                        )
+                    } else {
+                        Column(Modifier.weight(if (infoBand) 1f else 0.74f).fillMaxHeight().padding(start = 20.dp, top = if (infoOnTop) 8.dp else 20.dp)) {
+                            Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                                Text("Guide", color = Jc.Title, fontSize = 28.sp, fontWeight = FontWeight.SemiBold)
+                                Text(windowStart.day(), color = Jc.Muted, fontSize = 16.sp, modifier = Modifier.padding(bottom = 4.dp))
+                                error?.let { Text(it, color = Jc.Amber, fontSize = 14.sp, modifier = Modifier.padding(bottom = 4.dp)) }
+                                guideNote?.let { Text(it, color = Jc.Focus, fontSize = 15.sp, modifier = Modifier.padding(bottom = 4.dp)) }
+                                // ▼ from the title row's buttons: the first channel's programme on now (Compose's own search lands rows lower).
+                                val downToFirstRow =
+                                    Modifier.onPreviewKeyEvent { e ->
+                                        if (e.type != KeyEventType.KeyDown || e.key != Key.DirectionDown) return@onPreviewKeyEvent false
+                                        val first = channels?.firstOrNull() ?: return@onPreviewKeyEvent false
+                                        val p = programs[first.id].orEmpty().firstOrNull { it.end.isAfter(windowStart) } ?: return@onPreviewKeyEvent false
+                                        cellFocus[p.id]?.let { it.tryFocus() } == true
+                                    }
+                                if (groups.size > 1) {
+                                    val shown = group.takeIf { it in groups } ?: groups.first()
+                                    // OK steps to the next group.
+                                    // The way in from the menu too, when the group has no channels to focus.
+                                    val way = if (channels?.isEmpty() == true) Modifier.focusRequester(entry) else Modifier
+                                    Button(
+                                        "Channels: $shown",
+                                        compact = true,
+                                        // Up here, the top rows are shown (▲ came from the first channel).
+                                        modifier =
+                                            Modifier
+                                                .padding(bottom = 2.dp)
+                                                .focusRequester(groupFocus)
+                                                .then(way)
+                                                .onFocusChanged { if (it.isFocused) guideScope.launch { listState.scrollToItem(0) } }
+                                                .then(downToFirstRow),
+                                    ) {
+                                        Jdvr.prefs.changeChannelGroup(groups[(groups.indexOf(shown) + 1) % groups.size])
+                                    }
                                 }
-                            if (groups.size > 1) {
-                                val shown = group.takeIf { it in groups } ?: groups.first()
-                                // OK steps to the next group.
-                                // The way in from the menu too, when the group has no channels to focus.
-                                val way = if (channels?.isEmpty() == true) Modifier.focusRequester(entry) else Modifier
+                                // OK: the next width (wider, then back to the narrowest). ⏪/⏩ do the same from anywhere in the guide.
                                 Button(
-                                    "Channels: $shown",
+                                    "Hours: ${Jdvr.prefs.guideHours}",
                                     compact = true,
-                                    // Up here, the top rows are shown (▲ came from the first channel).
                                     modifier =
                                         Modifier
                                             .padding(bottom = 2.dp)
-                                            .focusRequester(groupFocus)
-                                            .then(way)
+                                            .focusRequester(hoursFocus)
+                                            // Not until the programmes are in: opening, focus is for the grid (it took this button, drawn unfocused).
+                                            .focusProperties { canFocus = loaded != null }
                                             .onFocusChanged { if (it.isFocused) guideScope.launch { listState.scrollToItem(0) } }
                                             .then(downToFirstRow),
                                 ) {
-                                    Jdvr.prefs.changeChannelGroup(groups[(groups.indexOf(shown) + 1) % groups.size])
+                                    val options = com.mackandall.jdvr.data.Prefs.GUIDE_HOURS
+                                    Jdvr.prefs.changeGuideHours(options[(options.indexOf(Jdvr.prefs.guideHours) + 1) % options.size])
                                 }
                             }
-                            // OK: the next width (wider, then back to the narrowest). ⏪/⏩ do the same from anywhere in the guide.
-                            Button(
-                                "Hours: ${Jdvr.prefs.guideHours}",
-                                compact = true,
-                                modifier =
-                                    Modifier
-                                        .padding(bottom = 2.dp)
-                                        .focusRequester(hoursFocus)
-                                        // Not until the programmes are in: opening, focus is for the grid (it took this button, drawn unfocused).
-                                        .focusProperties { canFocus = loaded != null }
-                                        .onFocusChanged { if (it.isFocused) guideScope.launch { listState.scrollToItem(0) } }
-                                        .then(downToFirstRow),
-                            ) {
-                                val options = com.mackandall.jdvr.data.Prefs.GUIDE_HOURS
-                                Jdvr.prefs.changeGuideHours(options[(options.indexOf(Jdvr.prefs.guideHours) + 1) % options.size])
+                            val list = channels
+                            if (list == null) {
+                                Spacer(12)
+                                if (error == null) Text("Loading the guide…", color = Jc.Muted, fontSize = 16.sp)
+                                return@Column
                             }
-                        }
-                        val list = channels
-                        if (list == null) {
-                            Spacer(12)
-                            if (error == null) Text("Loading the guide…", color = Jc.Muted, fontSize = 16.sp)
-                            return@Column
-                        }
-                        if (list.isEmpty() && groups.size > 1 && group in groups) {
-                            Spacer(12)
-                            Text("No channels in “$group”. Mark channels as favourites in Jellyfin's web client.", color = Jc.Muted, fontSize = 16.sp, modifier = Modifier.fillMaxWidth(0.8f))
-                            return@Column
-                        }
-                        if (list.isEmpty()) {
-                            Spacer(12)
-                            Text(NO_LIVE_TV, color = Jc.Muted, fontSize = 16.sp, modifier = Modifier.fillMaxWidth(0.8f))
-                            return@Column
-                        }
-                        androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize()) {
-                            val gridWidth = maxWidth - ChannelColumn - 12.dp
-                            val perMinute = gridWidth / windowMinutes.toFloat()
-                            Column {
-                                TimeRuler(windowStart, perMinute)
-                                Box {
-                                    // Behind the cells: shows in the gaps between them, never over the titles.
-                                    NowLine(windowStart, perMinute)
-                                    // The way back in (after the rail or a player): the programme picked to watch, else the last one on;
-                                    // opening the guide, what's on now on the channel last focused in it (else the one last watched).
-                                    val home =
-                                        (returnTo ?: focused ?: openingOn?.let { ch -> programs[ch].orEmpty().firstOrNull { it.end.isAfter(openingAt) } })
-                                            ?.takeIf { p -> list.any { it.id == p.channelId } }
-                                    LazyColumn(state = listState, contentPadding = PaddingValues(bottom = 40.dp), modifier = Modifier.onFocusChanged { gridHasFocus = it.hasFocus }) {
-                                        items(list, key = { it.id }) { ch ->
-                                            GuideRow(
-                                                channel = ch,
-                                                programs = programs[ch.id].orEmpty(),
-                                                windowStart = windowStart,
-                                                perMinute = perMinute,
-                                                gridWidth = gridWidth,
-                                                symbols = symbols,
-                                                pendingFocus = pendingFocus?.takeIf { it.first == ch.id }?.second,
-                                                onFocusTaken = { pendingFocus = null },
-                                                onSelect = { selected = it },
-                                                onFocused = { onCellFocused(it) },
-                                                entry = if (ch.id == (home?.channelId ?: list.first().id)) entry else null,
-                                                entryProgram = home?.id,
-                                                onShift = { minutes -> shift(minutes, ch.id) },
-                                            )
+                            if (list.isEmpty() && groups.size > 1 && group in groups) {
+                                Spacer(12)
+                                Text("No channels in “$group”. Mark channels as favourites in Jellyfin's web client.", color = Jc.Muted, fontSize = 16.sp, modifier = Modifier.fillMaxWidth(0.8f))
+                                return@Column
+                            }
+                            if (list.isEmpty()) {
+                                Spacer(12)
+                                Text(NO_LIVE_TV, color = Jc.Muted, fontSize = 16.sp, modifier = Modifier.fillMaxWidth(0.8f))
+                                return@Column
+                            }
+                            androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize()) {
+                                val gridWidth = maxWidth - ChannelColumn - 12.dp
+                                val perMinute = gridWidth / windowMinutes.toFloat()
+                                Column {
+                                    TimeRuler(windowStart, perMinute)
+                                    Box {
+                                        // Behind the cells: shows in the gaps between them, never over the titles.
+                                        NowLine(windowStart, perMinute)
+                                        // The way back in (after the rail or a player): the programme picked to watch, else the last one on;
+                                        // opening the guide, what's on now on the channel last focused in it (else the one last watched).
+                                        val home =
+                                            (returnTo ?: focused ?: openingOn?.let { ch -> programs[ch].orEmpty().firstOrNull { it.end.isAfter(openingAt) } })
+                                                ?.takeIf { p -> list.any { it.id == p.channelId } }
+                                        LazyColumn(state = listState, contentPadding = PaddingValues(bottom = 40.dp), modifier = Modifier.onFocusChanged { gridHasFocus = it.hasFocus }) {
+                                            items(list, key = { it.id }) { ch ->
+                                                GuideRow(
+                                                    channel = ch,
+                                                    programs = programs[ch.id].orEmpty(),
+                                                    windowStart = windowStart,
+                                                    perMinute = perMinute,
+                                                    gridWidth = gridWidth,
+                                                    symbols = symbols,
+                                                    pendingFocus = pendingFocus?.takeIf { it.first == ch.id }?.second,
+                                                    onFocusTaken = { pendingFocus = null },
+                                                    onSelect = { selected = it },
+                                                    onFocused = { onCellFocused(it) },
+                                                    entry = if (ch.id == (home?.channelId ?: list.first().id)) entry else null,
+                                                    entryProgram = home?.id,
+                                                    onShift = { minutes -> shift(minutes, ch.id) },
+                                                    tile =
+                                                        if (channelSchedule) {
+                                                            ChannelTile(
+                                                                registry = tileFocus,
+                                                                onFocus = { has -> if (has) onTileFocused(ch) else if (tileFocused == ch.id) tileFocused = null },
+                                                                onOpen = {
+                                                                    tileFocused = null
+                                                                    scheduleFor = ch
+                                                                },
+                                                                onKey = { key -> onTileKey(ch, key) },
+                                                                fromNow = { focusTile(list.indexOfFirst { it.id == ch.id }) },
+                                                            ready = loaded != null,
+                                                            )
+                                                        } else {
+                                                            null
+                                                        },
+                                                )
+                                            }
                                         }
                                     }
                                 }
@@ -561,7 +659,7 @@ fun GuideScreen(
                         Box(Modifier.weight(0.26f).fillMaxHeight().background(guidePanel(0.6f))) {
                             val p = selected
                             if (p == null) {
-                                focused?.let { InfoPanel(it, channels?.firstOrNull { c -> c.id == it.channelId }, symbols) }
+                                focused?.let { InfoPanel(it, channels?.firstOrNull { c -> c.id == it.channelId }, symbols, hint = if (tileFocused != null) TILE_HINT else null) }
                                     ?: if (channels?.isEmpty() != true) Text("Move through the guide to see a programme here; OK for what you can do with it.", color = Jc.Muted, fontSize = 15.sp, modifier = Modifier.padding(22.dp)) else Unit
                             } else {
                                 // Its actions open over the guide (below), docked or floating.
@@ -605,7 +703,7 @@ fun GuideScreen(
 
 /** The guide's panels: see-through when background art is on (Settings), so the picture shows. */
 @Composable
-private fun guidePanel(alpha: Float = 0.78f): Color = if (Jdvr.prefs.guideArtSeconds > 0) Jc.Panel.seeThrough(alpha) else Jc.Panel
+internal fun guidePanel(alpha: Float = 0.78f): Color = if (Jdvr.prefs.guideArtSeconds > 0) Jc.Panel.seeThrough(alpha) else Jc.Panel
 
 /**
  * Behind the guide: the rested-on programme's picture, faded in at the top right behind the
@@ -652,6 +750,7 @@ private fun InfoBand(
     p: Program,
     channel: Channel?,
     symbols: MarkSymbols?,
+    hint: String? = null,
 ) {
     val marks = Marks.parse(p.rawEpisodeTitle, symbols)
     val now = LocalDateTime.now()
@@ -710,7 +809,7 @@ private fun InfoBand(
         }
         Column(Modifier.weight(0.6f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(p.overview ?: "", color = Jc.Text.copy(alpha = 0.85f), fontSize = 15.sp, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-            Text("OK  Watch · record · favourites" + if (deviceRights().archive && !p.isMovie) " · store" else "", color = Jc.Muted, fontSize = 13.sp)
+            Text(hint ?: ("OK  Watch · record · favourites" + if (deviceRights().archive && !p.isMovie) " · store" else ""), color = Jc.Muted, fontSize = 13.sp)
         }
     }
 }
@@ -743,6 +842,7 @@ private fun InfoPanel(
     p: Program,
     channel: Channel?,
     symbols: MarkSymbols?,
+    hint: String? = null,
 ) {
     val marks = Marks.parse(p.rawEpisodeTitle, symbols)
     Column(Modifier.fillMaxSize().padding(22.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -760,7 +860,7 @@ private fun InfoPanel(
         p.overview?.let { Text(it, color = Jc.Muted, fontSize = 15.sp, maxLines = 10, overflow = TextOverflow.Ellipsis) }
         androidx.compose.foundation.layout
             .Spacer(Modifier.weight(1f))
-        Text("OK: watch, record, favourites", color = Jc.Muted, fontSize = 13.sp)
+        Text(hint ?: "OK: watch, record, favourites", color = Jc.Muted, fontSize = 13.sp)
     }
 }
 
@@ -821,6 +921,8 @@ private fun GuideRow(
     entry: FocusRequester?,
     entryProgram: UUID? = null,
     onShift: (Long) -> Boolean,
+    // The channel's logo as a button (opens its schedule); null: just a label.
+    tile: ChannelTile? = null,
 ) {
     val windowEnd = windowStart.plusMinutes(windowMinutes)
     val visible = programs.filter { it.end.isAfter(windowStart) && it.start.isBefore(windowEnd) }.sortedBy { it.start }
@@ -829,13 +931,10 @@ private fun GuideRow(
     val later = if (Jdvr.prefs.guideLaterTabs) programs.filter { !it.start.isBefore(windowEnd) && extras.realRecording(it) }.sortedBy { it.start } else emptyList()
     Box(Modifier.height(RowHeight).fillMaxWidth()) {
         Row(Modifier.fillMaxSize().padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
-            Row(Modifier.width(ChannelColumn).fillMaxHeight(), verticalAlignment = Alignment.CenterVertically) {
-                Text(channel.number, color = Jc.Text, fontSize = 15.sp, fontWeight = FontWeight.Bold, modifier = Modifier.width(48.dp))
-                if (channel.logoUrl != null) {
-                    AsyncImage(model = channel.logoUrl, contentDescription = channel.name, modifier = Modifier.height(34.dp).width(84.dp))
-                } else {
-                    Text(channel.name, color = Jc.Muted, fontSize = 12.sp, maxLines = 2, modifier = Modifier.width(90.dp))
-                }
+            if (tile == null) {
+                Row(Modifier.width(ChannelColumn).fillMaxHeight(), verticalAlignment = Alignment.CenterVertically) { ChannelLabel(channel) }
+            } else {
+                ChannelTileCell(channel, tile)
             }
             if (visible.isEmpty()) {
                 Box(Modifier.width(gridWidth).fillMaxHeight().background(Jc.Panel, RoundedCornerShape(8.dp)), contentAlignment = Alignment.CenterStart) {
@@ -866,7 +965,8 @@ private fun GuideRow(
                         onFocused = { onFocused(p) },
                         entry = if (p.id == entryProgram || (i == 0 && visible.none { it.id == entryProgram })) entry else null,
                         onEdgeRight = if (i == visible.lastIndex) ({ onShift(STEP_MINUTES) }) else null,
-                        onEdgeLeft = if (i == 0) ({ onShift(-STEP_MINUTES) }) else null,
+                        // At now: the channel's logo, when it's a button.
+                        onEdgeLeft = if (i == 0) ({ onShift(-STEP_MINUTES) || tile?.fromNow?.invoke() == true }) else null,
                     )
                 }
             }
@@ -885,6 +985,67 @@ private fun GuideRow(
                         .padding(start = 8.dp, end = 6.dp, top = 2.dp, bottom = 2.dp),
             )
         }
+    }
+}
+
+private const val TILE_HINT = "OK  This channel's schedule"
+
+/** What a guide row's channel logo does as a button. */
+private class ChannelTile(
+    val registry: MutableMap<UUID, FocusRequester>,
+    val onFocus: (Boolean) -> Unit,
+    val onOpen: () -> Unit,
+    val onKey: (Key) -> Boolean,
+    // ◄ from what's on now: focus this logo (false if it couldn't).
+    val fromNow: () -> Boolean,
+    // Not until the programmes are in: opening, focus is for the grid (it took the first logo).
+    val ready: Boolean,
+)
+
+@Composable
+private fun ChannelLabel(channel: Channel) {
+    Text(channel.number, color = Jc.Text, fontSize = 15.sp, fontWeight = FontWeight.Bold, modifier = Modifier.width(48.dp))
+    if (channel.logoUrl != null) {
+        AsyncImage(model = channel.logoUrl, contentDescription = channel.name, modifier = Modifier.height(34.dp).width(84.dp))
+    } else {
+        Text(channel.name, color = Jc.Muted, fontSize = 12.sp, maxLines = 2, modifier = Modifier.width(90.dp))
+    }
+}
+
+@Composable
+private fun ChannelTileCell(
+    channel: Channel,
+    tile: ChannelTile,
+) {
+    val focus = remember(channel.id) { FocusRequester() }
+    androidx.compose.runtime.DisposableEffect(channel.id) {
+        tile.registry[channel.id] = focus
+        onDispose { if (tile.registry[channel.id] === focus) tile.registry.remove(channel.id) }
+    }
+    val npvr = Jc.Style == UiStyle.NextPvr
+    Surface(
+        onClick = tile.onOpen,
+        modifier =
+            Modifier
+                .width(ChannelColumn - 6.dp)
+                .padding(end = 6.dp)
+                .fillMaxHeight()
+                .focusRequester(focus)
+                .focusProperties { canFocus = tile.ready }
+                .onFocusChangedCompat { tile.onFocus(it) }
+                .onPreviewKeyEvent { e -> e.type == KeyEventType.KeyDown && tile.onKey(e.key) },
+        shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(8.dp)),
+        colors =
+            ClickableSurfaceDefaults.colors(
+                containerColor = Color.Transparent,
+                focusedContainerColor = if (npvr) Jc.Green else Jc.FocusFill,
+                contentColor = Jc.Text,
+                focusedContentColor = if (npvr) NextPvrInk else Jc.Text,
+            ),
+        border = ClickableSurfaceDefaults.border(focusedBorder = if (npvr) Border.None else Border(BorderStroke(2.dp, Jc.Focus))),
+        scale = ClickableSurfaceDefaults.scale(focusedScale = 1f),
+    ) {
+        Row(Modifier.fillMaxSize().padding(start = 4.dp), verticalAlignment = Alignment.CenterVertically) { ChannelLabel(channel) }
     }
 }
 

@@ -125,6 +125,15 @@ class Prefs(
         p.edit().putBoolean("guideLaterTabs", v).apply()
     }
 
+    /** ◄ from what's on now reaches the channel's logo; OK there opens its schedule, down the screen by day. */
+    var guideChannelSchedule by mutableStateOf(p.getBoolean("guideChannelSchedule", true))
+        private set
+
+    fun changeGuideChannelSchedule(v: Boolean) {
+        guideChannelSchedule = v
+        p.edit().putBoolean("guideChannelSchedule", v).apply()
+    }
+
     /** The player's progress bar: silver (the theme's text colour), apart from the amber commercial marks; off: the theme's focus colour. */
     var progressSilver by mutableStateOf(p.getBoolean("progressSilver", true))
         private set

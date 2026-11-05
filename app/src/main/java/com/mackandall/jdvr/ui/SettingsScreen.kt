@@ -123,6 +123,12 @@ fun SettingsScreen(
             selected = prefs.guideLaterTabs,
         ) { prefs.changeGuideLaterTabs(it) }
         Options(
+            label = "Channel schedule",
+            help = "◄ from what's on now stops on the channel's logo first (◄ again for the menu); OK there lists everything coming up on that channel, day by day. Off: ◄ from now goes straight to the menu.",
+            options = listOf(Opt(true, "On the channel logo"), Opt(false, "Off")),
+            selected = prefs.guideChannelSchedule,
+        ) { prefs.changeGuideChannelSchedule(it) }
+        Options(
             label = "Programme actions",
             help = "What OK on a programme opens (in the guide and in search): a panel on the right, ◄ back to the guide; or a card in the middle over the dimmed guide, like the other menus.",
             options = listOf(Opt(Prefs.DOCKED, "Docked on the right"), Opt(Prefs.FLOATING, "Floating")),
