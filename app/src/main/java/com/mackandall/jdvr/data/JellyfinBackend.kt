@@ -544,11 +544,12 @@ class JellyfinBackend private constructor(
                         sortOrder = if (newestFirst) listOf(org.jellyfin.sdk.model.api.SortOrder.DESCENDING, org.jellyfin.sdk.model.api.SortOrder.ASCENDING) else listOf(org.jellyfin.sdk.model.api.SortOrder.ASCENDING),
                         startIndex = start,
                         limit = count,
-                        fields = listOf(ItemFields.OVERVIEW),
+                        fields = listOf(ItemFields.OVERVIEW, ItemFields.TAGS),
                         enableUserData = true,
                         enableTotalRecordCount = true,
                     ).content
-            r.items.map { toLibItem(it) } to (r.totalRecordCount ?: r.items.size)
+            val buffers = r.items.count { it.isLiveBuffer() }
+            r.items.filterNot { it.isLiveBuffer() }.map { toLibItem(it) } to ((r.totalRecordCount ?: r.items.size) - buffers)
         }
 
     override suspend fun libraryLetters(libraryId: UUID): List<String> =
@@ -561,10 +562,11 @@ class JellyfinBackend private constructor(
                     includeItemTypes = listOf(BaseItemKind.MOVIE, BaseItemKind.SERIES, BaseItemKind.VIDEO),
                     sortBy = listOf(ItemSortBy.SORT_NAME),
                     sortOrder = listOf(org.jellyfin.sdk.model.api.SortOrder.ASCENDING),
-                    fields = listOf(ItemFields.SORT_NAME),
+                    fields = listOf(ItemFields.SORT_NAME, ItemFields.TAGS),
                     enableImages = false,
                     enableUserData = false,
                 ).content.items
+                .filterNot { it.isLiveBuffer() }
                 .map { letterOf(it.sortName ?: it.name) }
         }
 
@@ -577,9 +579,10 @@ class JellyfinBackend private constructor(
                     recursive = true,
                     includeItemTypes = listOf(BaseItemKind.MOVIE, BaseItemKind.SERIES, BaseItemKind.VIDEO),
                     limit = 60,
-                    fields = listOf(ItemFields.OVERVIEW),
+                    fields = listOf(ItemFields.OVERVIEW, ItemFields.TAGS),
                     enableUserData = true,
                 ).content.items
+                .filterNot { it.isLiveBuffer() }
                 .map { toLibItem(it) }
         }
 
@@ -712,9 +715,10 @@ class JellyfinBackend private constructor(
                     sortBy = listOf(ItemSortBy.PREMIERE_DATE, ItemSortBy.SORT_NAME),
                     sortOrder = listOf(org.jellyfin.sdk.model.api.SortOrder.DESCENDING, org.jellyfin.sdk.model.api.SortOrder.ASCENDING),
                     limit = 200,
-                    fields = listOf(ItemFields.OVERVIEW),
+                    fields = listOf(ItemFields.OVERVIEW, ItemFields.TAGS),
                     enableUserData = true,
                 ).content.items
+                .filterNot { it.isLiveBuffer() }
                 .map { toLibItem(it) }
         }
 
@@ -727,8 +731,9 @@ class JellyfinBackend private constructor(
         attempt {
             io {
                 api.userLibraryApi
-                    .getLatestMedia(userId = Jdvr.userId, parentId = libraryId, limit = limit)
+                    .getLatestMedia(userId = Jdvr.userId, parentId = libraryId, limit = limit, fields = listOf(ItemFields.TAGS))
                     .content
+                    .filterNot { it.isLiveBuffer() }
                     .map(::toLibItem)
             }
         }
@@ -856,9 +861,10 @@ class JellyfinBackend private constructor(
                 api.liveTvApi
                     .getRecordings(
                         userId = Jdvr.userId,
-                        fields = listOf(org.jellyfin.sdk.model.api.ItemFields.DATE_CREATED),
+                        fields = listOf(org.jellyfin.sdk.model.api.ItemFields.DATE_CREATED, ItemFields.TAGS),
                     ).content.items
-            }.sortedByDescending { it.dateCreated }
+            }.filterNot { it.isLiveBuffer() }
+                .sortedByDescending { it.dateCreated }
                 .map { d ->
                     RecordingCard(
                         type = d.type.serialName,
@@ -886,8 +892,9 @@ class JellyfinBackend private constructor(
                         limit = limit,
                         groupItems = false,
                         isPlayed = false,
+                        fields = listOf(ItemFields.TAGS),
                     ).content
-            }.map { d ->
+            }.filterNot { it.isLiveBuffer() }.map { d ->
                 RecordingCard(
                     type = d.type.serialName,
                     id = d.id.toString(),
@@ -934,3 +941,10 @@ class JellyfinBackend private constructor(
  * talk and other shows without numbers so Jellyfin counts them as series.
  */
 internal fun realEpisode(season: Int?, episode: Int?): Int? = if (season == null && episode == 0) null else episode
+
+/**
+ * A JellyDVR Live buffer nobody has kept: the recording made from tune-in so live TV can be
+ * paused, deleted a few hours after the last viewer. JellyDVR Live tags it until it's kept; it's
+ * left out of the library lists (needs [ItemFields.TAGS] in the query).
+ */
+private fun org.jellyfin.sdk.model.api.BaseItemDto.isLiveBuffer(): Boolean = tags?.any { it.equals("Live buffer", ignoreCase = true) } == true
