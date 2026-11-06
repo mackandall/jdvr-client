@@ -1,6 +1,9 @@
 package com.mackandall.jdvr.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.focusable
+import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -27,7 +30,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -201,6 +208,7 @@ internal fun ProgramPanel(
                         color = Jc.Muted,
                         fontSize = 15.sp,
                     )
+                    programFacts(p)?.let { Text(it, color = Jc.Text, fontSize = 15.sp, maxLines = 2, overflow = TextOverflow.Ellipsis) }
                 }
 
                 @Composable
@@ -238,7 +246,7 @@ internal fun ProgramPanel(
                     titles()
                     chips()
                 }
-                p.overview?.let { Text(it, color = Jc.Muted, fontSize = 14.sp, maxLines = if (rich) 6 else 4, overflow = TextOverflow.Ellipsis) }
+                p.overview?.let { ScrollingOverview(it, lines = 6, below = first) }
                 schedule?.outcome?.let {
                     Text(
                         it.detail,
@@ -465,5 +473,68 @@ internal fun androidx.compose.foundation.layout.BoxScope.ProgramActionsHost(
         }
     } else {
         Box(Modifier.align(Alignment.CenterEnd).fillMaxHeight().background(Jc.Sheet)) { content() }
+    }
+}
+
+/** "2022 · TV-14 · Action · Thriller": whichever the guide has. */
+internal fun programFacts(p: Program): String? =
+    (listOfNotNull(p.year?.toString(), p.rating) + p.genres.take(3)).joinToString(" · ").ifEmpty { null }
+
+/**
+ * The description, [lines] tall. One too long for that can take focus (▲ from the buttons): it
+ * shows a frame, and ▲▼ scroll it a few lines at a time before focus moves on (▼ off the end goes
+ * to [below]).
+ */
+@Composable
+internal fun ScrollingOverview(
+    text: String,
+    lines: Int,
+    below: FocusRequester? = null,
+) {
+    val scroll = androidx.compose.foundation.rememberScrollState()
+    val scope = rememberCoroutineScope()
+    var focusedHere by remember { mutableStateOf(false) }
+    val lineHeight = 20
+    val longer = scroll.maxValue > 0
+    val step = with(androidx.compose.ui.platform.LocalDensity.current) { (lineHeight * 3).dp.toPx() }
+    Column {
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .heightIn(max = (lines * lineHeight).dp + 12.dp)
+                .border(2.dp, if (focusedHere) Jc.Focus else androidx.compose.ui.graphics.Color.Transparent, RoundedCornerShape(8.dp))
+                .onFocusChanged {
+                    focusedHere = it.isFocused
+                    // Left, it reads from the start again.
+                    if (!it.isFocused) scope.launch { scroll.scrollTo(0) }
+                }.focusProperties {
+                    canFocus = longer
+                    // Off the end: the panel's first button, not whichever sits nearest.
+                    below?.let { down = it }
+                }
+                .onPreviewKeyEvent { e ->
+                    if (!focusedHere || e.type != androidx.compose.ui.input.key.KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                    when (e.key) {
+                        androidx.compose.ui.input.key.Key.DirectionDown ->
+                            scroll.canScrollForward.also { if (it) scope.launch { scroll.animateScrollBy(step) } }
+                        androidx.compose.ui.input.key.Key.DirectionUp ->
+                            scroll.canScrollBackward.also { if (it) scope.launch { scroll.animateScrollBy(-step) } }
+                        else -> false
+                    }
+                }.focusable()
+                .padding(horizontal = 6.dp, vertical = 6.dp)
+                .verticalScroll(scroll, enabled = false),
+        ) {
+            Text(text, color = if (focusedHere) Jc.Text else Jc.Muted, fontSize = 14.sp, lineHeight = lineHeight.sp)
+        }
+        if (longer) {
+            val hint =
+                when {
+                    !focusedHere -> "▲ More of the description"
+                    scroll.canScrollForward -> "▼ More"
+                    else -> "End · ▼ back to the buttons"
+                }
+            Text(hint, color = Jc.Muted, fontSize = 12.sp, modifier = Modifier.padding(start = 6.dp))
+        }
     }
 }

@@ -808,7 +808,7 @@ private fun InfoBand(
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 channel?.let { ChannelLogoTile(it) }
                 val minutes = Duration.between(p.start, p.end).toMinutes()
-                val first = listOfNotNull(p.seasonEpisode?.replace(":", " "), channel?.let { "${it.number} ${it.name}" }).joinToString(" · ")
+                val first = listOfNotNull(p.seasonEpisode?.replace(":", " "), channel?.let { "${it.number} ${it.name}" }, p.year?.toString(), p.rating).joinToString(" · ")
                 val second =
                     listOfNotNull(
                         // On now, the bar under the picture has the times.
@@ -874,6 +874,7 @@ private fun InfoPanel(
         if (episode.isNotEmpty()) Text(episode, color = Jc.Text, fontSize = 17.sp)
         Text("${p.start.day()} · ${p.start.time()} – ${p.end.time()}", color = Jc.Muted, fontSize = 15.sp)
         channel?.let { Text("${it.number} ${it.name}", color = Jc.Muted, fontSize = 15.sp) }
+        programFacts(p)?.let { Text(it, color = Jc.Text, fontSize = 15.sp) }
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             GuideChips(p)
             if (p.isRepeat) Chip("repeat", Jc.Muted)

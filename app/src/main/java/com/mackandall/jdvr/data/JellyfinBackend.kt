@@ -113,7 +113,7 @@ class JellyfinBackend private constructor(
                         minEndDate = from,
                         maxStartDate = to,
                         sortBy = listOf(ItemSortBy.START_DATE),
-                        fields = listOf(ItemFields.OVERVIEW),
+                        fields = listOf(ItemFields.OVERVIEW, ItemFields.GENRES),
                         enableImages = false,
                     ),
                 ).content.items
@@ -151,6 +151,10 @@ class JellyfinBackend private constructor(
             episode = realEpisode(dto.parentIndexNumber, dto.indexNumber),
             timerId = dto.timerId,
             seriesTimerId = dto.seriesTimerId,
+            year = dto.productionYear,
+            rating = dto.officialRating,
+            // The guide's own "Movie" is said by the movie chip already.
+            genres = dto.genres.orEmpty().filterNot { it.equals("Movie", true) },
         )
     }
 

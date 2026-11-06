@@ -293,7 +293,8 @@ private fun ScheduleRow(
                     Text(p.name, color = titleColor, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
                     if (extras.scanning(p)) Text("CS", color = Jc.OnAmber, fontSize = 10.sp, fontWeight = FontWeight.Bold, modifier = Modifier.background(Jc.Amber, RoundedCornerShape(4.dp)).padding(horizontal = 4.dp))
                 }
-                val sub = listOfNotNull(p.seasonEpisode, marks.title?.takeIf { it.isNotBlank() } ?: if (p.isMovie) "Movie" else null).joinToString(" · ")
+                // A movie says its year, rating and genres here ("Movie · 2022 · TV-14 · Action").
+                val sub = listOfNotNull(p.seasonEpisode, marks.title?.takeIf { it.isNotBlank() } ?: if (p.isMovie) listOfNotNull("Movie", programFacts(p)).joinToString(" · ") else null).joinToString(" · ")
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     if (marks.skipped) Text("■", color = Jc.Amber, fontSize = 12.sp)
                     if (marks.otherAiring) Text("↪", color = Jc.Focus, fontSize = 12.sp)

@@ -29,6 +29,10 @@ data class Program(
     val episode: Int?,
     val timerId: String?,
     val seriesTimerId: String?,
+    // Year made, rating (TV-14) and genres, as the web client's programme page shows them.
+    val year: Int? = null,
+    val rating: String? = null,
+    val genres: List<String> = emptyList(),
 ) {
     val isRecording: Boolean get() = timerId != null
     val seasonEpisode: String? get() = if (season != null && episode != null) "S$season:E$episode" else null
