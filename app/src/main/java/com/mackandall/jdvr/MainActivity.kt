@@ -407,7 +407,7 @@ fun AppRoot(
                     }
 
                     Screen.Series -> {
-                        SeriesScreen(entry = entry)
+                        SeriesScreen(entry = entry, onOpenShow = { goTo(Place(Screen.RecordedShows, openShow = it)) })
                     }
 
                     Screen.Trash -> {

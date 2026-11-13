@@ -113,7 +113,7 @@ class JellyfinBackend private constructor(
                         minEndDate = from,
                         maxStartDate = to,
                         sortBy = listOf(ItemSortBy.START_DATE),
-                        fields = listOf(ItemFields.OVERVIEW),
+                        fields = listOf(ItemFields.OVERVIEW, ItemFields.GENRES),
                         enableImages = false,
                     ),
                 ).content.items
@@ -148,9 +148,13 @@ class JellyfinBackend private constructor(
             isSeries = dto.isSeries == true,
             isRepeat = dto.isRepeat == true,
             season = dto.parentIndexNumber,
-            episode = dto.indexNumber,
+            episode = realEpisode(dto.parentIndexNumber, dto.indexNumber),
             timerId = dto.timerId,
             seriesTimerId = dto.seriesTimerId,
+            year = dto.productionYear,
+            rating = dto.officialRating,
+            // The guide's own "Movie" is said by the movie chip already.
+            genres = dto.genres.orEmpty().filterNot { it.equals("Movie", true) },
         )
     }
 
@@ -507,7 +511,7 @@ class JellyfinBackend private constructor(
             resumeMs = (d.userData?.playbackPositionTicks ?: 0L) / 10_000L,
             unplayed = d.userData?.unplayedItemCount,
             season = d.parentIndexNumber,
-            episode = d.indexNumber,
+            episode = realEpisode(d.parentIndexNumber, d.indexNumber),
             seriesId = d.seriesId,
             seriesName = d.seriesName,
             officialRating = d.officialRating,
@@ -540,11 +544,12 @@ class JellyfinBackend private constructor(
                         sortOrder = if (newestFirst) listOf(org.jellyfin.sdk.model.api.SortOrder.DESCENDING, org.jellyfin.sdk.model.api.SortOrder.ASCENDING) else listOf(org.jellyfin.sdk.model.api.SortOrder.ASCENDING),
                         startIndex = start,
                         limit = count,
-                        fields = listOf(ItemFields.OVERVIEW),
+                        fields = listOf(ItemFields.OVERVIEW, ItemFields.TAGS),
                         enableUserData = true,
                         enableTotalRecordCount = true,
                     ).content
-            r.items.map { toLibItem(it) } to (r.totalRecordCount ?: r.items.size)
+            val buffers = r.items.count { it.isLiveBuffer() }
+            r.items.filterNot { it.isLiveBuffer() }.map { toLibItem(it) } to ((r.totalRecordCount ?: r.items.size) - buffers)
         }
 
     override suspend fun libraryLetters(libraryId: UUID): List<String> =
@@ -557,10 +562,11 @@ class JellyfinBackend private constructor(
                     includeItemTypes = listOf(BaseItemKind.MOVIE, BaseItemKind.SERIES, BaseItemKind.VIDEO),
                     sortBy = listOf(ItemSortBy.SORT_NAME),
                     sortOrder = listOf(org.jellyfin.sdk.model.api.SortOrder.ASCENDING),
-                    fields = listOf(ItemFields.SORT_NAME),
+                    fields = listOf(ItemFields.SORT_NAME, ItemFields.TAGS),
                     enableImages = false,
                     enableUserData = false,
                 ).content.items
+                .filterNot { it.isLiveBuffer() }
                 .map { letterOf(it.sortName ?: it.name) }
         }
 
@@ -573,25 +579,49 @@ class JellyfinBackend private constructor(
                     recursive = true,
                     includeItemTypes = listOf(BaseItemKind.MOVIE, BaseItemKind.SERIES, BaseItemKind.VIDEO),
                     limit = 60,
-                    fields = listOf(ItemFields.OVERVIEW),
+                    fields = listOf(ItemFields.OVERVIEW, ItemFields.TAGS),
                     enableUserData = true,
                 ).content.items
+                .filterNot { it.isLiveBuffer() }
                 .map { toLibItem(it) }
         }
 
+    /**
+     * The next 200 airings matching [term], soonest first. Jellyfin's matches come in no order and
+     * include ones that aired (1445 for "news" here), and /Items ignores date filters for programmes,
+     * so they're asked for sorted by start, and the first that may still be on is found by bisecting
+     * with one-item pages (about 11 requests for 1445).
+     */
     override suspend fun searchGuide(term: String): List<Program> =
         io {
             val now = LocalDateTime.now()
-            api.itemsApi
+            suspend fun page(
+                start: Int,
+                limit: Int,
+            ) = api.itemsApi
                 .getItems(
                     userId = Jdvr.userId,
                     searchTerm = term,
                     recursive = true,
                     includeItemTypes = listOf(BaseItemKind.LIVE_TV_PROGRAM),
-                    limit = 200,
+                    sortBy = listOf(ItemSortBy.START_DATE, ItemSortBy.SORT_NAME),
+                    sortOrder = listOf(org.jellyfin.sdk.model.api.SortOrder.ASCENDING, org.jellyfin.sdk.model.api.SortOrder.ASCENDING),
+                    startIndex = start,
+                    limit = limit,
                     fields = listOf(ItemFields.OVERVIEW),
                     enableImages = false,
-                ).content.items
+                    enableTotalRecordCount = true,
+                ).content
+            // Programmes that started up to 6 h ago may still be on; ended ones are dropped below.
+            val since = now.minusHours(6)
+            var lo = 0
+            var hi = page(0, 1).totalRecordCount
+            while (lo < hi) {
+                val mid = (lo + hi) / 2
+                val started = page(mid, 1).items.firstOrNull()?.startDate
+                if (started != null && started.isBefore(since)) lo = mid + 1 else hi = mid
+            }
+            page(lo, 200).items
                 .mapNotNull { toProgram(it) }
                 .filter { it.end.isAfter(now) }
                 .sortedBy { it.start }
@@ -659,6 +689,39 @@ class JellyfinBackend private constructor(
 
     override fun personImageUrl(personId: UUID): String = api.imageApi.getItemImageUrl(personId, ImageType.PRIMARY, maxHeight = 240)
 
+    override suspend fun person(id: UUID): PersonDetails =
+        io {
+            val d = api.userLibraryApi.getItem(id, Jdvr.userId).content
+            PersonDetails(
+                id = d.id,
+                name = d.name ?: "",
+                overview = d.overview?.takeIf { it.isNotBlank() },
+                // Jellyfin keeps a person's birth as the premiere date and death as the end date.
+                born = d.premiereDate?.toLocalDate(),
+                died = d.endDate?.toLocalDate(),
+                birthplace = d.productionLocations?.firstOrNull { it.isNotBlank() },
+                hasImage = d.imageTags?.containsKey(ImageType.PRIMARY) == true,
+            )
+        }
+
+    override suspend fun personCredits(id: UUID): List<LibItem> =
+        io {
+            api.itemsApi
+                .getItems(
+                    userId = Jdvr.userId,
+                    personIds = listOf(id),
+                    recursive = true,
+                    includeItemTypes = listOf(BaseItemKind.MOVIE, BaseItemKind.SERIES, BaseItemKind.EPISODE, BaseItemKind.VIDEO),
+                    sortBy = listOf(ItemSortBy.PREMIERE_DATE, ItemSortBy.SORT_NAME),
+                    sortOrder = listOf(org.jellyfin.sdk.model.api.SortOrder.DESCENDING, org.jellyfin.sdk.model.api.SortOrder.ASCENDING),
+                    limit = 200,
+                    fields = listOf(ItemFields.OVERVIEW, ItemFields.TAGS),
+                    enableUserData = true,
+                ).content.items
+                .filterNot { it.isLiveBuffer() }
+                .map { toLibItem(it) }
+        }
+
     override suspend fun libItem(id: UUID): LibItem = io { toLibItem(api.userLibraryApi.getItem(id, Jdvr.userId).content) }
 
     override suspend fun latestIn(
@@ -668,8 +731,9 @@ class JellyfinBackend private constructor(
         attempt {
             io {
                 api.userLibraryApi
-                    .getLatestMedia(userId = Jdvr.userId, parentId = libraryId, limit = limit)
+                    .getLatestMedia(userId = Jdvr.userId, parentId = libraryId, limit = limit, fields = listOf(ItemFields.TAGS))
                     .content
+                    .filterNot { it.isLiveBuffer() }
                     .map(::toLibItem)
             }
         }
@@ -688,6 +752,22 @@ class JellyfinBackend private constructor(
         itemId: String,
         maxHeight: Int,
     ): String? = itemId.toUuid()?.let { imageUrl(it, maxHeight) }
+
+    override fun imageUrl(
+        itemId: String,
+        type: String,
+        maxHeight: Int,
+        tag: String?,
+    ): String? =
+        itemId.toUuid()?.let {
+            val kind =
+                when (type.lowercase()) {
+                    "thumb" -> ImageType.THUMB
+                    "backdrop" -> ImageType.BACKDROP
+                    else -> ImageType.PRIMARY
+                }
+            api.imageApi.getItemImageUrl(it, kind, maxHeight = maxHeight, tag = tag)
+        }
 
     override suspend fun timer(timerId: String): org.jellyfin.sdk.model.api.TimerInfoDto? =
         io {
@@ -781,9 +861,10 @@ class JellyfinBackend private constructor(
                 api.liveTvApi
                     .getRecordings(
                         userId = Jdvr.userId,
-                        fields = listOf(org.jellyfin.sdk.model.api.ItemFields.DATE_CREATED),
+                        fields = listOf(org.jellyfin.sdk.model.api.ItemFields.DATE_CREATED, ItemFields.TAGS),
                     ).content.items
-            }.sortedByDescending { it.dateCreated }
+            }.filterNot { it.isLiveBuffer() }
+                .sortedByDescending { it.dateCreated }
                 .map { d ->
                     RecordingCard(
                         type = d.type.serialName,
@@ -811,8 +892,9 @@ class JellyfinBackend private constructor(
                         limit = limit,
                         groupItems = false,
                         isPlayed = false,
+                        fields = listOf(ItemFields.TAGS),
                     ).content
-            }.map { d ->
+            }.filterNot { it.isLiveBuffer() }.map { d ->
                 RecordingCard(
                     type = d.type.serialName,
                     id = d.id.toString(),
@@ -853,3 +935,16 @@ class JellyfinBackend private constructor(
         plugins.call<DeletedRecording>(HttpMethod.DELETE, "/EpisodeHistory/Item/${itemId.plain()}/Recording")
             ?: deleteItem(itemId).let { DeletedRecording(deleted = 1) }
 }
+
+/**
+ * The episode number, or null for the stand-in 0 (no season) that JellyDVR Guides gives news,
+ * talk and other shows without numbers so Jellyfin counts them as series.
+ */
+internal fun realEpisode(season: Int?, episode: Int?): Int? = if (season == null && episode == 0) null else episode
+
+/**
+ * A JellyDVR Live buffer nobody has kept: the recording made from tune-in so live TV can be
+ * paused, deleted a few hours after the last viewer. JellyDVR Live tags it until it's kept; it's
+ * left out of the library lists (needs [ItemFields.TAGS] in the query).
+ */
+private fun org.jellyfin.sdk.model.api.BaseItemDto.isLiveBuffer(): Boolean = tags?.any { it.equals("Live buffer", ignoreCase = true) } == true

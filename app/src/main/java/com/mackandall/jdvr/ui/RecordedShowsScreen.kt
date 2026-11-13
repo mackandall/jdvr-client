@@ -122,7 +122,7 @@ fun RecordedShowsScreen(
                 .orEmpty()
         loaded = true
         // Asked to open a show (from Home): straight to its episodes.
-        openShowId?.let { id -> cards?.firstOrNull { it.id == id }?.let { openShow = it } }
+        openShowId?.let { id -> cards?.firstOrNull { it.id == id || it.name.equals(id, ignoreCase = true) }?.let { openShow = it } }
         onShowOpened()
     }
 
@@ -530,6 +530,7 @@ private fun ShowEpisodes(
         actions = { e, say -> RecordingActions(e.id, say, onDeleted = { reload++ }, tools = false, manage = !e.inArchive) },
         emptyText = "No recordings of this show here.",
         onHold = { quick = it },
+        onPlayItem = onPlayItem,
     )
     quick?.let { q ->
         QuickActions(

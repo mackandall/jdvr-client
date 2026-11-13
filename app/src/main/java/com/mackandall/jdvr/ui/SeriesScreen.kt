@@ -60,7 +60,7 @@ import java.time.ZoneId
  * (JellyDVR Schedule's, by title): see and manage both while testing. Removing asks twice.
  */
 @Composable
-fun SeriesScreen(entry: FocusRequester) {
+internal fun LegacySeriesScreen(entry: FocusRequester) {
     var series by remember { mutableStateOf<List<SeriesTimerInfoDto>?>(null) }
     var favourites by remember { mutableStateOf<FavouritesList?>(null) }
     var reload by remember { mutableIntStateOf(0) }
@@ -416,7 +416,7 @@ internal fun <T> nextOf(
  * late, how many to keep. OK on a row steps through its choices; Save sends them.
  */
 @Composable
-private fun SeriesEditor(
+internal fun SeriesEditor(
     timer: SeriesTimerInfoDto,
     onSave: (SeriesTimerInfoDto) -> Unit,
     onCancel: () -> Unit,

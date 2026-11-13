@@ -98,6 +98,51 @@ class Prefs(
         p.edit().putInt("guideArtSeconds", v).apply()
     }
 
+    /** How many hours the guide spans (SageTV's wider guide); programme names shorten to fit. */
+    var guideHours by mutableStateOf(p.getInt("guideHours", 2).takeIf { it in GUIDE_HOURS } ?: 2)
+        private set
+
+    fun changeGuideHours(v: Int) {
+        guideHours = v
+        p.edit().putInt("guideHours", v).apply()
+    }
+
+    /** Shorter programme names in narrow guide cells ("Law & Order: Special Victims Unit" → "L&O: SVU"). */
+    var guideShortNames by mutableStateOf(p.getBoolean("guideShortNames", true))
+        private set
+
+    fun changeGuideShortNames(v: Boolean) {
+        guideShortNames = v
+        p.edit().putBoolean("guideShortNames", v).apply()
+    }
+
+    /** A tab at the end of a guide row counting that channel's recordings past the window. */
+    var guideLaterTabs by mutableStateOf(p.getBoolean("guideLaterTabs", true))
+        private set
+
+    fun changeGuideLaterTabs(v: Boolean) {
+        guideLaterTabs = v
+        p.edit().putBoolean("guideLaterTabs", v).apply()
+    }
+
+    /** ◄ from what's on now reaches the channel's logo; OK there opens its schedule, down the screen by day. */
+    var guideChannelSchedule by mutableStateOf(p.getBoolean("guideChannelSchedule", true))
+        private set
+
+    fun changeGuideChannelSchedule(v: Boolean) {
+        guideChannelSchedule = v
+        p.edit().putBoolean("guideChannelSchedule", v).apply()
+    }
+
+    /** The player's progress bar: silver (the theme's text colour), apart from the amber commercial marks; off: the theme's focus colour. */
+    var progressSilver by mutableStateOf(p.getBoolean("progressSilver", true))
+        private set
+
+    fun changeProgressSilver(v: Boolean) {
+        progressSilver = v
+        p.edit().putBoolean("progressSilver", v).apply()
+    }
+
     /** Record series opens the series options first (which episodes, channel, keep…); off: set up with the server's defaults. */
     var seriesOptionsFirst by mutableStateOf(p.getBoolean("seriesOptionsFirst", true))
         private set
@@ -159,6 +204,60 @@ class Prefs(
     fun changeInfoBoxTop(v: Boolean) {
         infoBoxTop = v
         p.edit().putBoolean("infoBoxTop", v).apply()
+    }
+
+    /** Up Next: near the end of a show's recording or archive episode, a card naming the next one. */
+    var upNext by mutableStateOf(p.getBoolean("upNext", true))
+        private set
+
+    fun changeUpNext(v: Boolean) {
+        upNext = v
+        p.edit().putBoolean("upNext", v).apply()
+    }
+
+    /** Seconds the Up Next card counts down before playing the next episode; 0: it waits for OK. */
+    var upNextCountdown by mutableStateOf(p.getInt("upNextCountdown", 10))
+        private set
+
+    fun changeUpNextCountdown(v: Int) {
+        upNextCountdown = v
+        p.edit().putInt("upNextCountdown", v).apply()
+    }
+
+    /** Seconds before the last commercial break (where the show ends) that the card shows: the credits. */
+    var upNextBeforeBreak by mutableStateOf(p.getInt("upNextBeforeBreak", 40))
+        private set
+
+    fun changeUpNextBeforeBreak(v: Int) {
+        upNextBeforeBreak = v
+        p.edit().putInt("upNextBeforeBreak", v).apply()
+    }
+
+    /** Seconds before the end of a file without commercial marks (cut archives) that the card shows. */
+    var upNextBeforeEnd by mutableStateOf(p.getInt("upNextBeforeEnd", 45))
+        private set
+
+    fun changeUpNextBeforeEnd(v: Int) {
+        upNextBeforeEnd = v
+        p.edit().putInt("upNextBeforeEnd", v).apply()
+    }
+
+    /** Count down to the next recorded episode even when episodes between are missing; off: wait for OK then. */
+    var upNextSkipGaps by mutableStateOf(p.getBoolean("upNextSkipGaps", true))
+        private set
+
+    fun changeUpNextSkipGaps(v: Boolean) {
+        upNextSkipGaps = v
+        p.edit().putBoolean("upNextSkipGaps", v).apply()
+    }
+
+    /** After this many episodes played by Up Next with no key pressed, ask "Still watching?"; 0: never. */
+    var stillWatchingAfter by mutableStateOf(p.getInt("stillWatchingAfter", 3))
+        private set
+
+    fun changeStillWatchingAfter(v: Int) {
+        stillWatchingAfter = v
+        p.edit().putInt("stillWatchingAfter", v).apply()
     }
 
     /** Weather on Home (Open-Meteo): on/off, the town (name and coordinates), °F or °C. */
@@ -389,6 +488,8 @@ class Prefs(
         const val HOLD_OFF = "off"
         const val HOLD_MENU = "menu"
         const val HOLD_DETAILS = "details"
+        // The guide's widths, in hours (Settings › Guide, ⏪/⏩ and the Hours button in the guide).
+        val GUIDE_HOURS = listOf(2, 3, 4, 6, 8)
         const val SIDE = "side"
         const val TOP = "top"
         const val BOTTOM = "bottom"

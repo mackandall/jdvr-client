@@ -151,6 +151,12 @@ interface TvBackend :
 
     fun personImageUrl(personId: UUID): String
 
+    /** A cast or crew member's page (null when the backend has no people). */
+    suspend fun person(id: UUID): PersonDetails? = null
+
+    /** What a person is in, in the libraries: movies, shows and episodes, newest first. */
+    suspend fun personCredits(id: UUID): List<LibItem> = emptyList()
+
     suspend fun libItem(id: UUID): LibItem
 
     /** A library's latest additions, as the web client's "Recently added in …" rows (episodes grouped by show). */
@@ -183,6 +189,14 @@ interface TvBackend :
     fun wideImageUrl(
         itemId: String,
         maxHeight: Int,
+    ): String? = imageUrl(itemId, maxHeight)
+
+    /** An item's image of a given kind ("Primary", "Thumb", "Backdrop"); null when the server can't say. */
+    fun imageUrl(
+        itemId: String,
+        type: String,
+        maxHeight: Int,
+        tag: String?,
     ): String? = imageUrl(itemId, maxHeight)
 
     /** One scheduled (or under way) recording's timer, by its id; null when it's gone. */

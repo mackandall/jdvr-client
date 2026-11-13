@@ -105,6 +105,30 @@ fun SettingsScreen(
             selected = prefs.guideInfo,
         ) { prefs.changeGuideInfo(it) }
         Options(
+            label = "Hours shown",
+            help = "How much of the evening the guide spans. Wider guides fit more on screen with narrower cells; ⏪/⏩ or the Hours button in the guide change it too.",
+            options = Prefs.GUIDE_HOURS.map { Opt(it, if (it == 2) "2 hours" else "$it hours") },
+            selected = prefs.guideHours,
+        ) { prefs.changeGuideHours(it) }
+        Options(
+            label = "Programme names",
+            help = "In narrow cells: shortened to fit (“Law & Order: Special Victims Unit” → “L&O: SVU”), or cut off with “…”. The details always show the full title.",
+            options = listOf(Opt(true, "Shorten to fit"), Opt(false, "Full names")),
+            selected = prefs.guideShortNames,
+        ) { prefs.changeGuideShortNames(it) }
+        Options(
+            label = "Recordings later",
+            help = "A red tab at the end of a channel's row: how many of its recordings come after the hours shown, and when the next starts.",
+            options = listOf(Opt(true, "Show"), Opt(false, "Hide")),
+            selected = prefs.guideLaterTabs,
+        ) { prefs.changeGuideLaterTabs(it) }
+        Options(
+            label = "Channel schedule",
+            help = "◄ from what's on now stops on the channel's logo first (◄ again for the menu); OK there lists everything coming up on that channel, day by day. Off: ◄ from now goes straight to the menu.",
+            options = listOf(Opt(true, "On the channel logo"), Opt(false, "Off")),
+            selected = prefs.guideChannelSchedule,
+        ) { prefs.changeGuideChannelSchedule(it) }
+        Options(
             label = "Programme actions",
             help = "What OK on a programme opens (in the guide and in search): a panel on the right, ◄ back to the guide; or a card in the middle over the dimmed guide, like the other menus.",
             options = listOf(Opt(Prefs.DOCKED, "Docked on the right"), Opt(Prefs.FLOATING, "Floating")),
@@ -135,6 +159,12 @@ fun SettingsScreen(
             options = SkipOptions,
             selected = prefs.introSkip,
         ) { prefs.changeIntroSkip(it) }
+        Options(
+            label = "Progress bar",
+            help = "The watched part of the player's bar. Silver keeps it apart from the amber commercial marks; a white tick shows where you are.",
+            options = listOf(Opt(true, "Silver"), Opt(false, "Theme colour")),
+            selected = prefs.progressSilver,
+        ) { prefs.changeProgressSilver(it) }
         Section("Menu")
         Choice(
             label = "Menu entries",
@@ -226,6 +256,44 @@ fun SettingsScreen(
             options = listOf(Opt(true, "On"), Opt(false, "Off")),
             selected = prefs.infoBoxTop,
         ) { prefs.changeInfoBoxTop(it) }
+        Options(
+            label = "Up next",
+            help = "Near the end of a show's recording or archive episode, a card in the bottom right names the next one: from the credits mark if there is one, else from just before the last commercial break, else from near the end of the file.",
+            options = listOf(Opt(true, "On"), Opt(false, "Off")),
+            selected = prefs.upNext,
+        ) { prefs.changeUpNext(it) }
+        if (prefs.upNext) {
+            Options(
+                label = "   Play next automatically",
+                help = "The card counts down, then plays the next episode, skipping the last commercials and the padding. OK plays it now, Back hides the card.",
+                options = listOf(5, 10, 15, 20, 30).map { Opt(it, "After $it s") } + Opt(0, "No, wait for OK"),
+                selected = prefs.upNextCountdown,
+            ) { prefs.changeUpNextCountdown(it) }
+            Options(
+                label = "   Show it before the last break",
+                help = "A recording's credits run just before its last commercial break: the card shows this long before the break.",
+                options = listOf(20, 30, 40, 60, 90).map { Opt(it, "$it s") },
+                selected = prefs.upNextBeforeBreak,
+            ) { prefs.changeUpNextBeforeBreak(it) }
+            Options(
+                label = "   Show it before the end",
+                help = "For a file without commercial marks (a cut archive, or one never scanned): this long before its end.",
+                options = listOf(30, 45, 60, 90, 120).map { Opt(it, "$it s") },
+                selected = prefs.upNextBeforeEnd,
+            ) { prefs.changeUpNextBeforeEnd(it) }
+            Options(
+                label = "   Missing episodes",
+                help = "When the next recorded episode isn't the next one (S4:E13 never recorded), the card says so. Play on counts down to it anyway; Wait asks for OK.",
+                options = listOf(Opt(true, "Play on"), Opt(false, "Wait for OK")),
+                selected = prefs.upNextSkipGaps,
+            ) { prefs.changeUpNextSkipGaps(it) }
+            Options(
+                label = "   Still watching?",
+                help = "After this many episodes in a row played with no key pressed, ask before playing another, so a show doesn't play all night.",
+                options = listOf(2, 3, 4, 5).map { Opt(it, "After $it episodes") } + Opt(0, "Never ask"),
+                selected = prefs.stillWatchingAfter,
+            ) { prefs.changeStillWatchingAfter(it) }
+        }
         Section("Remote")
         Options(
             label = "Hold OK on a poster or episode",

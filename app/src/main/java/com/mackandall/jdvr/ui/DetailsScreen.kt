@@ -1,5 +1,6 @@
 package com.mackandall.jdvr.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -111,6 +112,14 @@ fun DetailsPage(
     }
     LaunchedEffect(d != null) { if (d != null) play.tryFocus() }
 
+    // A cast member's page, over this one; Back returns to their card.
+    val people = rememberPersonReturn()
+    people.opened?.let { p ->
+        BackHandler { people.opened = null }
+        PersonPage(p, onPlay)
+        return
+    }
+
     val det = d
     Box(Modifier.fillMaxSize().screenBackground()) {
         if (det == null) {
@@ -203,11 +212,31 @@ fun DetailsPage(
                     if (det.cast.isNotEmpty()) {
                         Text("Cast", color = Jc.Text, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 4.dp))
                         LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            items(det.cast.take(30), key = { it.id.toString() + it.role }) { p -> CastCard(p) }
+                            items(det.cast.take(30), key = { it.id.toString() + it.role }) { p -> CastCard(p, people.card(p.id)) { people.open(p) } }
                         }
                     }
                 }
             }
+        }
+    }
+}
+
+/**
+ * Shrinks the content (from its top left) when it is taller than [height], down to [floor] at most;
+ * past that it keeps that size and the page scrolls. The space it takes shrinks with it.
+ */
+private fun Modifier.fitTo(
+    height: Dp,
+    floor: Float = 0.7f,
+) = layout { measurable, constraints ->
+    val p = measurable.measure(constraints.copy(maxHeight = Constraints.Infinity))
+    val limit = height.roundToPx()
+    val s = if (p.height > limit && limit > 0) (limit.toFloat() / p.height).coerceAtLeast(floor) else 1f
+    layout(p.width, (p.height * s).roundToInt()) {
+        p.placeWithLayer(0, 0) {
+            scaleX = s
+            scaleY = s
+            transformOrigin = TransformOrigin(0f, 0f)
         }
     }
 }
@@ -226,12 +255,16 @@ private fun Info(
     }
 }
 
-/** One cast member; focusable only so the row can be scrolled with the remote. */
+/** One cast member: OK opens their page. */
 @Composable
-private fun CastCard(p: Person) {
+private fun CastCard(
+    p: Person,
+    modifier: Modifier,
+    onClick: () -> Unit,
+) {
     Surface(
-        onClick = {},
-        modifier = Modifier.width(96.dp),
+        onClick = onClick,
+        modifier = modifier.width(96.dp),
         shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(10.dp)),
         colors = ClickableSurfaceDefaults.colors(containerColor = Jc.Ink.copy(alpha = 0f), focusedContainerColor = Jc.FocusFill, contentColor = Jc.Text, focusedContentColor = Jc.Text),
         border = ClickableSurfaceDefaults.border(focusedBorder = Border(BorderStroke(2.dp, Jc.Focus))),
@@ -255,26 +288,6 @@ private fun CastCard(p: Person) {
             }
             Text(p.name, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
             p.role?.let { Text(it, color = Jc.Muted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
-        }
-    }
-}
-
-/**
- * Shrinks the content (from its top left) when it is taller than [height], down to [floor] at most;
- * past that it keeps that size and the page scrolls. The space it takes shrinks with it.
- */
-private fun Modifier.fitTo(
-    height: Dp,
-    floor: Float = 0.7f,
-) = layout { measurable, constraints ->
-    val p = measurable.measure(constraints.copy(maxHeight = Constraints.Infinity))
-    val limit = height.roundToPx()
-    val s = if (p.height > limit && limit > 0) (limit.toFloat() / p.height).coerceAtLeast(floor) else 1f
-    layout(p.width, (p.height * s).roundToInt()) {
-        p.placeWithLayer(0, 0) {
-            scaleX = s
-            scaleY = s
-            transformOrigin = TransformOrigin(0f, 0f)
         }
     }
 }

@@ -1534,7 +1534,21 @@ class NextPvrBackend(
     override suspend fun setFavouriteEnabled(
         ruleId: String,
         enabled: Boolean,
+        offUntil: String?,
     ): Message? = null
+
+    // Pauses and one priority list over every rule are JellyDVR Schedule's; null shows the series list.
+    override suspend fun pauseSeries(
+        seriesTimerId: String,
+        until: String?,
+        mode: String?,
+    ): Message? = null
+
+    override suspend fun resumeSeries(seriesTimerId: String): Message? = null
+
+    override suspend fun rules(): RulesList? = null
+
+    override suspend fun setRulePriority(ids: List<String>): Message? = null
 
     override suspend fun addFavouriteByTitle(
         title: String,

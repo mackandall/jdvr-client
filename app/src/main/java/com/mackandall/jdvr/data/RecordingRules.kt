@@ -24,10 +24,30 @@ interface RecordingRules {
 
     suspend fun favourites(): FavouritesList?
 
+    /** Switched off with [offUntil] (ISO time): on again by itself then; null: until switched on. */
     suspend fun setFavouriteEnabled(
         ruleId: String,
         enabled: Boolean,
+        offUntil: String? = null,
     ): Message?
+
+    /**
+     * Pauses a series recording: nothing records before [until] (an ISO time; null: until resumed), or
+     * with a server-worked-out end, [mode] "next" (skip the next episode) or "premiere" (until the season starts).
+     */
+    suspend fun pauseSeries(
+        seriesTimerId: String,
+        until: String? = null,
+        mode: String? = null,
+    ): Message?
+
+    suspend fun resumeSeries(seriesTimerId: String): Message?
+
+    /** Every recording rule (series recordings + favourites); null when the plugin is missing or too old. */
+    suspend fun rules(): RulesList?
+
+    /** The priority order, highest first (rule ids). */
+    suspend fun setRulePriority(ids: List<String>): Message?
 
     suspend fun addFavouriteByTitle(
         title: String,
@@ -111,6 +131,62 @@ data class FavouriteEntry(
 )
 
 @Serializable
+data class RuleAiring(
+    @SerialName("Start") val start: String = "",
+    @SerialName("Channel") val channel: String = "",
+    @SerialName("Episode") val episode: String? = null,
+    @SerialName("Held") val held: Boolean = false,
+    @SerialName("Now") val now: Boolean = false,
+)
+
+@Serializable
+data class RuleImage(
+    @SerialName("ItemId") val itemId: String,
+    @SerialName("Type") val type: String = "Primary",
+    @SerialName("Tag") val tag: String? = null,
+)
+
+/** A recording rule: a series recording (id = series timer id) or a favourite (id = "fav:" + its id). */
+@Serializable
+data class RecordingRule(
+    @SerialName("Id") val id: String,
+    @SerialName("Kind") val kind: String = "series",
+    @SerialName("Name") val name: String = "",
+    @SerialName("State") val state: String = "recording",
+    @SerialName("Until") val until: String? = null,
+    @SerialName("UntilPremiere") val untilPremiere: Boolean = false,
+    @SerialName("Details") val details: String = "",
+    @SerialName("Upcoming") val upcoming: Int = 0,
+    @SerialName("Held") val held: Int = 0,
+    @SerialName("Next") val next: List<RuleAiring> = emptyList(),
+    @SerialName("Priority") val priority: Int = 0,
+    @SerialName("Image") val image: RuleImage? = null,
+    @SerialName("Recorded") val recorded: Int = 0,
+    @SerialName("Unwatched") val unwatched: Int = 0,
+) {
+    val isFavourite get() = kind == "favourite"
+    val favouriteId get() = id.removePrefix("fav:")
+}
+
+@Serializable
+private data class FavouriteSwitch(
+    @SerialName("Enabled") val enabled: Boolean,
+    @SerialName("OffUntil") val offUntil: String? = null,
+)
+
+@Serializable
+private data class PauseBody(
+    @SerialName("Until") val until: String,
+    @SerialName("Mode") val mode: String? = null,
+)
+
+@Serializable
+data class RulesList(
+    @SerialName("CanManage") val canManage: Boolean = false,
+    @SerialName("Rules") val rules: List<RecordingRule> = emptyList(),
+)
+
+@Serializable
 data class FavouritesList(
     @SerialName("CanManage") val canManage: Boolean = false,
     @SerialName("Favourites") val favourites: List<FavouriteEntry> = emptyList(),
@@ -152,7 +228,31 @@ class SchedulePlugin(
     override suspend fun setFavouriteEnabled(
         ruleId: String,
         enabled: Boolean,
-    ): Message? = server.call(HttpMethod.POST, "/JellyDvrSchedule/Favourites/$ruleId", body = "{\"Enabled\":$enabled}")
+        offUntil: String?,
+    ): Message? =
+        server.call(
+            HttpMethod.POST,
+            "/JellyDvrSchedule/Favourites/$ruleId",
+            body = server.json.encodeToString(FavouriteSwitch(enabled, offUntil)),
+        )
+
+    override suspend fun pauseSeries(
+        seriesTimerId: String,
+        until: String?,
+        mode: String?,
+    ): Message? =
+        server.call(
+            HttpMethod.POST,
+            "/JellyDvrSchedule/Pauses/${seriesTimerId.plainId()}",
+            body = server.json.encodeToString(PauseBody(until.orEmpty(), mode)),
+        )
+
+    override suspend fun rules(): RulesList? = server.call(HttpMethod.GET, "/JellyDvrSchedule/Rules")
+
+    override suspend fun setRulePriority(ids: List<String>): Message? =
+        server.call(HttpMethod.POST, "/JellyDvrSchedule/Rules/Order", body = server.json.encodeToString(ids))
+
+    override suspend fun resumeSeries(seriesTimerId: String): Message? = server.call(HttpMethod.DELETE, "/JellyDvrSchedule/Pauses/${seriesTimerId.plainId()}")
 
     override suspend fun addFavouriteByTitle(
         title: String,

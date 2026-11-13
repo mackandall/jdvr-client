@@ -2,12 +2,68 @@
   {
     "guid": "e8f9a7c2-4b3d-4e1a-9c6f-2a1b0c3d4e5f",
     "name": "Comskip Commercial Segments",
-    "description": "Detects commercials in DVR recordings with Comskip and exposes them as native Jellyfin MediaSegments.",
-    "overview": "Detects commercials in DVR recordings (and, on demand, existing library files) with an external Comskip binary, and exposes the breaks as native Jellyfin Commercial media segments so the built-in skip UI handles them.",
+    "description": "Detects commercials in DVR recordings (and optionally existing library files) with Comskip and exposes them as native Jellyfin skip segments.",
+    "overview": "Detects commercials in DVR recordings (and optionally existing library files) with Comskip and exposes them as native Jellyfin skip segments.",
     "owner": "mackandall",
     "category": "Live TV",
     "imageUrl": "https://raw.githubusercontent.com/mackandall/jellyfin-plugin-comskip-segments/main/icon.png",
     "versions": [
+      {
+        "version": "1.3.7.0",
+        "changelog": "Letterboxed shows get their opening acts back from the commercial breaks (new settings Give back letterboxed show, on, and Letterbox minimum 120 s). Audio trim: movies whose trim began with a few seconds of the old stereo sound now show their real 5.1 layout in Jellyfin.",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/mackandall/jellyfin-plugin-comskip-segments/releases/download/v1.3.7.0/jellyfin-plugin-comskip-segments_1.3.7.0.zip",
+        "checksum": "a68d243d5503c67336400b669b0b5000",
+        "timestamp": "2026-11-13T02:46:32.0000000Z"
+      },
+      {
+        "version": "1.3.6.1",
+        "changelog": "Fixes: the early minute of a padded recording wasn't marked when the automatic card search had looked and found no card. A show or season badge counted episodes whose commercials were removed as marked; it doesn't any more, and Remove commercials / Scan for commercials updates the show and season cards at once.",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/mackandall/jellyfin-plugin-comskip-segments/releases/download/v1.3.6.1/jellyfin-plugin-comskip-segments_1.3.6.1.zip",
+        "checksum": "4146617f8d1231986bd20fe111ab15c2",
+        "timestamp": "2026-11-07T21:11:48.0000000Z"
+      },
+      {
+        "version": "1.3.6.0",
+        "changelog": "Comskip's break edges are lined up with the picture (Comskip counted from the first decodable frame, so edges were 0.2–2 s early) and snapped to the black frame or hard cut nearby. Check break lengths measures breaks against the 15-second ad unit. A Re-scan old Comskip results button re-scans results from before the fix, behind every other scan, and leaves alone anything edited or cut meanwhile. New: the minute a DVR recording starts early is marked as a break up to the program start. Fix: a scan cut short by a Jellyfin restart no longer wipes the recording's breaks.",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/mackandall/jellyfin-plugin-comskip-segments/releases/download/v1.3.6.0/jellyfin-plugin-comskip-segments_1.3.6.0.zip",
+        "checksum": "902d6b77be577d32efd75b2ae4a75328",
+        "timestamp": "2026-11-07T20:06:59.0000000Z"
+      },
+      {
+        "version": "1.3.5.0",
+        "changelog": "Cut… on each row and Cut all shown… on the Recordings list (one cut at a time; Cut all needs a search first). JellyDVR Live buffers nobody kept are no longer scanned or listed. New edge rules: a silent opening (Pluto's lead-in) is marked as a break, and shows learn the card their episodes end on and the credits before it. Fix: cuts of recordings with a stray ID3 track failed with 'sample rate not set'.",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/mackandall/jellyfin-plugin-comskip-segments/releases/download/v1.3.5.0/jellyfin-plugin-comskip-segments_1.3.5.0.zip",
+        "checksum": "5d79b0aac94bd5e63202b726f5d8fb95",
+        "timestamp": "2026-11-06T07:35:23.0000000Z"
+      },
+      {
+        "version": "1.3.4.0",
+        "changelog": "Repeated ads (optional): ads heard in other shows are added to the breaks; learn from episodes you edited by hand (also after cutting them), follow the show's break pattern with edges pinned by eyecatches and countdowns. Live scans that end with the recording are used; Queue tab shows live scans. A rescan of one recording runs Comskip even if another program's .edl is beside it (renamed .edl.old).",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/mackandall/jellyfin-plugin-comskip-segments/releases/download/v1.3.4.0/jellyfin-plugin-comskip-segments_1.3.4.0.zip",
+        "checksum": "55d089a387b9ed2b97aa177e25bccd9e",
+        "timestamp": "2026-11-02T07:10:30.0000000Z"
+      },
+      {
+        "version": "1.3.3.0",
+        "changelog": "Queue tab on the Commercial segments dashboard: the scans running now (progress, time left, pause, cancel), the ones waiting in order (why each is queued, Scan next, Remove, Clear, pause the queue) and the last 200 finished; the queue is kept across restarts. Each scan of a finished recording is about a minute faster (live_tv=0 for finished files), with the same breaks. A re-scan keeps the old breaks until the new ones are in. The plugin's state moves to <data>/comskip-segments: updating a manually installed copy from the catalog no longer deletes it.",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/mackandall/jellyfin-plugin-comskip-segments/releases/download/v1.3.3.0/jellyfin-plugin-comskip-segments_1.3.3.0.zip",
+        "checksum": "dc776c51c9905e62397e1969bd95c363",
+        "timestamp": "2026-11-01T22:22:00.0000000Z"
+      },
+      {
+        "version": "1.3.2.0",
+        "changelog": "Fixes: a live scan no longer shows an earlier scan's breaks for the same file name; a recording Jellyfin restarted part-way gets its live scan and live skip; the web overlay asks for live breaks with the recording being played. The .edl beside a moved or newly added video (and its other versions) is imported when it's added, not at the next Media Segment Scan; a folder left with no video once its kept original is deleted is removed.",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/mackandall/jellyfin-plugin-comskip-segments/releases/download/v1.3.2.0/jellyfin-plugin-comskip-segments_1.3.2.0.zip",
+        "checksum": "012f26018d4fd35dc9a37207af2cbae2",
+        "timestamp": "2026-10-31T06:55:17.0000000Z"
+      },
       {
         "version": "1.3.1.0",
         "changelog": "Check a cut: its joins are marked on the timeline, with Join buttons. Delete original per cut recording and Delete all originals, with the space they take; originals left without their recording are deleted after a day (new setting, on by default). Kept originals now go after 7 days by default (Keep the original file as a backup is off for new installs; an existing setting is kept). Another program's .edl stays with the original after a cut. The editor's picture fits the window (or Small/Medium/Large/drag). Fixes: frames follow quick jumps; the start lands on the first frame.",
@@ -84,6 +140,30 @@
     "imageUrl": "https://raw.githubusercontent.com/mackandall/jellyfin-plugin-episode-history/main/icon.png",
     "versions": [
       {
+        "version": "1.1.2.0",
+        "changelog": "Cancelling a whole series recording no longer logs a warning for its already-deleted episode timers.",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/mackandall/jellyfin-plugin-episode-history/releases/download/v1.1.2.0/jellyfin-plugin-episode-history_1.1.2.0.zip",
+        "checksum": "bc19f27981b8b7d2504c5fd28ef05da5",
+        "timestamp": "2026-10-31T04:33:03.0000000Z"
+      },
+      {
+        "version": "1.1.1.0",
+        "changelog": "Search page List view: shorter rows, so more airings fit on screen.",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/mackandall/jellyfin-plugin-episode-history/releases/download/v1.1.1.0/jellyfin-plugin-episode-history_1.1.1.0.zip",
+        "checksum": "0bb2adfa5dff32a106b3bac33827bedd",
+        "timestamp": "2026-10-31T04:14:41.0000000Z"
+      },
+      {
+        "version": "1.1.0.0",
+        "changelog": "Search page: an On TV Posters/List switch; List shows the next airings soonest first, grouped by day, with channel logos, Will record/New/Live marks and the same ⋮ menu as the posters. Recordings by show: one card per show. Recording now lists a re-record or resumed piece. Tidy up after deletes also covers archive libraries, emptied seasons and leftover .ts.properties/.ini/pictures. Trash lets API-key deletes through. A favourite's recording of an episode already in the library is cancelled.",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/mackandall/jellyfin-plugin-episode-history/releases/download/v1.1.0.0/jellyfin-plugin-episode-history_1.1.0.0.zip",
+        "checksum": "8dfbce6389ff0ffb28c54375fbdde024",
+        "timestamp": "2026-10-31T03:52:59.0000000Z"
+      },
+      {
         "version": "1.0.0.0",
         "changelog": "First public release.",
         "targetAbi": "12.0.0.0",
@@ -102,6 +182,14 @@
     "category": "Live TV",
     "imageUrl": "https://raw.githubusercontent.com/mackandall/jellyfin-plugin-jellydvr-guides/main/icon.png",
     "versions": [
+      {
+        "version": "1.2.0.0",
+        "changelog": "Schedules Direct: shows without episode numbers (news, talk, sports magazines) count as series, so Jellyfin offers Record series for them. New per-source setting, on by default; they get a stand-in episode 0.",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/mackandall/jellyfin-plugin-jellydvr-guides/releases/download/v1.2.0.0/jellyfin-plugin-jellydvr-guides_1.2.0.0.zip",
+        "checksum": "f46871fbabf3708130df6537a60e950f",
+        "timestamp": "2026-10-31T03:53:04.0000000Z"
+      },
       {
         "version": "1.1.1.0",
         "changelog": "Schedules Direct: the daily update runs at a time picked at random for each server (2:00 to 6:00, never on the hour) instead of 5:00 everywhere; Update now asks again at most every 15 minutes. Status lines on the settings page break properly again.",
@@ -138,6 +226,14 @@
     "imageUrl": "https://raw.githubusercontent.com/mackandall/jellyfin-plugin-jellydvr-space/master/icon.png",
     "versions": [
       {
+        "version": "1.1.1.0",
+        "changelog": "Archiving a re-recorded movie no longer fails on the old .nfo and poster left in the archive folder; the archive popup says when a recording has already moved.",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/mackandall/jellyfin-plugin-jellydvr-space/releases/download/v1.1.1.0/jellyfin-plugin-jellydvr-space_1.1.1.0.zip",
+        "checksum": "fec4753dc151f24f9a4b6c2a22d88793",
+        "timestamp": "2026-10-31T04:33:07.0000000Z"
+      },
+      {
         "version": "1.1.0.0",
         "changelog": "Store in: choose the storage folders for a show (Series options) or for one recording (Recording options), in Jellyfin's web client and JDVR; sorting puts each recording in the first of its folders with room. Each storage folder has its own floor; the settings page is in numbered sections. Devices: Remove takes a TV off the list and signs it out. Recordings still being recorded, or whose pieces Episode History has yet to join, stay where they are; moved recordings no longer get planned a second time.",
         "targetAbi": "12.0.0.0",
@@ -173,6 +269,30 @@
     "imageUrl": "https://raw.githubusercontent.com/mackandall/jellyfin-plugin-jellydvr-schedule/main/icon.png",
     "versions": [
       {
+        "version": "1.1.0.0",
+        "changelog": "Recording rules: Live TV > Series shows series recordings and Recording Favourites in one list (Cards or Grouped layout, follows the Jellyfin theme). Pause a series recording (for a while, until a date, skip the next episode, or until the season starts) and resume it; Pause all / Resume all; switch a favourite off until a date. The JDVR 0.4.0 Recording rules screen uses it.",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/mackandall/jellyfin-plugin-jellydvr-schedule/releases/download/v1.1.0.0/jellyfin-plugin-jellydvr-schedule_1.1.0.0.zip",
+        "checksum": "d863bf2edc6adfb4eb7865ee62b73685",
+        "timestamp": "2026-11-03T04:23:49.0000000Z"
+      },
+      {
+        "version": "1.0.2.0",
+        "changelog": "Favourites that skip episodes already in the library wait until Episode History has marked the guide again after a guide refresh or restart, so they no longer record episodes you have.",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/mackandall/jellyfin-plugin-jellydvr-schedule/releases/download/v1.0.2.0/jellyfin-plugin-jellydvr-schedule_1.0.2.0.zip",
+        "checksum": "90b856c0abab71e3e6ccb927039a8498",
+        "timestamp": "2026-10-31T04:32:59.0000000Z"
+      },
+      {
+        "version": "1.0.1.0",
+        "changelog": "Settings page: the Remove and ▲▼ buttons are readable again on Jellyfin 12.2.",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/mackandall/jellyfin-plugin-jellydvr-schedule/releases/download/v1.0.1.0/jellyfin-plugin-jellydvr-schedule_1.0.1.0.zip",
+        "checksum": "061417a11165b0a466f4ea92614ce443",
+        "timestamp": "2026-10-31T04:04:50.0000000Z"
+      },
+      {
         "version": "1.0.0.0",
         "changelog": "First public release.",
         "targetAbi": "12.0.0.0",
@@ -191,6 +311,14 @@
     "category": "Live TV",
     "imageUrl": "https://raw.githubusercontent.com/mackandall/jellyfin-plugin-jellydvr-live/main/icon.png",
     "versions": [
+      {
+        "version": "1.0.1.0",
+        "changelog": "Settings page: the buttons are readable again on Jellyfin 12.2.",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/mackandall/jellyfin-plugin-jellydvr-live/releases/download/v1.0.1.0/jellyfin-plugin-jellydvr-live_1.0.1.0.zip",
+        "checksum": "2a055fc4f178f3d967f34bbce4159f1a",
+        "timestamp": "2026-10-31T04:33:11.0000000Z"
+      },
       {
         "version": "1.0.0.0",
         "changelog": "First public release.",

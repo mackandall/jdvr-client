@@ -125,6 +125,8 @@ fun EpisodeBrowser(
     onHold: ((EpisodeEntry) -> Unit)? = null,
     // After the show's own actions changed something (watched, deleted, moved): reload.
     onShowChanged: () -> Unit = {},
+    // Plays what's opened from a cast member's page (their cards open it when this is given).
+    onPlayItem: ((com.mackandall.jdvr.PlayRecording) -> Unit)? = null,
 ) {
     // The show's actions (mark all watched, move or delete all of it, forget it) behind a button
     // of their own, so they don't depend on holding OK.
@@ -172,7 +174,7 @@ fun EpisodeBrowser(
                     Text(if (list == null) "Loading…" else emptyText, color = Jc.Muted, fontSize = 16.sp)
                 }
             } else if (tiles) {
-                TilesView(seriesId, backdrop, title, subtitle, list, entry, { e, fromStart -> if (fromStart) onPlayFromStart(e) else onPlay(e) }, onInfo, onToggleWatched, actions, hold)
+                TilesView(seriesId, backdrop, title, subtitle, list, entry, { e, fromStart -> if (fromStart) onPlayFromStart(e) else onPlay(e) }, onInfo, onToggleWatched, actions, hold, onPlayItem)
             } else {
                 ListView(seriesId?.toString() ?: title, title, subtitle, list, entry, onPlay, onInfo, onToggleWatched, hold)
             }
@@ -448,6 +450,7 @@ private fun TilesView(
     onToggleWatched: ((EpisodeEntry) -> Unit)?,
     actions: (@Composable androidx.compose.foundation.layout.RowScope.(EpisodeEntry, (String) -> Unit) -> Unit)?,
     onHold: ((EpisodeEntry) -> Unit)?,
+    onPlayItem: ((com.mackandall.jdvr.PlayRecording) -> Unit)?,
 ) {
     var note by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(note) {
@@ -474,6 +477,14 @@ private fun TilesView(
         }
     }
     val d = details[focused.id]
+    // A cast member's page (from the rows below); Back returns to their card.
+    val people = rememberPersonReturn()
+    people.opened?.let { p ->
+        val play = onPlayItem ?: return@let
+        androidx.activity.compose.BackHandler { people.opened = null }
+        PersonPage(p, play)
+        return
+    }
     val start = remember(season) { FocusRequester() }
     LaunchedEffect(season) { start.tryFocus() }
 
@@ -577,8 +588,9 @@ private fun TilesView(
             // Who's in it.
             d?.let { det ->
                 val (guests, crew) = det.people.partition { it.kind == "GuestStar" }
-                if (crew.isNotEmpty()) PeopleRow("Cast & crew", crew)
-                if (guests.isNotEmpty()) PeopleRow("Guest stars in this episode", guests)
+                val open: ((Person) -> Unit)? = onPlayItem?.let { { p: Person -> people.open(p) } }
+                if (crew.isNotEmpty()) PeopleRow("Cast & crew", crew, people, open)
+                if (guests.isNotEmpty()) PeopleRow("Guest stars in this episode", guests, people, open)
             }
         }
     }
@@ -703,14 +715,17 @@ private fun EpisodeCard(
 private fun PeopleRow(
     title: String,
     people: List<Person>,
+    back: PersonReturn,
+    // OK on a card: their page (null: the cards only scroll the row).
+    onOpen: ((Person) -> Unit)?,
 ) {
     Column(Modifier.padding(top = 6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(title, color = Jc.Text, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(horizontal = 36.dp))
         LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(horizontal = 30.dp)) {
             items(people.take(30), key = { it.id.toString() + it.role + it.kind }) { p ->
                 Surface(
-                    onClick = {},
-                    modifier = Modifier.width(96.dp),
+                    onClick = { onOpen?.invoke(p) },
+                    modifier = back.card(p.id).width(96.dp),
                     shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(10.dp)),
                     colors = ClickableSurfaceDefaults.colors(containerColor = Color.Transparent, focusedContainerColor = Jc.FocusFill, contentColor = Jc.Text, focusedContentColor = Jc.Text),
                     border = ClickableSurfaceDefaults.border(focusedBorder = Border(BorderStroke(2.dp, Jc.Focus))),

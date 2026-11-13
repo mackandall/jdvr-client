@@ -32,15 +32,18 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.nativeKeyCode
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -58,6 +61,7 @@ import com.mackandall.jdvr.data.Buffer
 import com.mackandall.jdvr.data.Jdvr
 import com.mackandall.jdvr.data.Prefs
 import com.mackandall.jdvr.data.Segment
+import com.mackandall.jdvr.data.attempt
 import com.mackandall.jdvr.ui.Button
 import com.mackandall.jdvr.ui.Jc
 import com.mackandall.jdvr.ui.tryFocus
@@ -66,7 +70,7 @@ import kotlinx.coroutines.launch
 import timber.log.Timber
 import android.view.KeyEvent as AndroidKeyEvent
 
-private fun isCommercial(s: Segment) = s.type.equals("Commercial", ignoreCase = true)
+internal fun isCommercial(s: Segment) = s.type.equals("Commercial", ignoreCase = true)
 
 private fun skippable(s: Segment) = s.type.lowercase() in setOf("commercial", "intro", "recap", "preview")
 
@@ -115,6 +119,13 @@ fun RecordingPlayerScreen(
     var infoOpen by remember { mutableStateOf(false) }
     var infoNote by remember { mutableStateOf<String?>(null) }
     val infoFocus = remember { FocusRequester() }
+    // Up Next: hidden with Back (until the end, or a seek back before it), the button picked, the countdown left.
+    var ended by remember { mutableStateOf(false) }
+    var upHidden by remember { mutableStateOf(false) }
+    var upSelected by remember { mutableIntStateOf(0) }
+    var upLeftMs by remember { mutableStateOf<Long?>(null) }
+    var upScheduled by remember { mutableStateOf<String?>(null) }
+    var stillWatching by remember { mutableStateOf(false) }
     val player = remember { recordingPlayer(context, paused = recording.paused) }
     val formats = rememberPlayingFormats(player)
     val rec = remember { RecordingSession(recording, player) }
@@ -155,10 +166,12 @@ fun RecordingPlayerScreen(
                     rec.error = "Playback stopped: ${e.errorCodeName}"
                 }
 
-                // NextPVR: a recording still being made plays as long as it was when opened; at
-                // that end it opens again, longer, and goes on from there.
                 override fun onPlaybackStateChanged(state: Int) {
-                    if (state != Player.STATE_ENDED || !Jdvr.isNextPvr || !rec.inProgress) return
+                    // NextPVR: a recording still being made plays as long as it was when opened; at
+                    // that end it opens again, longer, and goes on from there (not the end: no Up Next).
+                    val growing = state == Player.STATE_ENDED && Jdvr.isNextPvr && rec.inProgress
+                    ended = state == Player.STATE_ENDED && !growing
+                    if (!growing) return
                     val at = player.currentPosition
                     Timber.tag("JDVRPlayer").i("recording %s: still recording, opening it again at %ds", itemId, at / 1000)
                     rec.reopen(at)
@@ -230,7 +243,28 @@ fun RecordingPlayerScreen(
             flash("Skipped " + (if (isCommercial(a)) "a commercial break" else a.type.lowercase()))
         }
     }
-    val prompt = active?.takeIf { mode == Prefs.ASK && it.startMs !in handled }
+
+    // Up Next, for a show's recording or archive episode (not a live TV buffer, nor one still recording).
+    val duration = player.duration.takeIf { it > 0 } ?: rec.playback?.durationMs ?: 0L
+    val nextItem = rec.nextItem
+    val upTiming =
+        if (prefs.upNext && live == null && !rec.inProgress && rec.error == null && rec.neighboursLoaded &&
+            (nextItem != null || rec.details?.item?.seriesName != null)
+        ) {
+            upNextTiming(duration, rec.segments, prefs.upNextBeforeBreak * 1000L, prefs.upNextBeforeEnd * 1000L)
+        } else {
+            null
+        }
+    val inUpWindow = upTiming != null && (ended || position >= upTiming.showAtMs)
+    // Seeking back well before it brings the card back next time.
+    if (upTiming != null && !ended && position < upTiming.showAtMs - 5000 && (upHidden || stillWatching)) {
+        upHidden = false
+        stillWatching = false
+    }
+    val upShowing = (inUpWindow && (!upHidden || ended) || stillWatching) && !infoOpen && !controlsOpen
+    val gap = nextItem?.let { n -> rec.details?.item?.let { c -> missingEpisodes(c.season, c.episode, n.season, n.episode) } }
+    val countsDown = upShowing && !stillWatching && !upHidden && nextItem != null && prefs.upNextCountdown > 0 && (gap == null || prefs.upNextSkipGaps)
+    val prompt = active?.takeIf { mode == Prefs.ASK && it.startMs !in handled && !upShowing }
 
     if (controlsOpen) BackHandler { controlsOpen = false }
     if (infoOpen) BackHandler { infoOpen = false }
@@ -286,6 +320,44 @@ fun RecordingPlayerScreen(
             }
         }
 
+    fun playNextNow() {
+        rec.next?.let { playNext(it) }
+    }
+
+    // The countdown runs while playing (or at the end); at zero the next episode plays, unless
+    // enough have played with no key pressed: then "Still watching?" asks first.
+    LaunchedEffect(countsDown, upTiming?.showAtMs) {
+        if (!countsDown) {
+            upLeftMs = null
+            return@LaunchedEffect
+        }
+        var left = prefs.upNextCountdown * 1000L
+        upLeftMs = left
+        while (left > 0) {
+            delay(250)
+            if (player.isPlaying || ended) left -= 250
+            upLeftMs = left
+        }
+        val limit = prefs.stillWatchingAfter
+        if (limit > 0 && UpNextChain.autoPlayed >= limit) {
+            player.pause()
+            upSelected = 0
+            stillWatching = true
+        } else {
+            UpNextChain.autoPlayed++
+            Timber.i("Up next: playing %s (%s)", rec.nextTitle, upTiming?.source)
+            playNextNow()
+        }
+    }
+    // Nothing more recorded: when the show records next.
+    LaunchedEffect(upShowing && nextItem == null) {
+        if (upShowing && nextItem == null && upScheduled == null) {
+            upScheduled = nextScheduled(rec.details?.item?.seriesName, attempt { Jdvr.backend.upcoming() })
+        }
+    }
+    LaunchedEffect(upShowing) { if (upShowing) upSelected = 0 }
+    if (upShowing && !stillWatching && !upHidden) BackHandler { upHidden = true }
+
     Box(
         Modifier
             .fillMaxSize()
@@ -294,9 +366,35 @@ fun RecordingPlayerScreen(
             .focusable()
             .onPreviewKeyEvent { e ->
                 lastKeyAt = System.currentTimeMillis()
+                UpNextChain.autoPlayed = 0
                 e.type == KeyEventType.KeyDown && rec.error == null && actions.onMediaKey(e.key.nativeKeyCode, player.isPlaying)
             }.onKeyEvent { e ->
                 if (e.type != KeyEventType.KeyDown || rec.error != null || controlsOpen || infoOpen) return@onKeyEvent false
+                // The Up Next card (or "Still watching?"): ◄ ► pick a button, OK presses it.
+                if (upShowing) {
+                    when (e.key.nativeKeyCode) {
+                        AndroidKeyEvent.KEYCODE_DPAD_LEFT -> {
+                            upSelected = 0
+                            return@onKeyEvent true
+                        }
+
+                        AndroidKeyEvent.KEYCODE_DPAD_RIGHT -> {
+                            upSelected = 1
+                            return@onKeyEvent true
+                        }
+
+                        AndroidKeyEvent.KEYCODE_DPAD_CENTER, AndroidKeyEvent.KEYCODE_ENTER -> {
+                            when {
+                                stillWatching && upSelected == 0 -> playNextNow()
+                                stillWatching -> onExit()
+                                upSelected == 1 -> upHidden = true
+                                nextItem != null -> playNextNow()
+                                else -> onExit()
+                            }
+                            return@onKeyEvent true
+                        }
+                    }
+                }
                 when (e.key.nativeKeyCode) {
                     AndroidKeyEvent.KEYCODE_DPAD_LEFT -> {
                         actions.seek(false)
@@ -436,6 +534,19 @@ fun RecordingPlayerScreen(
                 }
             }
         }
+        if (upShowing) {
+            val card =
+                when {
+                    stillWatching -> UpNextCard.StillWatching(rec.details?.item?.seriesName, prefs.stillWatchingAfter)
+                    nextItem != null -> UpNextCard.Next(nextItem, gap, upLeftMs?.let { ((it + 999) / 1000).toInt() }, prefs.upNextCountdown)
+                    else -> UpNextCard.Last(rec.details?.item?.seriesName, upScheduled)
+                }
+            UpNextCardView(
+                card,
+                upSelected,
+                if (stillWatching) Modifier else Modifier.align(Alignment.BottomEnd).padding(bottom = if (osd) 150.dp else 0.dp),
+            )
+        }
         rec.error?.let {
             Column(Modifier.align(Alignment.Center).background(Jc.Sheet, RoundedCornerShape(14.dp)).padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(it, color = Jc.Amber, fontSize = 18.sp)
@@ -533,7 +644,11 @@ private fun RecordingBar(
     }
 }
 
-/** The progress bar with commercials (amber) and intros / recaps / previews (purple) marked. */
+/**
+ * The progress bar with commercials (amber) and intros / recaps / previews (purple) marked. The
+ * watched part is drawn under the marks (silver, Settings › Progress bar), marks already played are
+ * dimmed, a white tick shows the position, and near a commercial a bubble says how far its edge is.
+ */
 @Composable
 private fun SegmentBar(
     position: Long,
@@ -541,31 +656,77 @@ private fun SegmentBar(
     segments: List<Segment>,
     modifier: Modifier,
 ) {
-    BoxWithConstraints(modifier.height(10.dp)) {
+    // 18 dp tall so the tick fits; the track and watched part 6 dp, the marks 10 dp, centred.
+    BoxWithConstraints(modifier.height(18.dp), contentAlignment = Alignment.CenterStart) {
         val w = maxWidth
-        Box(Modifier.fillMaxSize().padding(vertical = 2.dp).background(Jc.Line, RoundedCornerShape(3.dp)))
+        Box(Modifier.fillMaxWidth().height(6.dp).background(Jc.Line, RoundedCornerShape(3.dp)))
         if (duration > 0) {
-            segments.forEach { s ->
-                val from = (s.startMs.toFloat() / duration).coerceIn(0f, 1f)
-                val to = (s.endMs.toFloat() / duration).coerceIn(0f, 1f)
-                if (to > from) {
-                    Box(
-                        Modifier
-                            .offset(x = w * from)
-                            .width(w * (to - from))
-                            .fillMaxHeight()
-                            .background(if (isCommercial(s)) Jc.Amber else Color(0xFF9B7BFF)),
-                    )
-                }
-            }
             val f = (position.toFloat() / duration).coerceIn(0f, 1f)
             Box(
                 Modifier
-                    .fillMaxHeight()
                     .fillMaxWidth(f)
-                    .padding(vertical = 3.dp)
-                    .background(Jc.Focus.copy(alpha = 0.85f), RoundedCornerShape(3.dp)),
+                    .height(6.dp)
+                    .background(if (Jdvr.prefs.progressSilver) Jc.Text.copy(alpha = 0.9f) else Jc.Focus.copy(alpha = 0.85f), RoundedCornerShape(3.dp)),
             )
+            segments.forEach { s ->
+                val from = (s.startMs.toFloat() / duration).coerceIn(0f, 1f)
+                val to = (s.endMs.toFloat() / duration).coerceIn(0f, 1f)
+                val color = if (isCommercial(s)) Jc.Amber else Color(0xFF9B7BFF)
+                // The played part of a mark darkened (solid, so nothing shows through), the rest full.
+                listOf(from to minOf(to, f) to lerp(color, Jc.Ink, 0.45f), maxOf(from, f) to to to color).forEach { (span, c) ->
+                    val (a, b) = span
+                    if (b > a) {
+                        Box(
+                            Modifier
+                                .offset(x = w * a)
+                                .width(w * (b - a))
+                                .height(10.dp)
+                                .background(c),
+                        )
+                    }
+                }
+            }
+            Box(
+                Modifier
+                    .offset(x = w * f - 3.dp)
+                    .width(6.dp)
+                    .fillMaxHeight()
+                    // White edged in ink; a light theme's pale track needs the reverse.
+                    .background(if (Jc.Light) Color.White else Jc.Ink, RoundedCornerShape(3.dp))
+                    .padding(1.dp)
+                    .background(if (Jc.Light) Jc.Text else Color.White, RoundedCornerShape(2.dp)),
+            )
+            commercialEdge(position, segments)?.let { note ->
+                Text(
+                    "${clock(position)} · $note",
+                    color = if (Jc.Light) Jc.Text else Jc.Ink,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    softWrap = false,
+                    modifier =
+                        Modifier
+                            .layout { m, c ->
+                                // Centred over the tick, kept inside the bar.
+                                val pl = m.measure(c.copy(minWidth = 0, maxWidth = Constraints.Infinity))
+                                val x = ((w * f).roundToPx() - pl.width / 2).coerceIn(0, maxOf(0, w.roundToPx() - pl.width))
+                                layout(0, 0) { pl.place(x, -pl.height - 13.dp.roundToPx()) }
+                            }.background(Color.White, RoundedCornerShape(4.dp))
+                            .padding(horizontal = 7.dp, vertical = 2.dp),
+                )
+            }
         }
     }
+}
+
+/** Inside a commercial, or within 15 s of one: how far its edge is (for the bubble over the tick). */
+private fun commercialEdge(
+    position: Long,
+    segments: List<Segment>,
+): String? {
+    val c = segments.filter { isCommercial(it) }
+    c.firstOrNull { position >= it.startMs && position < it.endMs }?.let { return "${(it.endMs - position + 999) / 1000} s before the break ends" }
+    c.firstOrNull { it.startMs > position && it.startMs - position <= 15_000 }?.let { return "break in ${(it.startMs - position + 999) / 1000} s" }
+    c.lastOrNull { it.endMs <= position && position - it.endMs <= 15_000 }?.let { return "${(position - it.endMs) / 1000} s after the break" }
+    return null
 }
