@@ -7,6 +7,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
@@ -36,10 +37,14 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.tv.material3.Border
@@ -57,6 +62,7 @@ import com.mackandall.jdvr.data.attemptResult
 import kotlinx.coroutines.launch
 import java.time.format.DateTimeFormatter
 import java.util.UUID
+import kotlin.math.roundToInt
 
 private val DateFormat = DateTimeFormatter.ofPattern("MMM d, yyyy")
 
@@ -130,79 +136,106 @@ fun DetailsPage(
         val scroll = rememberScrollState()
         @OptIn(ExperimentalFoundationApi::class)
         CompositionLocalProvider(LocalBringIntoViewSpec provides MinimalScroll) {
-            Column(Modifier.fillMaxSize().verticalScroll(scroll).padding(start = 36.dp, top = 28.dp, end = 36.dp, bottom = 28.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Row(Modifier.onFocusChanged { if (it.hasFocus) scope.launch { scroll.animateScrollTo(0) } }, horizontalArrangement = Arrangement.spacedBy(24.dp)) {
-                    AsyncImage(
-                        model = Jdvr.backend.imageUrl(item.id, 480),
-                        contentDescription = item.name,
-                        contentScale = ContentScale.Crop,
-                        modifier =
-                            Modifier
-                                .width(150.dp)
-                                .aspectRatio(2f / 3f)
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(Jc.Panel2),
-                    )
-                    Column(Modifier.fillMaxWidth(0.72f), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                        if (item.seriesName != null && item.type == "Episode") {
-                            Text(listOfNotNull(item.seriesName, item.seasonEpisode).joinToString(" · "), color = Jc.Muted, fontSize = 16.sp)
-                        }
-                        Text(item.name, color = Jc.Text, fontSize = 30.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            (det.premiere?.format(DateFormat) ?: item.year?.toString())?.let { Text(it, color = Jc.Text, fontSize = 15.sp) }
-                            item.runtimeMin?.let { Text(length(it), color = Jc.Text, fontSize = 15.sp) }
-                            item.officialRating?.let { Text(it, color = Jc.Text, fontSize = 13.sp, modifier = Modifier.background(Jc.Panel2, RoundedCornerShape(4.dp)).padding(horizontal = 6.dp, vertical = 1.dp)) }
-                            det.communityRating?.let { Text("★ %.1f".format(it), color = Jc.Gold, fontSize = 15.sp) }
-                            det.criticRating?.let { Text("${it.toInt()}% critics", color = Jc.Text, fontSize = 15.sp) }
-                            if (item.played) Chip("watched", Jc.Green)
-                        }
-                        if (det.genres.isNotEmpty()) Text(det.genres.joinToString(" · "), color = Jc.Muted, fontSize = 14.sp)
-                        det.tagline?.let { Text(it, color = Jc.Text, fontSize = 15.sp, fontStyle = FontStyle.Italic) }
-                        item.overview?.let { Text(it, color = Jc.Text, fontSize = 15.sp, maxLines = 5, overflow = TextOverflow.Ellipsis) }
-                        // Wraps onto a second line when a recording's actions make it long.
-                        @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
-                        androidx.compose.foundation.layout.FlowRow(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            val resume = item.resumeMs > 0 && !item.played
-                            Button(if (resume) "Resume from ${length(item.resumeMs / 60_000)}" else "Play", primary = true, modifier = Modifier.focusRequester(play)) { onPlay(PlayRecording(item.id)) }
-                            if (resume) Button("Play from start") { onPlay(PlayRecording(item.id, startMs = 0L)) }
-                            Button(if (item.played) "Mark unwatched" else "Mark watched") {
-                                scope.launch {
-                                    attempt { Jdvr.backend.setPlayed(item.id, !item.played) }
-                                    attempt { d = Jdvr.backend.details(item.id) }
+            BoxWithConstraints(Modifier.fillMaxSize()) {
+                // The title, buttons and file boxes always fit on one screen: when a recording's many
+                // actions make them taller than the screen, they shrink just enough. Cast scrolls below.
+                val fitHeight = maxHeight - 56.dp
+                Column(Modifier.fillMaxSize().verticalScroll(scroll).padding(start = 36.dp, top = 28.dp, end = 36.dp, bottom = 28.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Column(Modifier.fitTo(fitHeight), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Row(Modifier.onFocusChanged { if (it.hasFocus) scope.launch { scroll.animateScrollTo(0) } }, horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+                            AsyncImage(
+                                model = Jdvr.backend.imageUrl(item.id, 480),
+                                contentDescription = item.name,
+                                contentScale = ContentScale.Crop,
+                                modifier =
+                                    Modifier
+                                        .width(150.dp)
+                                        .aspectRatio(2f / 3f)
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(Jc.Panel2),
+                            )
+                            Column(Modifier.fillMaxWidth(0.72f), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                                if (item.seriesName != null && item.type == "Episode") {
+                                    Text(listOfNotNull(item.seriesName, item.seasonEpisode).joinToString(" · "), color = Jc.Muted, fontSize = 16.sp)
                                 }
+                                Text(item.name, color = Jc.Text, fontSize = 30.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                    (det.premiere?.format(DateFormat) ?: item.year?.toString())?.let { Text(it, color = Jc.Text, fontSize = 15.sp) }
+                                    item.runtimeMin?.let { Text(length(it), color = Jc.Text, fontSize = 15.sp) }
+                                    item.officialRating?.let { Text(it, color = Jc.Text, fontSize = 13.sp, modifier = Modifier.background(Jc.Panel2, RoundedCornerShape(4.dp)).padding(horizontal = 6.dp, vertical = 1.dp)) }
+                                    det.communityRating?.let { Text("★ %.1f".format(it), color = Jc.Gold, fontSize = 15.sp) }
+                                    det.criticRating?.let { Text("${it.toInt()}% critics", color = Jc.Text, fontSize = 15.sp) }
+                                    if (item.played) Chip("watched", Jc.Green)
+                                }
+                                if (det.genres.isNotEmpty()) Text(det.genres.joinToString(" · "), color = Jc.Muted, fontSize = 14.sp)
+                                det.tagline?.let { Text(it, color = Jc.Text, fontSize = 15.sp, fontStyle = FontStyle.Italic) }
+                                item.overview?.let { Text(it, color = Jc.Text, fontSize = 15.sp, maxLines = 5, overflow = TextOverflow.Ellipsis) }
+                                // Wraps onto a second line when a recording's actions make it long.
+                                @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+                                androidx.compose.foundation.layout.FlowRow(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                    val resume = item.resumeMs > 0 && !item.played
+                                    Button(if (resume) "Resume from ${length(item.resumeMs / 60_000)}" else "Play", primary = true, modifier = Modifier.focusRequester(play)) { onPlay(PlayRecording(item.id)) }
+                                    if (resume) Button("Play from start") { onPlay(PlayRecording(item.id, startMs = 0L)) }
+                                    Button(if (item.played) "Mark unwatched" else "Mark watched") {
+                                        scope.launch {
+                                            attempt { Jdvr.backend.setPlayed(item.id, !item.played) }
+                                            attempt { d = Jdvr.backend.details(item.id) }
+                                        }
+                                    }
+                                    actions(det) { note = it }
+                                }
+                                note?.let { Text(it, color = Jc.Focus, fontSize = 14.sp) }
                             }
-                            actions(det) { note = it }
                         }
-                        note?.let { Text(it, color = Jc.Focus, fontSize = 14.sp) }
+
+                        // What's in the file.
+                        // Wraps onto a second line rather than squeezing the last box into a sliver.
+                        androidx.compose.foundation.layout.FlowRow(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            det.video?.let { Info("Video", it) }
+                            if (det.audio.isNotEmpty()) Info("Audio", det.audio.first() + if (det.audio.size > 1) "  +${det.audio.size - 1}" else "")
+                            if (det.subtitles.isNotEmpty()) Info("Subtitles", det.subtitles.take(2).joinToString(", ") + if (det.subtitles.size > 2) "  +${det.subtitles.size - 2}" else "")
+                            det.file?.let { Info("File", it) }
+                            det.location?.let { Info("Stored", it, storage?.takeIf { s -> s.onRecordingDrive && s.sortMode == "active" }?.movesTo?.let { to -> "→ moves to $to" }) }
+                            commercials?.let { Info("Commercials", it.label) }
+                        }
                     }
-                }
 
-                // What's in the file.
-                // Wraps onto a second line rather than squeezing the last box into a sliver.
-                androidx.compose.foundation.layout.FlowRow(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    det.video?.let { Info("Video", it) }
-                    if (det.audio.isNotEmpty()) Info("Audio", det.audio.first() + if (det.audio.size > 1) "  +${det.audio.size - 1}" else "")
-                    if (det.subtitles.isNotEmpty()) Info("Subtitles", det.subtitles.take(2).joinToString(", ") + if (det.subtitles.size > 2) "  +${det.subtitles.size - 2}" else "")
-                    det.file?.let { Info("File", it) }
-                    det.location?.let { Info("Stored", it, storage?.takeIf { s -> s.onRecordingDrive && s.sortMode == "active" }?.movesTo?.let { to -> "→ moves to $to" }) }
-                    commercials?.let { Info("Commercials", it.label) }
-                }
+                    val credits =
+                        listOfNotNull(
+                            det.directors.takeIf { it.isNotEmpty() }?.let { "Directed by " + it.joinToString(", ") { p -> p.name } },
+                            det.writers.takeIf { it.isNotEmpty() }?.let { "Written by " + it.take(3).joinToString(", ") { p -> p.name } },
+                            det.studios.takeIf { it.isNotEmpty() }?.let { it.take(2).joinToString(", ") },
+                        )
+                    if (credits.isNotEmpty()) Text(credits.joinToString("  ·  "), color = Jc.Muted, fontSize = 14.sp)
 
-                val credits =
-                    listOfNotNull(
-                        det.directors.takeIf { it.isNotEmpty() }?.let { "Directed by " + it.joinToString(", ") { p -> p.name } },
-                        det.writers.takeIf { it.isNotEmpty() }?.let { "Written by " + it.take(3).joinToString(", ") { p -> p.name } },
-                        det.studios.takeIf { it.isNotEmpty() }?.let { it.take(2).joinToString(", ") },
-                    )
-                if (credits.isNotEmpty()) Text(credits.joinToString("  ·  "), color = Jc.Muted, fontSize = 14.sp)
-
-                if (det.cast.isNotEmpty()) {
-                    Text("Cast", color = Jc.Text, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 4.dp))
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        items(det.cast.take(30), key = { it.id.toString() + it.role }) { p -> CastCard(p, people.card(p.id)) { people.open(p) } }
+                    if (det.cast.isNotEmpty()) {
+                        Text("Cast", color = Jc.Text, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 4.dp))
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            items(det.cast.take(30), key = { it.id.toString() + it.role }) { p -> CastCard(p, people.card(p.id)) { people.open(p) } }
+                        }
                     }
                 }
             }
+        }
+    }
+}
+
+/**
+ * Shrinks the content (from its top left) when it is taller than [height], down to [floor] at most;
+ * past that it keeps that size and the page scrolls. The space it takes shrinks with it.
+ */
+private fun Modifier.fitTo(
+    height: Dp,
+    floor: Float = 0.7f,
+) = layout { measurable, constraints ->
+    val p = measurable.measure(constraints.copy(maxHeight = Constraints.Infinity))
+    val limit = height.roundToPx()
+    val s = if (p.height > limit && limit > 0) (limit.toFloat() / p.height).coerceAtLeast(floor) else 1f
+    layout(p.width, (p.height * s).roundToInt()) {
+        p.placeWithLayer(0, 0) {
+            scaleX = s
+            scaleY = s
+            transformOrigin = TransformOrigin(0f, 0f)
         }
     }
 }
