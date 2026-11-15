@@ -734,3 +734,40 @@ private fun EstuaryPoster(
         }
     }
 }
+
+/**
+ * Channels JDVR's icon strip down the left of every screen but Home (which draws its own): the
+ * places, the current one in purple. ◄ from the screen's left edge lands here; ◄ again opens the
+ * slide-out menu with the names.
+ */
+@Composable
+fun ChannelsSideStrip(
+    selected: Screen,
+    libraryId: UUID?,
+    libraries: List<Library>,
+    showRecorded: Boolean,
+    onSelect: (Screen) -> Unit,
+    onSelectLibrary: (UUID) -> Unit,
+) {
+    val rights = deviceRights()
+    Column(
+        Modifier
+            .width(58.dp)
+            .fillMaxHeight()
+            .verticalScroll(rememberScrollState())
+            .padding(top = 46.dp, bottom = 16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        fun on(s: Screen) = selected == s && s != Screen.Library
+        ChannelsStripIcon(MenuIcon.Home, selected = false, onFocus = {}) { onSelect(Screen.Home) }
+        if (showRecorded) ChannelsStripIcon(MenuIcon.Recorded, selected = on(Screen.RecordedShows), onFocus = {}) { onSelect(Screen.RecordedShows) }
+        if (rights.liveTv) ChannelsStripIcon(MenuIcon.LiveTv, selected = on(Screen.LiveTv), onFocus = {}) { onSelect(Screen.LiveTv) }
+        ChannelsStripIcon(MenuIcon.Guide, selected = on(Screen.Guide), onFocus = {}) { onSelect(Screen.Guide) }
+        ChannelsStripIcon(MenuIcon.Scheduled, selected = on(Screen.Scheduled), onFocus = {}) { onSelect(Screen.Scheduled) }
+        if (rights.record) ChannelsStripIcon(MenuIcon.Series, selected = on(Screen.Series), onFocus = {}) { onSelect(Screen.Series) }
+        libraries.inMenuOrder().forEach { lib -> ChannelsStripIcon(lib.menuIcon(), selected = selected == Screen.Library && libraryId == lib.id, onFocus = {}) { onSelectLibrary(lib.id) } }
+        ChannelsStripIcon(MenuIcon.Search, selected = on(Screen.Search), onFocus = {}) { onSelect(Screen.Search) }
+        ChannelsStripIcon(MenuIcon.Settings, selected = on(Screen.Settings), onFocus = {}) { onSelect(Screen.Settings) }
+    }
+}

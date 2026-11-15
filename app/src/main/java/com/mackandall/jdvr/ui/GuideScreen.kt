@@ -608,6 +608,8 @@ fun GuideScreen(
                                     val options = com.mackandall.jdvr.data.Prefs.GUIDE_HOURS
                                     Jdvr.prefs.changeGuideHours(options[(options.indexOf(Jdvr.prefs.guideHours) + 1) % options.size])
                                 }
+                                // JDVR Estuary: what the cell colours mean, and the recording dots.
+                                if (Jc.Style == UiStyle.Estuary) EstuaryLegend(channels?.size, Modifier.padding(start = 10.dp, bottom = 6.dp))
                             }
                             val list = channels
                             if (list == null) {
@@ -1250,16 +1252,54 @@ internal val ChannelsInk = Color(0xFF1D1631)
 internal val ChannelsLavender = Color(0xFFCDBDF2)
 internal val ChannelsPlate = Color(0xFF5B4694)
 
+/** JDVR Estuary's guide legend: a swatch per genre colour, then the red recording dot. */
+@Composable
+private fun EstuaryLegend(
+    channelCount: Int?,
+    modifier: Modifier,
+) {
+    Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        listOf(
+            "News" to EstuaryNews,
+            "Movies" to EstuaryMovie,
+            "Sports" to EstuarySport,
+            "Drama" to EstuaryDrama,
+            "Comedy" to EstuaryComedy,
+            "Kids" to EstuaryKids,
+            "Other" to EstuaryOther,
+        ).forEach { (name, c) ->
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                Box(Modifier.size(width = 11.dp, height = 8.dp).background(c))
+                Text(name, color = Color(0xFFDCE7EC), fontSize = 11.sp)
+            }
+        }
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+            Box(Modifier.size(7.dp).background(Jc.Recording, CircleShape))
+            Text("Will record", color = Color(0xFFDCE7EC), fontSize = 11.sp)
+        }
+        // Estuary's footer count.
+        channelCount?.let { Text("Channels: $it", color = Color.White, fontSize = 11.sp, modifier = Modifier.padding(start = 8.dp)) }
+    }
+}
+
+private val EstuaryNews = Color(0xFF2D5F86)
+private val EstuaryMovie = Color(0xFF7A4A2A)
+private val EstuarySport = Color(0xFF3D6B2E)
+private val EstuaryDrama = Color(0xFF5B3D70)
+private val EstuaryComedy = Color(0xFF6E6326)
+private val EstuaryKids = Color(0xFF2E6A6A)
+private val EstuaryOther = Color(0xFF33505C)
+
 /** JDVR Estuary: a guide cell's colour by its genre (news, movie, sport, drama, comedy, other). */
 internal fun estuaryGenreColour(p: Program): Color {
     val g = p.genres.joinToString(" ").lowercase()
     return when {
-        p.isMovie || "movie" in g || "film" in g -> Color(0xFF7A4A2A)
-        "news" in g || "weather" in g -> Color(0xFF2D5F86)
-        "sport" in g || "football" in g || "basketball" in g || "baseball" in g || "hockey" in g || "soccer" in g -> Color(0xFF3D6B2E)
-        "comedy" in g || "sitcom" in g -> Color(0xFF6E6326)
-        "drama" in g || "crime" in g || "mystery" in g || "thriller" in g || "suspense" in g -> Color(0xFF5B3D70)
-        "children" in g || "kids" in g || "animat" in g || "anime" in g -> Color(0xFF2E6A6A)
-        else -> Color(0xFF33505C)
+        p.isMovie || "movie" in g || "film" in g -> EstuaryMovie
+        "news" in g || "weather" in g -> EstuaryNews
+        "sport" in g || "football" in g || "basketball" in g || "baseball" in g || "hockey" in g || "soccer" in g -> EstuarySport
+        "comedy" in g || "sitcom" in g -> EstuaryComedy
+        "drama" in g || "crime" in g || "mystery" in g || "thriller" in g || "suspense" in g -> EstuaryDrama
+        "children" in g || "kids" in g || "animat" in g || "anime" in g -> EstuaryKids
+        else -> EstuaryOther
     }
 }
