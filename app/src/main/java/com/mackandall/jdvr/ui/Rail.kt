@@ -118,16 +118,10 @@ fun Rail(
         open = v
         prefs.changeLibrariesOpen(v)
     }
-    var signOutArmed by remember { mutableStateOf(false) }
-    LaunchedEffect(signOutArmed) {
-        if (signOutArmed) {
-            kotlinx.coroutines.delay(4000)
-            signOutArmed = false
-        }
-    }
+    val confirmSignOut = rememberConfirm<Unit>()
 
     fun signOut() {
-        if (signOutArmed) onSignOut() else signOutArmed = true
+        confirmSignOut.press { onSignOut() }
     }
     val libs = libraries.inMenuOrder()
     val icons = prefs.menuIcons
@@ -159,7 +153,7 @@ fun Rail(
             if (!icons) {
                 add(Entry("settings", Screen.Settings.label, selected == Screen.Settings, Kind.Item, divider = true, icon = MenuIcon.Settings) { onSelect(Screen.Settings) })
                 add(Entry("switch", "Switch server", false, Kind.Item, icon = MenuIcon.Server) { onSwitchServer() })
-                add(Entry("signout", if (signOutArmed) "Press again to sign out" else "Sign out", false, Kind.Item, icon = MenuIcon.Profile) { signOut() })
+                add(Entry("signout", if (confirmSignOut.isArmed) "Press again to sign out" else "Sign out", false, Kind.Item, icon = MenuIcon.Profile) { signOut() })
                 add(Entry("exit", "Exit", false, Kind.Item, icon = MenuIcon.Exit, click = onExit))
             }
         }
@@ -323,11 +317,11 @@ fun Rail(
                     when (focusedKey) {
                         "gear" -> "Settings"
                         "server" -> "Switch server"
-                        "user" -> if (signOutArmed) "Press again to sign out" else "Sign out"
+                        "user" -> if (confirmSignOut.isArmed) "Press again to sign out" else "Sign out"
                         "power" -> "Exit JDVR"
                         else -> ""
                     },
-                    color = if (focusedKey == "user" && signOutArmed) Jc.Recording else Jc.Text,
+                    color = if (focusedKey == "user" && confirmSignOut.isArmed) Jc.Recording else Jc.Text,
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 15.sp,
                     maxLines = 1,
@@ -377,7 +371,7 @@ fun Rail(
                                 up = last
                                 down = FocusRequester.Cancel
                             }.onFocusChanged {
-                                if (it.isFocused) focusedKey = "user" else signOutArmed = false
+                                if (it.isFocused) focusedKey = "user" else confirmSignOut.disarm()
                             },
                         onClick = ::signOut,
                     )

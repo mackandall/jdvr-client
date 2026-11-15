@@ -704,24 +704,13 @@ private fun MenuSettings(libraries: List<Library>) {
                 ) { prefs.changeMenuIconSize(it) }
             }
         }
-        var armed by remember { mutableStateOf(false) }
-        androidx.compose.runtime.LaunchedEffect(armed) {
-            if (armed) {
-                kotlinx.coroutines.delay(4000)
-                armed = false
-            }
-        }
+        val confirmClear = rememberConfirm<Unit>()
         Choice(
             label = "Reset the menu",
             help = "The standard order, with every entry and library shown.",
-            value = if (armed) "Press again to reset" else "Reset",
+            value = if (confirmClear.isArmed) "Press again to reset" else "Reset",
         ) {
-            if (armed) {
-                prefs.resetMenu()
-                armed = false
-            } else {
-                armed = true
-            }
+            confirmClear.press { prefs.resetMenu() }
         }
     }
 }

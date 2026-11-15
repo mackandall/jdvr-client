@@ -133,18 +133,9 @@ fun TrashScreen(entry: FocusRequester) {
 
             else -> {
                 if (t.canEmpty) {
-                    var armed by remember { mutableStateOf(false) }
-                    LaunchedEffect(armed) {
-                        if (armed) {
-                            delay(4000)
-                            armed = false
-                        }
-                    }
-                    Button(if (armed) "Press again: delete all ${t.items.size} for good (${gb(t.bytes)})" else "Empty the trash", leading = { TrashMark() }) {
-                        if (!armed) {
-                            armed = true
-                        } else {
-                            armed = false
+                    val confirmEmpty = rememberConfirm<Unit>()
+                    Button(if (confirmEmpty.isArmed) "Press again: delete all ${t.items.size} for good (${gb(t.bytes)})" else "Empty the trash", leading = { TrashMark() }) {
+                        confirmEmpty.press {
                             scope.launch {
                                 val n = attempt { Jdvr.backend.emptyTrash() }
                                 note = if (n == null) "Couldn't empty it." else "Deleted $n for good."
@@ -233,21 +224,15 @@ private fun TrashRow(
             }
         }
         if (expanded) {
-            var armed by remember(e.id) { mutableStateOf(false) }
+            val confirmDelete = rememberConfirm<Unit>(e.id)
             // Opening a row puts the remote on its first button, not wherever Down would land.
             val first = remember { FocusRequester() }
             LaunchedEffect(Unit) { first.tryFocus() }
-            LaunchedEffect(armed) {
-                if (armed) {
-                    delay(4000)
-                    armed = false
-                }
-            }
             Row(Modifier.padding(start = 14.dp, top = 6.dp, bottom = 6.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 if (canRestore) Button("Restore", leading = { Text("↩", color = Jc.Text) }, modifier = Modifier.focusRequester(first), onClick = onRestore)
                 if (canDelete) {
-                    Button(if (armed) "Press again: delete for good" else "Delete now", leading = { TrashMark() }, modifier = if (canRestore) Modifier else Modifier.focusRequester(first)) {
-                        if (!armed) armed = true else onDelete()
+                    Button(if (confirmDelete.isArmed) "Press again: delete for good" else "Delete now", leading = { TrashMark() }, modifier = if (canRestore) Modifier else Modifier.focusRequester(first)) {
+                        confirmDelete.press { onDelete() }
                     }
                 }
                 Button("Keep it in the trash", modifier = if (canRestore || canDelete) Modifier else Modifier.focusRequester(first), onClick = onToggle)

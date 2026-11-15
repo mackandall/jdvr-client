@@ -74,22 +74,14 @@ fun LoginScreen(
     var server by remember { mutableStateOf(if (onCancel != null || Jdvr.session.otherBackend) "" else Jdvr.session.serverUrl ?: "") }
     // Servers signed in to before: one press goes back to one (not the one in use).
     var saved by remember { mutableStateOf(Jdvr.servers.filter { it.backend == "jellyfin" }.filterNot { onCancel != null && Jdvr.isCurrent(it) }) }
-    var forgetArmed by remember { mutableStateOf<SavedServer?>(null) }
+    val confirmForget = rememberConfirm<SavedServer>()
     // Addresses typed or picked before (signed in to or not): one press fills the address in. Not
     // the ones on the list above, nor the server in use when switching.
     var recent by remember {
         mutableStateOf(Jdvr.recentAddresses.filter { r -> saved.none { it.url == r.url } && !(onCancel != null && r.url == Jdvr.session.serverUrl) })
     }
-    var removeArmed by remember { mutableStateOf<RecentAddress?>(null) }
-    var clearArmed by remember { mutableStateOf(false) }
-    LaunchedEffect(forgetArmed, removeArmed, clearArmed) {
-        if (forgetArmed != null || removeArmed != null || clearArmed) {
-            delay(4000)
-            forgetArmed = null
-            removeArmed = null
-            clearArmed = false
-        }
-    }
+    val confirmRemove = rememberConfirm<RecentAddress>()
+    val confirmClear = rememberConfirm<Unit>()
     if (onCancel != null) androidx.activity.compose.BackHandler { onCancel() }
 
     // Found on the network and not already on the list (nor the server in use, when switching).
@@ -247,13 +239,10 @@ fun LoginScreen(
                                 server = s.url
                             }
                         }
-                        Button(if (forgetArmed == s) "Press again to forget" else "Forget") {
-                            if (forgetArmed == s) {
+                        Button(if (confirmForget.armed == s) "Press again to forget" else "Forget") {
+                            confirmForget.press(s) {
                                 Jdvr.forget(s)
                                 saved = saved - s
-                                forgetArmed = null
-                            } else {
-                                forgetArmed = s
                             }
                         }
                     }
@@ -271,28 +260,22 @@ fun LoginScreen(
                         Button(label, primary = saved.isEmpty() && first, modifier = if (first) Modifier.focusRequester(firstRecent) else Modifier) {
                             server = r.url
                         }
-                        Button(if (removeArmed == r) "Press again to remove" else "Remove") {
-                            if (removeArmed == r) {
+                        Button(if (confirmRemove.armed == r) "Press again to remove" else "Remove") {
+                            confirmRemove.press(r) {
                                 Jdvr.forgetAddress(r.url)
                                 recent = recent - r
                                 if (server == r.url) server = ""
-                                removeArmed = null
-                            } else {
-                                removeArmed = r
                             }
                         }
                     }
                 }
                 if (recent.size > 1) {
-                    Button(if (clearArmed) "Press again to clear all ${recent.size}" else "Clear recent addresses") {
-                        if (clearArmed) {
+                    Button(if (confirmClear.isArmed) "Press again to clear all ${recent.size}" else "Clear recent addresses") {
+                        confirmClear.press {
                             // Only the ones shown: the server in use and the signed-in ones keep theirs.
                             recent.forEach { Jdvr.forgetAddress(it.url) }
                             if (recent.any { it.url == server }) server = ""
                             recent = emptyList()
-                            clearArmed = false
-                        } else {
-                            clearArmed = true
                         }
                     }
                 }

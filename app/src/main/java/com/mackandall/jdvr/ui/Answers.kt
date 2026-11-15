@@ -20,7 +20,8 @@ internal class Ask<T>(
  * The server's answers, kept a few minutes and fetched ahead: resting on a recording (or a show)
  * asks what its details page and its menu need, so they open complete. A screen shows what's kept
  * straight away and still asks again, updating if anything changed (the same as the programme
- * menu's [PanelCache]). Asking for something already on its way waits for that answer.
+ * menu, whose question is [ProgramAsk]). Asking for something already on its way waits for that
+ * answer.
  */
 internal object Answers {
     private const val FRESH_MS = 3 * 60_000L

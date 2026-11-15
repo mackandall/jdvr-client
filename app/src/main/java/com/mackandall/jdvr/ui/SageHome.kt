@@ -102,13 +102,7 @@ fun SageHome(
     val drive = data.extras?.drive
     var now by remember { mutableStateOf(LocalDateTime.now()) }
     var picking by remember { mutableStateOf(false) }
-    var signOutArmed by remember { mutableStateOf(false) }
-    LaunchedEffect(signOutArmed) {
-        if (signOutArmed) {
-            delay(4000)
-            signOutArmed = false
-        }
-    }
+    val confirmSignOut = rememberConfirm<Unit>()
     LaunchedEffect(Unit) {
         while (true) {
             now = LocalDateTime.now()
@@ -211,7 +205,7 @@ fun SageHome(
                         "Settings" to { onOpenScreen(Screen.Settings) },
                         "Menu order" to { onOpenMenuSettings() },
                         "Switch server" to { onSwitchServer() },
-                        (if (signOutArmed) "Press again to sign out" else "Sign out") to { if (signOutArmed) onSignOut() else signOutArmed = true },
+                        (if (confirmSignOut.isArmed) "Press again to sign out" else "Sign out") to { confirmSignOut.press { onSignOut() } },
                         "Exit" to { onExit() },
                     ),
                 ),
