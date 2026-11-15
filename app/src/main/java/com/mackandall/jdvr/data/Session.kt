@@ -87,7 +87,7 @@ class Session(
             .edit()
             .apply {
                 prefs.all.keys
-                    .filter { it != "servers" }
+                    .filter { it != "servers" && it != "recentAddresses" }
                     .forEach { remove(it) }
             }.apply()
 
@@ -133,6 +133,25 @@ class Session(
             prefs.edit().putString("servers", arr.toString()).apply()
         }
 
+    /**
+     * Addresses that answered as a Jellyfin server, most recent first: picked again with one press,
+     * signed in to or not (and kept after signing out).
+     */
+    var recentAddresses: List<RecentAddress>
+        get() =
+            runCatching {
+                val arr = org.json.JSONArray(prefs.getString("recentAddresses", "[]"))
+                (0 until arr.length()).map { i ->
+                    val o = arr.getJSONObject(i)
+                    RecentAddress(o.getString("url"), o.optString("name").ifEmpty { o.getString("url") })
+                }
+            }.getOrDefault(emptyList())
+        set(v) {
+            val arr = org.json.JSONArray()
+            v.forEach { arr.put(org.json.JSONObject().put("url", it.url).put("name", it.name)) }
+            prefs.edit().putString("recentAddresses", arr.toString()).apply()
+        }
+
     fun restoreChannels(s: SavedServer) {
         prefs
             .edit()
@@ -141,6 +160,12 @@ class Session(
             .apply()
     }
 }
+
+/** An address that answered as a Jellyfin server (see [Session.recentAddresses]). */
+data class RecentAddress(
+    val url: String,
+    val name: String,
+)
 
 /** A server signed in to before (see [Session.servers]); token null: it asks to sign in again. */
 data class SavedServer(

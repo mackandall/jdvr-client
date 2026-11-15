@@ -42,6 +42,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.tv.material3.Text
 import com.mackandall.jdvr.data.Jdvr
+import com.mackandall.jdvr.data.RecentAddress
 import com.mackandall.jdvr.data.SavedServer
 import com.mackandall.jdvr.data.attemptQuietly
 import kotlinx.coroutines.CancellationException
@@ -74,16 +75,25 @@ fun LoginScreen(
     // Servers signed in to before: one press goes back to one (not the one in use).
     var saved by remember { mutableStateOf(Jdvr.servers.filter { it.backend == "jellyfin" }.filterNot { onCancel != null && Jdvr.isCurrent(it) }) }
     var forgetArmed by remember { mutableStateOf<SavedServer?>(null) }
-    LaunchedEffect(forgetArmed) {
-        if (forgetArmed != null) {
+    // Addresses typed or picked before (signed in to or not): one press fills the address in. Not
+    // the ones on the list above, nor the server in use when switching.
+    var recent by remember {
+        mutableStateOf(Jdvr.recentAddresses.filter { r -> saved.none { it.url == r.url } && !(onCancel != null && r.url == Jdvr.session.serverUrl) })
+    }
+    var removeArmed by remember { mutableStateOf<RecentAddress?>(null) }
+    var clearArmed by remember { mutableStateOf(false) }
+    LaunchedEffect(forgetArmed, removeArmed, clearArmed) {
+        if (forgetArmed != null || removeArmed != null || clearArmed) {
             delay(4000)
             forgetArmed = null
+            removeArmed = null
+            clearArmed = false
         }
     }
     if (onCancel != null) androidx.activity.compose.BackHandler { onCancel() }
 
     // Found on the network and not already on the list (nor the server in use, when switching).
-    fun FoundServer.isNew() = saved.none { it.url == address } && !(onCancel != null && address == Jdvr.session.serverUrl)
+    fun FoundServer.isNew() = saved.none { it.url == address } && recent.none { it.url == address } && !(onCancel != null && address == Jdvr.session.serverUrl)
     // Servers that answered on the network.
     var found by remember { mutableStateOf<List<FoundServer>>(emptyList()) }
     var searching by remember { mutableStateOf(false) }
@@ -158,6 +168,8 @@ fun LoginScreen(
                 }
             if (serverName != null) {
                 base = c
+                // Kept for next time (the list on screen stays as it is).
+                Jdvr.rememberAddress(c, serverName!!)
                 break
             }
         }
@@ -246,6 +258,46 @@ fun LoginScreen(
                         }
                     }
                 }
+            }
+            if (recent.isNotEmpty()) {
+                // With no signed-in servers listed, the first recent address has focus from the start.
+                val firstRecent = remember { FocusRequester() }
+                if (saved.isEmpty()) LaunchedEffect(Unit) { firstRecent.focusSoon() }
+                Text("Recent addresses", color = Jc.Muted, fontSize = 14.sp, modifier = Modifier.padding(top = if (saved.isEmpty()) 0.dp else 8.dp))
+                recent.forEach { r ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        val first = recent.first() == r
+                        val label = if (r.name == r.url) r.url else "${r.name} · ${r.url.substringAfter("://")}"
+                        Button(label, primary = saved.isEmpty() && first, modifier = if (first) Modifier.focusRequester(firstRecent) else Modifier) {
+                            server = r.url
+                        }
+                        Button(if (removeArmed == r) "Press again to remove" else "Remove") {
+                            if (removeArmed == r) {
+                                Jdvr.forgetAddress(r.url)
+                                recent = recent - r
+                                if (server == r.url) server = ""
+                                removeArmed = null
+                            } else {
+                                removeArmed = r
+                            }
+                        }
+                    }
+                }
+                if (recent.size > 1) {
+                    Button(if (clearArmed) "Press again to clear all ${recent.size}" else "Clear recent addresses") {
+                        if (clearArmed) {
+                            // Only the ones shown: the server in use and the signed-in ones keep theirs.
+                            recent.forEach { Jdvr.forgetAddress(it.url) }
+                            if (recent.any { it.url == server }) server = ""
+                            recent = emptyList()
+                            clearArmed = false
+                        } else {
+                            clearArmed = true
+                        }
+                    }
+                }
+            }
+            if (saved.isNotEmpty() || recent.isNotEmpty()) {
                 Text("Or another server:", color = Jc.Muted, fontSize = 14.sp, modifier = Modifier.padding(top = 8.dp))
             }
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Bottom) {
@@ -292,7 +344,7 @@ fun LoginScreen(
                         found.isEmpty() -> "No server found on the network. Type its address."
 
                         // Switching, with only the server in use answering.
-                        others.isEmpty() && saved.isEmpty() -> "No other server found on the network. Type its address."
+                        others.isEmpty() && saved.isEmpty() && recent.isEmpty() -> "No other server found on the network. Type its address."
 
                         else -> "Pick a server, or type its address."
                     },
