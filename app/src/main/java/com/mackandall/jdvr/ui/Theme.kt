@@ -84,7 +84,20 @@ enum class UiStyle {
     // After NextPVR's own client: black glass on a deep blue glow, a white-to-pale-blue selection,
     // a dark menu bar with a green edge, green guide selection. Home stays the tiles.
     NextPvr,
+
+    // After Kodi/Emby's Embuary: navy glass over fanart, a thin top bar, landscape card rows with a
+    // white focus frame and green progress. Home is its own (card rows); the slide-out menu stays.
+    Embuary,
+
+    // After Channels DVR: deep purple, an icon strip down the left, lavender guide channels.
+    Channels,
+
+    // After Kodi's Estuary: teal gradient, a left menu panel on Home, genre-coloured guide cells.
+    Estuary,
 }
+
+/** The look-alike themes that draw their own Home (and keep the slide-out menu). */
+val UiStyle.ownHome get() = this == UiStyle.Embuary || this == UiStyle.Channels || this == UiStyle.Estuary
 
 /** The themes whose Home is their main menu (no slide-out menu). */
 val UiStyle.menuHome get() = this == UiStyle.Sage || this == UiStyle.Gem
@@ -331,6 +344,64 @@ val Palettes =
             style = UiStyle.NextPvr,
             title = Color(0xFFFFF04A),
         ),
+        // After Embuary (Kodi/Emby skin): navy glass, white focus frames, green accents.
+        Palette(
+            "jdvrembuary",
+            "JDVR Embuary",
+            ink = Color(0xFF0B1A33),
+            rail = Color(0xFF061022).copy(alpha = 0.95f),
+            panel = Color(0xFF0E2A52).copy(alpha = 0.78f),
+            panel2 = Color(0xFF1C355C),
+            line = Color(0xFF2E4A78),
+            text = Color.White,
+            muted = Color(0xFFA9B8CC),
+            focus = Color(0xFF3FAE49),
+            focusFill = Color(0xFF2A4A78),
+            onFocus = Color.White,
+            recording = Color(0xFFE0443A),
+            green = Color(0xFF3FAE49),
+            button = Color.White.copy(alpha = 0.14f),
+            sheet = Color(0xFF0C2244),
+            style = UiStyle.Embuary,
+        ),
+        // After Channels DVR: deep purple, lavender channels, a purple-white focus.
+        Palette(
+            "channelsjdvr",
+            "Channels JDVR",
+            ink = Color(0xFF1D1631),
+            rail = Color(0xFF17112A),
+            panel = Color(0xFF2A2045),
+            panel2 = Color(0xFF3B2B63),
+            line = Color(0xFF4A3A78),
+            text = Color.White,
+            muted = Color(0xFFA99CC8),
+            focus = Color(0xFFA77BFF),
+            focusFill = Color(0xFF4A2F84),
+            onFocus = Color.White,
+            recording = Color(0xFFFF5A4F),
+            gold = Color(0xFFE8E85A),
+            sheet = Color(0xFF241B3D),
+            style = UiStyle.Channels,
+        ),
+        // After Kodi's Estuary: teal gradient, black-glass panels, cyan selection.
+        Palette(
+            "jdvrestuary",
+            "JDVR Estuary",
+            ink = Color(0xFF0A2B3C),
+            rail = Color(0xFF041722).copy(alpha = 0.96f),
+            panel = Color.Black.copy(alpha = 0.32f),
+            panel2 = Color(0xFF16485F),
+            line = Color(0xFF2A6580),
+            text = Color.White,
+            muted = Color(0xFFB7CAD4),
+            focus = Color(0xFF12A0C7),
+            focusFill = Color(0xFF12A0C7),
+            onFocus = Color.White,
+            recording = Color(0xFFFF4A3D),
+            green = Color(0xFF47D16C),
+            sheet = Color(0xFF0B3245),
+            style = UiStyle.Estuary,
+        ),
         // Light, after Emby's Apple TV theme: frosted panels on a soft wash, slate tiles, white focus.
         Palette(
             "ode",
@@ -477,6 +548,27 @@ fun Modifier.screenBackground(): Modifier =
                     radius = size.width * 0.8f,
                 ),
             )
+            return@drawBehind
+        }
+        if (Jc.Style == UiStyle.Embuary) {
+            // Navy glass over a soft, blurred-looking glow (Embuary's fanart behind its glass).
+            drawRect(Color(0xFF0B1A33))
+            drawRect(Brush.radialGradient(listOf(Color(0x73967AAA), Color(0x00967AAA)), center = Offset(size.width * 0.5f, size.height * 0.72f), radius = size.width * 0.38f))
+            drawRect(Brush.radialGradient(listOf(Color(0x595A82AA), Color(0x005A82AA)), center = Offset(size.width * 0.77f, size.height * 0.42f), radius = size.width * 0.28f))
+            drawRect(Brush.verticalGradient(listOf(Color(0xEB0A1E3E), Color(0xCC0E264A), Color(0x9E282850))))
+            return@drawBehind
+        }
+        if (Jc.Style == UiStyle.Estuary) {
+            // Estuary's teal diagonal, with its faint band of light.
+            drawRect(Brush.linearGradient(listOf(Color(0xFF10425A), Color(0xFF0A2B3C), Color(0xFF051923)), start = Offset.Zero, end = Offset(size.width, size.height)))
+            val band = androidx.compose.ui.graphics.Path().apply {
+                moveTo(size.width * 0.55f, 0f)
+                lineTo(size.width * 0.78f, 0f)
+                lineTo(size.width * 0.58f, size.height)
+                lineTo(size.width * 0.35f, size.height)
+                close()
+            }
+            drawPath(band, Color.White.copy(alpha = 0.035f))
             return@drawBehind
         }
         if (!Jc.Light || !Jc.palette.wash) {

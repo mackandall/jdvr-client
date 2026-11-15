@@ -250,8 +250,9 @@ internal fun ThemeGallery(onDismiss: () -> Unit) {
     }
     val groups =
         listOf(
-            "Dark" to Palettes.filter { !it.light && !it.style.menuHome },
+            "Dark" to Palettes.filter { !it.light && !it.style.menuHome && !it.style.ownHome },
             "Light" to Palettes.filter { it.light },
+            "After other apps · their own Home" to Palettes.filter { it.style.ownHome },
             "SageTV · Home becomes their menu" to Palettes.filter { it.style.menuHome },
         )
     Dialog(onDismissRequest = { cancel() }, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
@@ -371,6 +372,12 @@ private fun ThemeSample(p: Palette) {
                 }
                 if (p.style == UiStyle.NextPvr) {
                     drawRect(Brush.radialGradient(listOf(Color(0xFF0D3A78), Color(0xFF061C45), Color(0xFF020A1C)), center = Offset(size.width * 0.3f, size.height * 0.2f), radius = size.width))
+                }
+                if (p.style == UiStyle.Embuary) {
+                    drawRect(Brush.verticalGradient(listOf(Color(0xFF0A1E3E), Color(0xFF1E2A55), Color(0xFF3A3360))))
+                }
+                if (p.style == UiStyle.Estuary) {
+                    drawRect(Brush.linearGradient(listOf(Color(0xFF10425A), Color(0xFF0A2B3C), Color(0xFF051923)), start = Offset.Zero, end = Offset(size.width, size.height)))
                 }
             },
     ) {

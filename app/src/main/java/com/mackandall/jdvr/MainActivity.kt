@@ -45,6 +45,7 @@ import com.mackandall.jdvr.ui.ScheduledScreen
 import com.mackandall.jdvr.ui.SeriesScreen
 import com.mackandall.jdvr.ui.SettingsScreen
 import com.mackandall.jdvr.ui.menuHome
+import com.mackandall.jdvr.ui.ownHome
 import com.mackandall.jdvr.ui.screenBackground
 import com.mackandall.jdvr.ui.tryFocus
 import kotlinx.coroutines.delay
@@ -332,6 +333,17 @@ fun AppRoot(
                                 },
                                 onSwitchServer = onSwitchServer,
                                 onExit = { backActivity?.finish() },
+                            )
+                        } else if (Jc.Style.ownHome) {
+                            // Embuary, Channels and Estuary look-alikes: Home laid out as theirs.
+                            com.mackandall.jdvr.ui.LookalikeHome(
+                                entry = entry,
+                                libraries = shownLibraries,
+                                showRecorded = hasDvr,
+                                onPlayRecording = { playingRecording = it },
+                                onOpenScreen = { goTo(Place(it)) },
+                                onOpenShow = { goTo(Place(Screen.RecordedShows, openShow = it)) },
+                                onOpenLibrary = { goTo(Place(Screen.Library, libraryId = it)) },
                             )
                         } else {
                             HomeScreen(

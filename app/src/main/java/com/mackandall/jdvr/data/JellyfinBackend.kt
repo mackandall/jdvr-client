@@ -738,6 +738,18 @@ class JellyfinBackend private constructor(
             }
         }
 
+    override suspend fun resumeItems(limit: Int): List<LibItem>? =
+        attempt {
+            io {
+                api.itemsApi
+                    .getResumeItems(userId = Jdvr.userId, limit = limit, mediaTypes = listOf(org.jellyfin.sdk.model.api.MediaType.VIDEO), fields = listOf(ItemFields.TAGS))
+                    .content
+                    .items
+                    .filterNot { it.isLiveBuffer() }
+                    .map(::toLibItem)
+            }
+        }
+
     override suspend fun setPlayed(
         id: UUID,
         played: Boolean,

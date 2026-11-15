@@ -131,6 +131,9 @@ interface TvBackend :
         limit: Int = 16,
     ): List<LibItem>?
 
+    /** Jellyfin's "continue watching": started, unfinished items, most recent first. */
+    suspend fun resumeItems(limit: Int = 12): List<LibItem>?
+
     suspend fun setPlayed(
         id: UUID,
         played: Boolean,
