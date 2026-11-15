@@ -37,7 +37,6 @@ import com.mackandall.jdvr.data.Airing
 import com.mackandall.jdvr.data.AiringsResult
 import com.mackandall.jdvr.data.DateChannel
 import com.mackandall.jdvr.data.Jdvr
-import com.mackandall.jdvr.data.RerecordState
 import com.mackandall.jdvr.data.attempt
 import com.mackandall.jdvr.data.attemptResult
 import com.mackandall.jdvr.data.toUuid
@@ -290,13 +289,13 @@ fun RerecordButtons(
     itemId: UUID,
     onNote: (String) -> Unit,
 ) {
-    var state by remember(itemId) { mutableStateOf<RerecordState?>(null) }
+    var state by remember(itemId) { mutableStateOf(Answers.peek(ItemAsk.rerecord(itemId))) }
     var check by remember(itemId) { mutableIntStateOf(0) }
     var dialog by remember(itemId) { mutableStateOf<Boolean?>(null) }
     var armedCancel by remember(itemId) { mutableStateOf(false) }
     val rights = deviceRights()
     val scope = rememberCoroutineScope()
-    LaunchedEffect(itemId, check) { state = attempt { Jdvr.backend.rerecordState(itemId) } }
+    LaunchedEffect(itemId, check) { state = Answers.get(ItemAsk.rerecord(itemId)) }
     LaunchedEffect(armedCancel) {
         if (armedCancel) {
             delay(4000)

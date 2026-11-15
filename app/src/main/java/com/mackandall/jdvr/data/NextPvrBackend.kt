@@ -1559,6 +1559,9 @@ class NextPvrBackend(
 
     override suspend fun recentlyAdded(limit: Int): List<RecordingCard>? = null
 
+    // No resume list from NextPVR yet: the look-alike themes' Home leaves out Continue watching.
+    override suspend fun resumeItems(limit: Int): List<LibItem>? = null
+
     override suspend fun segments(itemId: UUID): List<Segment> = edl(itemId).orEmpty()
 
     override suspend fun buffers(channelId: UUID): List<Buffer> = emptyList()

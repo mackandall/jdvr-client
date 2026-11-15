@@ -4,6 +4,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -14,6 +15,8 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -37,6 +40,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.layout
@@ -80,23 +84,16 @@ fun DetailsPage(
     onPlay: (PlayRecording) -> Unit,
     actions: @Composable RowScope.(ItemDetails, (String) -> Unit) -> Unit = { _, _ -> },
 ) {
-    var d by remember { mutableStateOf<ItemDetails?>(null) }
+    // What was fetched ahead (focus resting on it) shows at once; it's asked again to update.
+    var d by remember(itemId) { mutableStateOf(Answers.peek(ItemAsk.details(itemId))) }
     var note by remember { mutableStateOf<String?>(null) }
-    var commercials by remember { mutableStateOf<CommercialBadge?>(null) }
-    LaunchedEffect(itemId, refresh, CommercialMarks.changed) {
-        commercials =
-            attempt {
-                Jdvr.backend
-                    .commercialBadges(listOf(itemId))
-                    .values
-                    .firstOrNull()
-            }
-    }
+    var commercials by remember(itemId) { mutableStateOf(Answers.peek(ItemAsk.badge(itemId))) }
+    LaunchedEffect(itemId, refresh, CommercialMarks.changed) { commercials = Answers.get(ItemAsk.badge(itemId)) }
     // Where this recording's show is stored, for "→ moves to …" under Stored.
     val rights = deviceRights()
-    var storage by remember { mutableStateOf<com.mackandall.jdvr.data.ShowStorage?>(null) }
+    var storage by remember(itemId) { mutableStateOf(Answers.peek(ItemAsk.storage(itemId))) }
     LaunchedEffect(itemId, refresh, rights.archive) {
-        storage = if (rights.archive) attempt { Jdvr.backend.showStorage(itemId) } else null
+        storage = if (rights.archive) Answers.get(ItemAsk.storage(itemId)) else null
     }
     LaunchedEffect(note) {
         if (note != null) {
@@ -108,7 +105,9 @@ fun DetailsPage(
     val scope = rememberCoroutineScope()
     val play = remember { FocusRequester() }
     LaunchedEffect(itemId, refresh) {
-        attemptResult { Jdvr.backend.details(itemId) }.onSuccess { d = it }.onFailure { error = it.message }
+        Answers.get(ItemAsk.details(itemId))?.let { d = it }
+            // Couldn't: ask once more, for what went wrong.
+            ?: attemptResult { Jdvr.backend.details(itemId) }.onSuccess { d = it }.onFailure { if (d == null) error = it.message }
     }
     LaunchedEffect(d != null) { if (d != null) play.tryFocus() }
 
@@ -127,6 +126,26 @@ fun DetailsPage(
             return@Box
         }
         val item = det.item
+        // JDVR Embuary: its own details page (poster, title, Resume, chips, the season's episodes).
+        if (Jc.Style == UiStyle.Embuary) {
+            Backdrop(det.backdropOf?.let { Jdvr.backend.backdropUrl(it) }, Jdvr.backend.imageUrl(item.id, 720), strength = 0.92f)
+            EmbuaryDetails(
+                det = det,
+                commercials = commercials,
+                note = note,
+                play = play,
+                people = people,
+                onPlay = onPlay,
+                onToggleWatched = {
+                    scope.launch {
+                        attempt { Jdvr.backend.setPlayed(item.id, !item.played) }
+                        attempt { d = Jdvr.backend.details(item.id) }
+                    }
+                },
+                actions = { actions(det) { note = it } },
+            )
+            return@Box
+        }
         // The backdrop at the top right, behind the text's right side; none: the poster, blurred.
         Backdrop(det.backdropOf?.let { Jdvr.backend.backdropUrl(it) }, Jdvr.backend.imageUrl(item.id, 720), strength = 0.85f)
 
@@ -289,5 +308,219 @@ private fun CastCard(
             Text(p.name, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
             p.role?.let { Text(it, color = Jc.Muted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
         }
+    }
+}
+
+/**
+ * JDVR Embuary's details page, after the Embuary skin: a thin top bar, the poster at the left,
+ * title and episode, a meta line with the rating boxed, a green Resume, the genres in green, the
+ * description, chips for what's in the file, then the season's episodes and the cast.
+ */
+@Composable
+private fun EmbuaryDetails(
+    det: ItemDetails,
+    commercials: CommercialBadge?,
+    note: String?,
+    play: FocusRequester,
+    people: PersonReturn,
+    onPlay: (PlayRecording) -> Unit,
+    onToggleWatched: () -> Unit,
+    actions: @Composable RowScope.() -> Unit,
+) {
+    val item = det.item
+    val accent = Jc.Green
+    var now by remember { mutableStateOf(java.time.LocalDateTime.now()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            now = java.time.LocalDateTime.now()
+            kotlinx.coroutines.delay(5_000)
+        }
+    }
+    // The rest of the season (or the show, without seasons), for the Episodes row.
+    fun ofSeason(all: List<com.mackandall.jdvr.data.LibItem>?) = all.orEmpty().filter { item.season == null || it.season == item.season }
+    var episodes by remember(item.id) { mutableStateOf(item.seriesId?.takeIf { item.type == "Episode" }?.let { ofSeason(Answers.peek(ItemAsk.seriesEpisodes(it))) }.orEmpty()) }
+    LaunchedEffect(item.id, item.played, item.resumeMs) {
+        val series = item.seriesId
+        if (item.type == "Episode" && series != null) {
+            episodes = ofSeason(Answers.get(ItemAsk.seriesEpisodes(series)))
+        }
+    }
+    val scroll = rememberScrollState()
+    val scope = rememberCoroutineScope()
+    Column(Modifier.fillMaxSize()) {
+        // The top bar.
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text("‹", color = Color.White, fontSize = 16.sp)
+            Text(if (item.type == "Movie") "Movie details" else "Recording details", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+            Box(Modifier.weight(1f))
+            Text(now.time(), color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+        }
+        @OptIn(ExperimentalFoundationApi::class)
+        CompositionLocalProvider(LocalBringIntoViewSpec provides MinimalScroll) {
+            Column(Modifier.fillMaxSize().verticalScroll(scroll).padding(start = 22.dp, end = 22.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(Modifier.onFocusChanged { if (it.hasFocus) scope.launch { scroll.animateScrollTo(0) } }, horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+                    AsyncImage(
+                        model = Jdvr.backend.imageUrl(item.seriesId ?: item.id, 480),
+                        contentDescription = item.seriesName ?: item.name,
+                        contentScale = ContentScale.Crop,
+                        modifier =
+                            Modifier
+                                .width(150.dp)
+                                .aspectRatio(2f / 3f)
+                                .background(Color(0xFF1C2A44)),
+                    )
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                        Row(verticalAlignment = Alignment.Top) {
+                            Column(Modifier.weight(1f)) {
+                                Text(item.name, color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                if (item.seriesName != null && item.type == "Episode") {
+                                    Text(listOfNotNull(item.seriesName, item.seasonEpisode).joinToString(" · "), color = Color(0xFFCFD8E6), fontSize = 14.sp)
+                                }
+                            }
+                            // Where Embuary shows the show's clear logo: its name in spaced capitals.
+                            item.seriesName?.takeIf { item.type == "Episode" }?.let {
+                                Text(
+                                    it.uppercase(),
+                                    color = Color(0xFFF0D7A8),
+                                    fontSize = 20.sp,
+                                    letterSpacing = 3.sp,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis,
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.End,
+                                    modifier = Modifier.width(220.dp).padding(start = 12.dp),
+                                )
+                            }
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            (det.premiere?.year ?: item.year)?.let { Text(it.toString(), color = Color.White, fontSize = 13.sp) }
+                            item.runtimeMin?.let { Text(length(it), color = Color.White, fontSize = 13.sp) }
+                            item.officialRating?.let { EmbuaryBox(it) }
+                            if (det.subtitles.isNotEmpty()) EmbuaryBox("CC")
+                            det.communityRating?.let { Text("★ %.1f".format(it), color = Jc.Gold, fontSize = 13.sp) }
+                            item.runtimeMin?.let { min ->
+                                val left = (min * 60_000L - (if (item.played) 0L else item.resumeMs)).coerceAtLeast(0L)
+                                Text("Ends at " + now.plusSeconds(left / 1000).time(), color = Color.White, fontSize = 13.sp)
+                            }
+                            if (item.played) Text("✓ watched", color = accent, fontSize = 13.sp)
+                        }
+                        @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+                        androidx.compose.foundation.layout.FlowRow(Modifier.padding(top = 2.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            val resume = item.resumeMs > 0 && !item.played
+                            Button(if (resume) "Resume from ${length(item.resumeMs / 60_000)}" else "Play", primary = true, compact = true, modifier = Modifier.focusRequester(play)) { onPlay(PlayRecording(item.id)) }
+                            if (resume) Button("Play from start", compact = true) { onPlay(PlayRecording(item.id, startMs = 0L)) }
+                            Button(if (item.played) "Mark unwatched" else "Mark watched", compact = true, onClick = onToggleWatched)
+                            CompositionLocalProvider(LocalCompactButtons provides true) { actions() }
+                        }
+                        note?.let { Text(it, color = accent, fontSize = 13.sp) }
+                        val line =
+                            listOfNotNull(
+                                // Guide data tags recordings "Episode" / "Series" / "Movie" as genres: not genres.
+                                det.genres.filterNot { it.lowercase() in setOf("episode", "series", "movie", "show") }.takeIf { it.isNotEmpty() }?.let { "Genre: " + it.take(3).joinToString(" / ") },
+                                det.studios.firstOrNull()?.let { "Studio: $it" },
+                            ).joinToString("    ")
+                        if (line.isNotEmpty()) Text(line, color = accent, fontSize = 13.sp)
+                        item.overview?.let { Text(it, color = Color(0xFFE6ECF5), fontSize = 13.sp, maxLines = 4, overflow = TextOverflow.Ellipsis, lineHeight = 19.sp) }
+                        @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+                        androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            det.video?.let { EmbuaryChip(it) }
+                            det.audio.firstOrNull()?.let { EmbuaryChip(it) }
+                            commercials?.let { EmbuaryChip(it.label) }
+                            det.recordedAt?.let { EmbuaryChip("Recorded " + it.format(DateTimeFormatter.ofPattern("MM/dd"))) }
+                            det.location?.let { EmbuaryChip(it) }
+                            det.file?.let { EmbuaryChip(it) }
+                        }
+                    }
+                }
+                if (episodes.size > 1) {
+                    Text("Episodes", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp), contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 4.dp)) {
+                        items(episodes, key = { it.id.toString() }) { e -> EmbuaryEpisode(e, current = e.id == item.id, accent) { onPlay(PlayRecording(e.id)) } }
+                    }
+                }
+                if (det.cast.isNotEmpty()) {
+                    Text("Cast", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        items(det.cast.take(30), key = { it.id.toString() + it.role }) { p -> CastCard(p, people.card(p.id)) { people.open(p) } }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun EmbuaryBox(text: String) =
+    Text(
+        text,
+        color = Color.White,
+        fontSize = 11.sp,
+        modifier =
+            Modifier
+                .border(1.dp, Color.White)
+                .padding(horizontal = 5.dp),
+    )
+
+@Composable
+private fun EmbuaryChip(text: String) =
+    Text(
+        text,
+        color = Color.White,
+        fontSize = 11.sp,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier =
+            Modifier
+                .widthIn(max = 260.dp)
+                .background(Color.White.copy(alpha = 0.12f), RoundedCornerShape(3.dp))
+                .padding(horizontal = 8.dp, vertical = 4.dp),
+    )
+
+/** One episode in Embuary's row: its picture, a progress line, a tick when watched. */
+@Composable
+private fun EmbuaryEpisode(
+    e: com.mackandall.jdvr.data.LibItem,
+    current: Boolean,
+    accent: Color,
+    onClick: () -> Unit,
+) {
+    Column(Modifier.width(172.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+        Surface(
+            onClick = onClick,
+            modifier = Modifier.width(172.dp).aspectRatio(16f / 9f),
+            shape = ClickableSurfaceDefaults.shape(androidx.compose.ui.graphics.RectangleShape),
+            colors = ClickableSurfaceDefaults.colors(containerColor = Color(0xFF1C2A44), focusedContainerColor = Color(0xFF1C2A44)),
+            border =
+                ClickableSurfaceDefaults.border(
+                    border = if (current) Border(BorderStroke(1.dp, accent)) else Border.None,
+                    focusedBorder = Border(BorderStroke(3.dp, Color.White)),
+                ),
+            scale = ClickableSurfaceDefaults.scale(focusedScale = 1.05f),
+        ) {
+            Box(Modifier.fillMaxSize()) {
+                AsyncImage(model = Jdvr.backend.imageUrl(e.id, 240), contentDescription = e.name, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+                val total = (e.runtimeMin ?: 0L) * 60_000L
+                if (!e.played && e.resumeMs > 0 && total > 0) {
+                    Box(
+                        Modifier
+                            .align(Alignment.BottomStart)
+                            .fillMaxWidth((e.resumeMs.toFloat() / total).coerceIn(0.02f, 1f))
+                            .height(3.dp)
+                            .background(accent),
+                    )
+                }
+                if (e.played) {
+                    Box(Modifier.align(Alignment.TopEnd).padding(5.dp).size(16.dp).background(accent, CircleShape), contentAlignment = Alignment.Center) {
+                        Text("✓", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+        Text(listOfNotNull(e.episode?.let { "$it." }, e.name).joinToString(" "), color = if (current) accent else Color.White, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }

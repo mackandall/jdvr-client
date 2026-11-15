@@ -50,6 +50,9 @@ val LocalWatchLive = androidx.compose.runtime.compositionLocalOf<((java.util.UUI
 /** Buttons stretch to the full width of what holds them (a menu's column), where this is true. */
 val LocalWideButtons = androidx.compose.runtime.compositionLocalOf { false }
 
+/** Buttons drawn smaller (a details page whose buttons came from elsewhere, in a tighter layout). */
+val LocalCompactButtons = androidx.compose.runtime.compositionLocalOf { false }
+
 /**
  * A menu's buttons in two columns side by side, each button as wide as its column, so a long menu
  * stays on the screen. ◄ ► cross between the columns, ▲ ▼ move within one.
@@ -100,30 +103,80 @@ fun Button(
     compact: Boolean = false,
     onClick: () -> Unit,
 ) {
+    val compact = compact || LocalCompactButtons.current
     // SageTV: the focused button is its glossy blue bar.
     var focused by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
     val sage = Jc.Style == UiStyle.Sage
     val npvr = Jc.Style == UiStyle.NextPvr
+    // Embuary: square-ish, a white frame on focus (the green Resume keeps its green).
+    val emb = Jc.Style == UiStyle.Embuary
+    // Channels: the focused button goes pale lavender with dark type, as its guide cells do.
+    val chan = Jc.Style == UiStyle.Channels
+    // Estuary: square buttons on black glass; focus fills them cyan.
+    val est = Jc.Style == UiStyle.Estuary
     Surface(
         onClick = onClick,
         modifier = (if (LocalWideButtons.current) modifier.then(Modifier.fillMaxWidth()) else modifier).onFocusChanged { focused = it.isFocused },
-        shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(10.dp)),
+        shape =
+            ClickableSurfaceDefaults.shape(
+                RoundedCornerShape(
+                    if (est) {
+                        0.dp
+                    } else if (emb) {
+                        3.dp
+                    } else if (chan) {
+                        6.dp
+                    } else {
+                        10.dp
+                    },
+                ),
+            ),
         colors =
             ClickableSurfaceDefaults.colors(
-                containerColor = if (primary) Jc.Focus else Jc.Button,
+                containerColor =
+                    if (est && !primary) {
+                        Color.Black.copy(alpha = 0.3f)
+                    } else if (primary) {
+                        Jc.Focus
+                    } else {
+                        Jc.Button
+                    },
                 // Light: whatever the button, focus turns it white (as Emby's Apple theme does).
-                focusedContainerColor = if (primary && !Jc.Light) Jc.Focus else Jc.FocusFill,
+                focusedContainerColor =
+                    if (chan) {
+                        Color(0xFFE4D9FF)
+                    } else if (est) {
+                        Jc.Focus
+                    } else if (emb && !primary) {
+                        Color.White.copy(alpha = 0.26f)
+                    } else if (primary && !Jc.Light) {
+                        Jc.Focus
+                    } else {
+                        Jc.FocusFill
+                    },
                 contentColor = if (primary) Jc.OnFocus else Jc.OnButton,
                 focusedContentColor =
                     if (npvr) {
                         NextPvrInk
+                    } else if (chan) {
+                        ChannelsInk
                     } else if (primary && !Jc.Light) {
                         Jc.OnFocus
                     } else {
                         Jc.Text
                     },
             ),
-        border = ClickableSurfaceDefaults.border(focusedBorder = Border(BorderStroke(2.dp, Jc.Focus))),
+        border =
+            ClickableSurfaceDefaults.border(
+                focusedBorder =
+                    if (chan || est) {
+                        Border.None
+                    } else if (emb) {
+                        Border(BorderStroke(3.dp, Color.White))
+                    } else {
+                        Border(BorderStroke(2.dp, Jc.Focus))
+                    },
+            ),
         scale = ClickableSurfaceDefaults.scale(focusedScale = if (Jc.Light) 1.06f else 1.03f),
     ) {
         // The gloss fills the whole button, also when it's wider than its label.

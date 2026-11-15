@@ -67,8 +67,11 @@ fun ScheduledScreen(
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(reload) {
-        items = Jdvr.backend.schedule()
-        bufferIds = Jdvr.backend.bufferPrograms()
+        // Asked together.
+        kotlinx.coroutines.coroutineScope {
+            launch { items = Jdvr.backend.schedule() }
+            launch { bufferIds = Jdvr.backend.bufferPrograms() }
+        }
         loaded = true
     }
 

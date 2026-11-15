@@ -111,9 +111,29 @@ object Jdvr {
         if (s.token != null) apply(s)
     }
 
-    /** Takes a server off the list (signing in there again asks for the PIN or a code). */
+    /** Takes a server off the list (signing in there again asks for the PIN or a code), its address too. */
     fun forget(s: SavedServer) {
         session.servers = session.servers.filterNot { it.sameAs(s) }
+        if (session.servers.none { it.url == s.url }) forgetAddress(s.url)
+    }
+
+    /** Addresses that answered as a Jellyfin or NextPVR server, most recent first. */
+    val recentAddresses: List<RecentAddress> get() = session.recentAddresses
+
+    /** Remembers an address that answered (the last eight are kept). */
+    fun rememberAddress(
+        url: String,
+        name: String,
+    ) {
+        session.recentAddresses = (listOf(RecentAddress(url, name)) + session.recentAddresses.filterNot { it.url == url }).take(8)
+    }
+
+    fun forgetAddress(url: String) {
+        session.recentAddresses = session.recentAddresses.filterNot { it.url == url }
+    }
+
+    fun forgetAllAddresses() {
+        session.recentAddresses = emptyList()
     }
 
     private fun apply(s: SavedServer) {

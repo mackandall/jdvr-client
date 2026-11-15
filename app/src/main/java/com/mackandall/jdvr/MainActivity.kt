@@ -7,6 +7,8 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -45,6 +47,7 @@ import com.mackandall.jdvr.ui.ScheduledScreen
 import com.mackandall.jdvr.ui.SeriesScreen
 import com.mackandall.jdvr.ui.SettingsScreen
 import com.mackandall.jdvr.ui.menuHome
+import com.mackandall.jdvr.ui.ownHome
 import com.mackandall.jdvr.ui.screenBackground
 import com.mackandall.jdvr.ui.tryFocus
 import kotlinx.coroutines.delay
@@ -331,9 +334,22 @@ fun AppRoot(
         // and the next OK started whatever was selected there (another recording over the live
         // channel). Focus can't enter it, and any key that still reaches it is dropped.
         val playerUp = playingChannel != null || playingRecording != null
+        // Channels JDVR: its icon strip down the left of every screen (Home draws its own).
+        val channelsStrip = Jc.Style == com.mackandall.jdvr.ui.UiStyle.Channels && screen != Screen.Home
+        if (channelsStrip) {
+            com.mackandall.jdvr.ui.ChannelsSideStrip(
+                selected = screen,
+                libraryId = libraryId,
+                libraries = shownLibraries,
+                showRecorded = hasDvr,
+                onSelect = { startAt(Place(it)) },
+                onSelectLibrary = { startAt(Place(Screen.Library, libraryId = it)) },
+            )
+        }
         Box(
             Modifier
                 .fillMaxSize()
+                .padding(start = if (channelsStrip) 58.dp else 0.dp)
                 .focusProperties { onEnter = { if (playerUp) cancelFocusChange() } }
                 .focusGroup()
                 .onPreviewKeyEvent { playerUp }
@@ -361,6 +377,17 @@ fun AppRoot(
                                 },
                                 onSwitchServer = onSwitchServer,
                                 onExit = { backActivity?.finish() },
+                            )
+                        } else if (Jc.Style.ownHome) {
+                            // Embuary, Channels and Estuary look-alikes: Home laid out as theirs.
+                            com.mackandall.jdvr.ui.LookalikeHome(
+                                entry = entry,
+                                libraries = shownLibraries,
+                                showRecorded = hasDvr,
+                                onPlayRecording = { playingRecording = it },
+                                onOpenScreen = { goTo(Place(it)) },
+                                onOpenShow = { goTo(Place(Screen.RecordedShows, openShow = it)) },
+                                onOpenLibrary = { goTo(Place(Screen.Library, libraryId = it)) },
                             )
                         } else {
                             HomeScreen(

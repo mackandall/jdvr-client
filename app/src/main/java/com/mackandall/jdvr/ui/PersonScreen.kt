@@ -105,8 +105,9 @@ fun PersonPage(
     var credits by remember(person.id) { mutableStateOf<List<LibItem>?>(null) }
     var error by remember(person.id) { mutableStateOf<String?>(null) }
     LaunchedEffect(person.id) {
-        attemptResult { Jdvr.backend.person(person.id) }.onSuccess { details = it }.onFailure { error = it.message }
-        credits = attempt { Jdvr.backend.personCredits(person.id) } ?: emptyList()
+        // Asked together.
+        launch { attemptResult { Jdvr.backend.person(person.id) }.onSuccess { details = it }.onFailure { error = it.message } }
+        launch { credits = attempt { Jdvr.backend.personCredits(person.id) } ?: emptyList() }
     }
     // What was opened from here, and the poster to focus again after Back.
     var movie by remember(person.id) { mutableStateOf<LibItem?>(null) }

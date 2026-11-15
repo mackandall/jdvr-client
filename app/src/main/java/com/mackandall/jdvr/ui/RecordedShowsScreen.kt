@@ -48,6 +48,7 @@ import com.mackandall.jdvr.data.RecordingCard
 import com.mackandall.jdvr.data.attempt
 import com.mackandall.jdvr.data.plainId
 import com.mackandall.jdvr.data.toUuid
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.time.Instant
@@ -86,14 +87,17 @@ fun RecordedShowsScreen(
     var visit by remember { mutableStateOf(preset) }
     // A movie or one-off recording's details page (from the grid).
     var details by remember { mutableStateOf<UUID?>(null) }
-    var badges by remember { mutableStateOf<Map<String, CommercialBadge>>(emptyMap()) }
+    // The last list (kept a few minutes) is there from the first frame; it's asked again to update.
+    val keptList = remember { Answers.peek(showsAsk(visit?.filter ?: Jdvr.prefs.recordingsFilter)) }
+    var badges by remember { mutableStateOf(keptList?.let { Answers.peek(cardBadgesAsk(visit?.filter ?: Jdvr.prefs.recordingsFilter)) }.orEmpty()) }
     var reloadCards by remember { mutableStateOf(0) }
     // Opened on a show from elsewhere (Home): Back from it goes back there, not to the grid.
     val cameForShow = remember { openShowId != null }
-    var cards by remember { mutableStateOf<List<RecordingCard>?>(null) }
+    var cards by remember { mutableStateOf(keptList?.cards) }
+    var focusedCard by remember { mutableStateOf<String?>(null) }
     // Without Episode History: Jellyfin's own recordings, one card each (no live folder / archive).
-    var plain by remember { mutableStateOf(false) }
-    var loaded by remember { mutableStateOf(false) }
+    var plain by remember { mutableStateOf(keptList?.plain ?: false) }
+    var loaded by remember { mutableStateOf(keptList != null) }
     var openShow by remember { mutableStateOf<RecordingCard?>(null) }
     // Hold OK on a card: its quick actions.
     var quick by remember { mutableStateOf<RecordingCard?>(null) }
@@ -109,21 +113,50 @@ fun RecordedShowsScreen(
     // A move to the archive finished: the recording now lives elsewhere.
     val movesFinished by MoveWatcher.finished.collectAsState()
     LaunchedEffect(filter, reloadCards, movesFinished) {
-        loaded = false
-        val shows = Jdvr.backend.recordedShows(filter)
-        plain = shows == null
-        cards = shows ?: Jdvr.backend.jellyfinRecordings()
-        // Comskip's badges for the cards (a show's: how many of its recordings are scanned).
-        badges = cards?.mapNotNull { it.id.toUuid() }?.let { ids -> attempt { Jdvr.backend.commercialBadges(ids) } }.orEmpty() +
-            cards
-                ?.filter { it.id.toUuid() == null }
-                ?.map { it.id }
-                ?.let { ids -> attempt { Jdvr.backend.showCommercialBadges(ids) } }
-                .orEmpty()
+        // The last list shows at once (coming back, or after a change); it's asked again to update.
+        val kept = Answers.peek(showsAsk(filter))
+        if (kept != null) {
+            cards = kept.cards
+            plain = kept.plain
+            badges = Answers.peek(cardBadgesAsk(filter)) ?: badges
+            loaded = true
+        } else {
+            loaded = false
+        }
+        val got = Answers.get(showsAsk(filter))
+        if (got != null) {
+            cards = got.cards
+            plain = got.plain
+        } else if (kept == null) {
+            cards = null
+        }
         loaded = true
         // Asked to open a show (from Home): straight to its episodes.
         openShowId?.let { id -> cards?.firstOrNull { it.id == id || it.name.equals(id, ignoreCase = true) }?.let { openShow = it } }
         onShowOpened()
+        // Comskip's badges for the cards (a show's: how many of its recordings are scanned), after
+        // the cards: the grid doesn't wait for them. Both kinds asked together.
+        val list = cards.orEmpty()
+        badges =
+            kotlinx.coroutines.coroutineScope {
+                val items = async { list.mapNotNull { it.id.toUuid() }.takeIf { it.isNotEmpty() }?.let { ids -> attempt { Jdvr.backend.commercialBadges(ids) } }.orEmpty() }
+                val shows = async { list.filter { it.id.toUuid() == null }.map { it.id }.takeIf { it.isNotEmpty() }?.let { ids -> attempt { Jdvr.backend.showCommercialBadges(ids) } }.orEmpty() }
+                items.await() + shows.await()
+            }
+        Answers.put(cardBadgesAsk(filter), badges)
+    }
+    // Resting on a card asks ahead what opening it needs: a show's recordings and its menu, or a
+    // recording's details and menu.
+    LaunchedEffect(focusedCard) {
+        val c = cards?.firstOrNull { it.id == focusedCard } ?: return@LaunchedEffect
+        delay(350)
+        val id = c.id.toUuid()
+        if (c.type == "Series") {
+            Answers.prefetch(showEpisodesAsk(c.id, filter))
+            id?.let { ItemAsk.prefetchShow(it) }
+        } else {
+            id?.let { ItemAsk.prefetchItem(it) }
+        }
     }
 
     // Focus goes to the first card once the grid is there (it comes after the cards and their
@@ -165,7 +198,6 @@ fun RecordedShowsScreen(
     }
 
     // Gemstone: the focused show's fanart behind the wall, under black glass.
-    var focusedCard by remember { mutableStateOf<String?>(null) }
     if (Jc.Style == UiStyle.Gem) {
         androidx.compose.animation.Crossfade(
             targetState = focusedCard?.toUuid(),
@@ -472,31 +504,15 @@ private fun ShowEpisodes(
 ) {
     var info by remember { mutableStateOf<UUID?>(null) }
     var quick by remember { mutableStateOf<EpisodeEntry?>(null) }
-    var episodes by remember { mutableStateOf<List<EpisodeEntry>?>(null) }
+    // The last list (or one fetched ahead from the grid) is there from the first frame; it's asked
+    // again to update.
+    val ask = showEpisodesAsk(show.id, filter)
+    var episodes by remember { mutableStateOf(Answers.peek(ask)) }
     var reload by remember { mutableStateOf(0) }
     val scope = rememberCoroutineScope()
     LaunchedEffect(show.id, refresh, reload) {
-        episodes =
-            Jdvr.backend
-                .showRecordings(show.id, filter)
-                ?.mapNotNull { e ->
-                    e.id.toUuid()?.let { id ->
-                        EpisodeEntry(
-                            id = id,
-                            name = e.name,
-                            season = e.season,
-                            episode = e.episode,
-                            played = e.played,
-                            recordedAt = local(e.recordedUtc),
-                            archived = e.archived && filter == Prefs.ALL,
-                            inArchive = e.archived,
-                            partial = e.partial,
-                            partialMinutes = e.minutes,
-                            recording = e.recording,
-                        )
-                    }
-                }?.sortedWith(compareBy<EpisodeEntry>({ it.season ?: Int.MAX_VALUE }, { it.episode ?: Int.MAX_VALUE }, { it.recordedAt }))
-                ?.let { withCommercialBadges(it) } ?: emptyList()
+        Answers.peek(ask)?.let { episodes = it }
+        episodes = Answers.get(ask) ?: episodes ?: emptyList()
     }
     info?.let { id ->
         BackHandler {
@@ -546,4 +562,46 @@ private fun ShowEpisodes(
             extra = { det, say, done -> RecordingActions(det.item.id, say, tools = false, manage = det.location == LIVE_FOLDER, canDelete = det.canDelete, place = det.location, onDeleted = done) },
         )
     }
+}
+
+// The grid's cards, and whether they're Jellyfin's own (no Episode History).
+private class ShowsList(
+    val cards: List<RecordingCard>?,
+    val plain: Boolean,
+)
+
+private fun showsAsk(filter: String) =
+    Ask("recordedShows:$filter") {
+        val shows = Jdvr.backend.recordedShows(filter)
+        ShowsList(shows ?: Jdvr.backend.jellyfinRecordings(), plain = shows == null)
+    }
+
+// The cards' badges: kept by the grid (only ever put, never asked on their own).
+private fun cardBadgesAsk(filter: String) = Ask<Map<String, CommercialBadge>>("cardBadges:$filter") { null }
+
+// A show's recordings, as its page lists them.
+private fun showEpisodesAsk(
+    showId: String,
+    filter: String,
+) = Ask("showRecordings:$showId:$filter") {
+    Jdvr.backend
+        .showRecordings(showId, filter)
+        ?.mapNotNull { e ->
+            e.id.toUuid()?.let { id ->
+                EpisodeEntry(
+                    id = id,
+                    name = e.name,
+                    season = e.season,
+                    episode = e.episode,
+                    played = e.played,
+                    recordedAt = local(e.recordedUtc),
+                    archived = e.archived && filter == Prefs.ALL,
+                    inArchive = e.archived,
+                    partial = e.partial,
+                    partialMinutes = e.minutes,
+                    recording = e.recording,
+                )
+            }
+        }?.sortedWith(compareBy<EpisodeEntry>({ it.season ?: Int.MAX_VALUE }, { it.episode ?: Int.MAX_VALUE }, { it.recordedAt }))
+        ?.let { withCommercialBadges(it) }
 }

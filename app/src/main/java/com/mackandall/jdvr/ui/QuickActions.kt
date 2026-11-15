@@ -89,7 +89,8 @@ fun QuickActions(
     // Opened from the show's own page (its Show actions button): no Open show.
     onShowPage: Boolean = false,
 ) {
-    var d by remember(itemId) { mutableStateOf<ItemDetails?>(null) }
+    // Fetched ahead (focus resting on it): the menu opens complete, and is asked again to update.
+    var d by remember(itemId) { mutableStateOf(Answers.peek(ItemAsk.details(itemId))) }
     var failed by remember(itemId) { mutableStateOf(false) }
     var note by remember { mutableStateOf<String?>(null) }
     // Close comes first in the dialog and would take focus by default: focus goes on to Play.
@@ -100,7 +101,8 @@ fun QuickActions(
     val first = remember { FocusRequester() }
     val scope = rememberCoroutineScope()
     LaunchedEffect(itemId) {
-        attemptResult { Jdvr.backend.details(itemId) }.onSuccess { d = it }.onFailure { failed = true }
+        val got = Answers.get(ItemAsk.details(itemId))
+        if (got != null) d = got else if (d == null) failed = true
     }
     LaunchedEffect(note) {
         if (note != null) {
@@ -194,6 +196,7 @@ fun QuickActions(
                                 .onSuccess {
                                     note = if (item.played) "Marked unwatched" else "Marked watched"
                                     d = det.copy(item = item.copy(played = !item.played, resumeMs = if (item.played) item.resumeMs else 0L))
+                                    Answers.put(ItemAsk.details(item.id), d)
                                     onChanged()
                                 }.onFailure { note = "Couldn't change it: ${it.message}" }
                         }

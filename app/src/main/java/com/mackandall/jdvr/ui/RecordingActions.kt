@@ -12,13 +12,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.tv.material3.Text
 import com.mackandall.jdvr.data.ActiveRecordings
-import com.mackandall.jdvr.data.ArchiveChoices
-import com.mackandall.jdvr.data.CommercialStatus
-import com.mackandall.jdvr.data.FavouriteFor
 import com.mackandall.jdvr.data.Jdvr
-import com.mackandall.jdvr.data.ProgramStartStatus
-import com.mackandall.jdvr.data.ShowDelete
-import com.mackandall.jdvr.data.ShowForget
 import com.mackandall.jdvr.data.attempt
 import com.mackandall.jdvr.data.attemptResult
 import com.mackandall.jdvr.data.toUuid
@@ -34,8 +28,8 @@ import java.util.UUID
 @Composable
 fun WatchLiveButtons(itemId: UUID) {
     val watch = LocalWatchLive.current ?: return
-    var active by remember(itemId) { mutableStateOf<ActiveRecordings?>(null) }
-    LaunchedEffect(itemId) { active = attempt { Jdvr.backend.activeRecordings(itemId) } }
+    var active by remember(itemId) { mutableStateOf(Answers.peek(ItemAsk.active(itemId))) }
+    LaunchedEffect(itemId) { active = Answers.get(ItemAsk.active(itemId)) }
     val list = active?.recordings.orEmpty().filter { it.channelId?.toUuid() != null }
     list.forEach { r ->
         // ▶ as in the guide: the red dot is for what changes the recording (Stop), not for watching it.
@@ -59,10 +53,10 @@ fun StopRecordingButtons(
 ) {
     val rights = deviceRights()
     val scope = rememberCoroutineScope()
-    var active by remember(itemId) { mutableStateOf<ActiveRecordings?>(null) }
+    var active by remember(itemId) { mutableStateOf(Answers.peek(ItemAsk.active(itemId))) }
     var check by remember(itemId) { mutableIntStateOf(0) }
     var armed by remember(itemId) { mutableStateOf<String?>(null) }
-    LaunchedEffect(itemId, check) { active = attempt { Jdvr.backend.activeRecordings(itemId) } }
+    LaunchedEffect(itemId, check) { active = Answers.get(ItemAsk.active(itemId)) }
     LaunchedEffect(armed) {
         if (armed != null) {
             delay(4000)
@@ -110,36 +104,37 @@ fun RecordingActions(
 ) {
     val rights = deviceRights()
     val scope = rememberCoroutineScope()
-    var fav by remember(itemId) { mutableStateOf<FavouriteFor?>(null) }
+    var fav by remember(itemId) { mutableStateOf(Answers.peek(ItemAsk.favourite(itemId))) }
     var reload by remember { mutableIntStateOf(0) }
     var armedDelete by remember(itemId) { mutableStateOf(false) }
     // Forget needs Episode History; on a server without it the button isn't offered.
-    var canForget by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) { canForget = Jdvr.backend.hasEpisodeHistory() }
+    var canForget by remember { mutableStateOf(Answers.peek(ItemAsk.hasEpisodeHistory) == true) }
+    LaunchedEffect(Unit) { canForget = Answers.get(ItemAsk.hasEpisodeHistory) == true }
     var armedUnfav by remember(itemId) { mutableStateOf(false) }
     var armedForget by remember(itemId) { mutableStateOf(false) }
     var armedRemove by remember(itemId) { mutableStateOf(false) }
-    var commercials by remember(itemId) { mutableStateOf<CommercialStatus?>(null) }
+    var commercials by remember(itemId) { mutableStateOf(Answers.peek(ItemAsk.commercials(itemId))) }
     var commercialsCheck by remember(itemId) { mutableIntStateOf(0) }
     LaunchedEffect(itemId, commercialsCheck) {
-        commercials = attempt { Jdvr.backend.commercialStatus(itemId) }
+        commercials = Answers.get(ItemAsk.commercials(itemId))
         // A scan in progress: check again every few seconds until it's done.
         val scanned = commercials?.inFlight == true
         while (commercials?.inFlight == true) {
             delay(4000)
             commercials = attempt { Jdvr.backend.commercialStatus(itemId) }
+            Answers.put(ItemAsk.commercials(itemId), commercials)
         }
         if (scanned) CommercialMarks.changed++
     }
-    LaunchedEffect(itemId, reload) { fav = attempt { Jdvr.backend.favouriteForItem(itemId) } }
+    LaunchedEffect(itemId, reload) { fav = Answers.get(ItemAsk.favourite(itemId)) }
     // JellyDVR Space: "Move to archive…" for recordings in the live folder. While a move runs it
     // checks back; once the recording has moved, this item is gone (the archive copy is a new
     // item), so the page closes.
-    var archive by remember(itemId) { mutableStateOf<ArchiveChoices?>(null) }
+    var archive by remember(itemId) { mutableStateOf(Answers.peek(ItemAsk.archive(itemId))) }
     var archiveCheck by remember(itemId) { mutableIntStateOf(0) }
     var picking by remember(itemId) { mutableStateOf(false) }
     // Program start: a skip marker to remove, or a trim whose original was kept to undo.
-    var start by remember(itemId) { mutableStateOf<ProgramStartStatus?>(null) }
+    var start by remember(itemId) { mutableStateOf(Answers.peek(ItemAsk.programStart(itemId))) }
     var startCheck by remember(itemId) { mutableIntStateOf(0) }
     var armedUndo by remember(itemId) { mutableStateOf(false) }
     var armedFind by remember(itemId) { mutableStateOf(false) }
@@ -148,7 +143,7 @@ fun RecordingActions(
     // Comskip's tools change the recording: only for users allowed to edit recordings.
     val edit = editPermission()
     val editTools = tools && edit != null && rights.edit
-    LaunchedEffect(itemId, startCheck, editTools) { if (editTools) start = attempt { Jdvr.backend.programStartStatus(itemId) } }
+    LaunchedEffect(itemId, startCheck, editTools) { if (editTools) start = Answers.get(ItemAsk.programStart(itemId)) }
     LaunchedEffect(armedUndo, armedFind, armedClearStart, armedAudio) {
         if (armedUndo || armedFind || armedClearStart || armedAudio) {
             delay(4000)
@@ -160,12 +155,13 @@ fun RecordingActions(
     }
     LaunchedEffect(itemId, archiveCheck, rights.archive) {
         if (!manage || !rights.archive) return@LaunchedEffect
-        archive = attempt { Jdvr.backend.archiveChoices(itemId) }
+        archive = Answers.get(ItemAsk.archive(itemId))
         var wasMoving = false
         while (archive?.inFlight != null) {
             wasMoving = true
             delay(5000)
             archive = attempt { Jdvr.backend.archiveChoices(itemId) }
+            Answers.put(ItemAsk.archive(itemId), archive)
         }
         if (wasMoving && archive == null) {
             onNote("Moved to the archive")
@@ -496,25 +492,22 @@ fun ShowActions(
     onDeleted: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
-    var delete by remember(seriesId) { mutableStateOf<ShowDelete?>(null) }
+    var delete by remember(seriesId) { mutableStateOf(Answers.peek(ItemAsk.showDelete(seriesId, archive = false))) }
     var armedDelete by remember(seriesId) { mutableStateOf(false) }
     var deleting by remember(seriesId) { mutableStateOf(false) }
-    var archive by remember(seriesId) { mutableStateOf<ArchiveChoices?>(null) }
+    var archive by remember(seriesId) { mutableStateOf(Answers.peek(ItemAsk.archive(seriesId))) }
     var archiveCheck by remember(seriesId) { mutableIntStateOf(0) }
     var picking by remember(seriesId) { mutableStateOf(false) }
-    var forget by remember(seriesId) { mutableStateOf<ShowForget?>(null) }
+    var forget by remember(seriesId) { mutableStateOf(Answers.peek(ItemAsk.showForget(seriesId))) }
     var armedForget by remember(seriesId) { mutableStateOf(false) }
     // The show's archived copies: only on a TV allowed to delete from the archive.
-    var archived by remember(seriesId) { mutableStateOf<ShowDelete?>(null) }
+    var archived by remember(seriesId) { mutableStateOf(Answers.peek(ItemAsk.showDelete(seriesId, archive = true))) }
     var armedArchived by remember(seriesId) { mutableStateOf(false) }
     val rights = deviceRights()
-    LaunchedEffect(seriesId, rights) {
-        delete = if (rights.delete) attempt { Jdvr.backend.deleteShowRecordings(seriesId, dryRun = true) } else null
-        archived = if (rights.deleteArchive) attempt { Jdvr.backend.deleteShowRecordings(seriesId, dryRun = true, archive = true) } else null
-    }
-    LaunchedEffect(seriesId) {
-        forget = attempt { Jdvr.backend.forgetShow(seriesId, dryRun = true) }
-    }
+    // Asked together (one after the other, the buttons came in turn).
+    LaunchedEffect(seriesId, rights.delete) { delete = if (rights.delete) Answers.get(ItemAsk.showDelete(seriesId, archive = false)) else null }
+    LaunchedEffect(seriesId, rights.deleteArchive) { archived = if (rights.deleteArchive) Answers.get(ItemAsk.showDelete(seriesId, archive = true)) else null }
+    LaunchedEffect(seriesId) { forget = Answers.get(ItemAsk.showForget(seriesId)) }
     WatchLiveButtons(seriesId)
     StopRecordingButtons(seriesId, onNote)
     LaunchedEffect(armedArchived) {
@@ -534,11 +527,12 @@ fun ShowActions(
             archive = null
             return@LaunchedEffect
         }
-        archive = attempt { Jdvr.backend.archiveChoices(seriesId) }
+        archive = Answers.get(ItemAsk.archive(seriesId))
         // Moves under way: check back until they're done.
         while (archive?.inFlight != null) {
             delay(5000)
             archive = attempt { Jdvr.backend.archiveChoices(seriesId) }
+            Answers.put(ItemAsk.archive(seriesId), archive)
         }
     }
     LaunchedEffect(armedDelete) {
@@ -592,6 +586,7 @@ fun ShowActions(
                     val r = attempt { Jdvr.backend.forgetShow(seriesId, dryRun = false) }
                     onNote(if (r == null) "Couldn't forget it." else "Forgotten: its episodes can be recorded again")
                     forget = attempt { Jdvr.backend.forgetShow(seriesId, dryRun = true) }
+                    Answers.put(ItemAsk.showForget(seriesId), forget)
                 }
             }
         }

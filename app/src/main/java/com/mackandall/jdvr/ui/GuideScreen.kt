@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -140,6 +141,13 @@ fun GuideScreen(
     var error by remember { mutableStateOf<String?>(null) }
     var selected by remember { mutableStateOf<Program?>(null) }
     var focused by remember { mutableStateOf<Program?>(null) }
+    // Resting on a programme fetches what its menu needs, so OK opens it complete. Moving on
+    // before the pause is up fetches nothing (scrolling through the guide asks the server nothing).
+    LaunchedEffect(focused?.id) {
+        val p = focused ?: return@LaunchedEffect
+        delay(350)
+        PanelCache.prefetch(p)
+    }
     // The programme picked to watch: where focus goes back to when the player closes. Kept apart
     // from `focused`, because as the panel and then the player go away, focus falls on whatever
     // cell is at that spot on screen (rows above), and the guide scrolls to it.
@@ -616,6 +624,8 @@ fun GuideScreen(
                                     val options = com.mackandall.jdvr.data.Prefs.GUIDE_HOURS
                                     Jdvr.prefs.changeGuideHours(options[(options.indexOf(Jdvr.prefs.guideHours) + 1) % options.size])
                                 }
+                                // JDVR Estuary: what the cell colours mean, and the recording dots.
+                                if (Jc.Style == UiStyle.Estuary) EstuaryLegend(channels?.size, Modifier.padding(start = 10.dp, bottom = 6.dp))
                             }
                             val list = channels
                             if (list == null) {
@@ -1058,8 +1068,31 @@ private class ChannelTile(
 )
 
 @Composable
-private fun ChannelLabel(channel: Channel) {
-    Text(channel.number, color = Jc.Text, fontSize = 15.sp, fontWeight = FontWeight.Bold, modifier = Modifier.width(48.dp))
+private fun RowScope.ChannelLabel(channel: Channel) {
+    // Channels JDVR: a lavender plate with the logo (or name), the number in a darker block at its end.
+    if (Jc.Style == UiStyle.Channels) {
+        Row(
+            Modifier
+                .weight(1f)
+                .fillMaxHeight()
+                .padding(vertical = 3.dp, horizontal = 2.dp)
+                .clip(RoundedCornerShape(4.dp)),
+        ) {
+            // Logos are mostly made for dark backgrounds (white CBS): a mid purple under them, lavender for the number.
+            Box(Modifier.weight(1f).fillMaxHeight().background(ChannelsPlate), contentAlignment = Alignment.Center) {
+                if (channel.logoUrl != null) {
+                    AsyncImage(model = channel.logoUrl, contentDescription = channel.name, modifier = Modifier.height(30.dp).width(78.dp))
+                } else {
+                    Text(channel.name, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.ExtraBold, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = 4.dp))
+                }
+            }
+            Box(Modifier.width(44.dp).fillMaxHeight().background(ChannelsLavender), contentAlignment = Alignment.Center) {
+                Text(channel.number, color = ChannelsInk, fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+            }
+        }
+        return
+    }
+    Text(channel.number, color = if (Jc.Style == UiStyle.Estuary) Jc.Focus else Jc.Text, fontSize = 15.sp, fontWeight = FontWeight.Bold, modifier = Modifier.width(48.dp))
     if (channel.logoUrl != null) {
         AsyncImage(model = channel.logoUrl, contentDescription = channel.name, modifier = Modifier.height(34.dp).width(84.dp))
     } else {
@@ -1158,9 +1191,16 @@ private fun ProgramCell(
     val sage = Jc.Style == UiStyle.Sage
     // NextPVR: deep red cells will record; the focused cell turns green, or bright red if it records.
     val npvr = Jc.Style == UiStyle.NextPvr
+    // Channels JDVR: purple cells, gold ones will record; the focused cell goes pale lavender with dark type.
+    val chan = Jc.Style == UiStyle.Channels
+    // JDVR Estuary: cells in their genre's colour; the focused one cyan.
+    val estuary = Jc.Style == UiStyle.Estuary
     var cellFocused by remember { mutableStateOf(false) }
     val idle =
         when {
+            chan && extras.realRecording(program) -> Color(0xFF8A7623)
+            chan -> Color(0xFF3B2B63)
+            estuary -> estuaryGenreColour(program)
             sage && extras.isFavourite(program) -> Jc.Green.copy(alpha = 0.55f)
             sage && extras.realRecording(program) -> Jc.Recording.copy(alpha = 0.45f)
             npvr && extras.realRecording(program) -> Color(0xFF8F0A00)
@@ -1169,11 +1209,14 @@ private fun ProgramCell(
         }
     val npvrFocus = if (extras.realRecording(program)) Color(0xFFD60E00) else Jc.Green
     // Dark type on the green, white on red and everywhere else.
-    val darkType = npvr && cellFocused && !extras.realRecording(program)
-    val titleColor = if (darkType) NextPvrInk else Jc.Text
+    val darkType = (npvr && cellFocused && !extras.realRecording(program)) || (chan && cellFocused)
+    val darkInk = if (chan) ChannelsInk else NextPvrInk
+    val titleColor = if (darkType) darkInk else Jc.Text
     val subColor =
         if (darkType) {
-            NextPvrInk.copy(alpha = 0.75f)
+            darkInk.copy(alpha = 0.75f)
+        } else if (estuary) {
+            Color.White.copy(alpha = 0.78f)
         } else if (npvr && cellFocused) {
             Color.White.copy(alpha = 0.8f)
         } else {
@@ -1202,15 +1245,22 @@ private fun ProgramCell(
                         else -> false
                     }
                 },
-        shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(8.dp)),
+        shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(if (estuary) 0.dp else if (chan) 4.dp else 8.dp)),
         colors =
             ClickableSurfaceDefaults.colors(
                 containerColor = idle,
-                focusedContainerColor = if (npvr) npvrFocus else Jc.FocusFill,
+                focusedContainerColor =
+                    if (npvr) {
+                        npvrFocus
+                    } else if (chan) {
+                        Color(0xFFE4D9FF)
+                    } else {
+                        Jc.FocusFill
+                    },
                 contentColor = Jc.Text,
                 focusedContentColor = titleColor,
             ),
-        border = ClickableSurfaceDefaults.border(focusedBorder = if (npvr) Border.None else Border(BorderStroke(2.dp, Jc.Focus))),
+        border = ClickableSurfaceDefaults.border(focusedBorder = if (npvr || chan || estuary) Border.None else Border(BorderStroke(2.dp, Jc.Focus))),
         scale = ClickableSurfaceDefaults.scale(focusedScale = 1f),
     ) {
         Column((if (sage && cellFocused) Modifier.sageGloss() else Modifier).fillMaxSize().padding(horizontal = pad, vertical = 5.dp), verticalArrangement = Arrangement.Center) {
@@ -1236,5 +1286,62 @@ private fun ProgramCell(
                 if (sub != null) Text(sub, color = subColor, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
+    }
+}
+
+// Channels JDVR's guide colours.
+internal val ChannelsInk = Color(0xFF1D1631)
+internal val ChannelsLavender = Color(0xFFCDBDF2)
+internal val ChannelsPlate = Color(0xFF5B4694)
+
+/** JDVR Estuary's guide legend: a swatch per genre colour, then the red recording dot. */
+@Composable
+private fun EstuaryLegend(
+    channelCount: Int?,
+    modifier: Modifier,
+) {
+    Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        listOf(
+            "News" to EstuaryNews,
+            "Movies" to EstuaryMovie,
+            "Sports" to EstuarySport,
+            "Drama" to EstuaryDrama,
+            "Comedy" to EstuaryComedy,
+            "Kids" to EstuaryKids,
+            "Other" to EstuaryOther,
+        ).forEach { (name, c) ->
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                Box(Modifier.size(width = 11.dp, height = 8.dp).background(c))
+                Text(name, color = Color(0xFFDCE7EC), fontSize = 11.sp)
+            }
+        }
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+            Box(Modifier.size(7.dp).background(Jc.Recording, CircleShape))
+            Text("Will record", color = Color(0xFFDCE7EC), fontSize = 11.sp)
+        }
+        // Estuary's footer count.
+        channelCount?.let { Text("Channels: $it", color = Color.White, fontSize = 11.sp, modifier = Modifier.padding(start = 8.dp)) }
+    }
+}
+
+private val EstuaryNews = Color(0xFF2D5F86)
+private val EstuaryMovie = Color(0xFF7A4A2A)
+private val EstuarySport = Color(0xFF3D6B2E)
+private val EstuaryDrama = Color(0xFF5B3D70)
+private val EstuaryComedy = Color(0xFF6E6326)
+private val EstuaryKids = Color(0xFF2E6A6A)
+private val EstuaryOther = Color(0xFF33505C)
+
+/** JDVR Estuary: a guide cell's colour by its genre (news, movie, sport, drama, comedy, other). */
+internal fun estuaryGenreColour(p: Program): Color {
+    val g = p.genres.joinToString(" ").lowercase()
+    return when {
+        p.isMovie || "movie" in g || "film" in g -> EstuaryMovie
+        "news" in g || "weather" in g -> EstuaryNews
+        "sport" in g || "football" in g || "basketball" in g || "baseball" in g || "hockey" in g || "soccer" in g -> EstuarySport
+        "comedy" in g || "sitcom" in g -> EstuaryComedy
+        "drama" in g || "crime" in g || "mystery" in g || "thriller" in g || "suspense" in g -> EstuaryDrama
+        "children" in g || "kids" in g || "animat" in g || "anime" in g -> EstuaryKids
+        else -> EstuaryOther
     }
 }

@@ -150,11 +150,13 @@ fun EpisodeBrowser(
         }
     val hold: ((EpisodeEntry) -> Unit)? = if (!holdEnabled) null else { e -> holdOk(menu = { onHold?.invoke(e) ?: onInfo(e) }, details = { onInfo(e) }) }
     val tiles = Jdvr.prefs.episodeView == Prefs.TILES
-    var backdrop by remember { mutableStateOf<UUID?>(null) }
-    var overview by remember { mutableStateOf<String?>(null) }
+    // The show's own details (kept: coming back, the backdrop is there at once).
+    val showKept = seriesId?.let { Answers.peek(ItemAsk.details(it)) }
+    var backdrop by remember { mutableStateOf(showKept?.backdropOf) }
+    var overview by remember { mutableStateOf(showKept?.item?.overview) }
     LaunchedEffect(seriesId) {
         seriesId?.let { id ->
-            attempt { Jdvr.backend.details(id) }?.let {
+            Answers.get(ItemAsk.details(id))?.let {
                 backdrop = it.backdropOf
                 overview = it.item.overview
             }
@@ -176,7 +178,7 @@ fun EpisodeBrowser(
             } else if (tiles) {
                 TilesView(seriesId, backdrop, title, subtitle, list, entry, { e, fromStart -> if (fromStart) onPlayFromStart(e) else onPlay(e) }, onInfo, onToggleWatched, actions, hold, onPlayItem)
             } else {
-                ListView(seriesId?.toString() ?: title, title, subtitle, list, entry, onPlay, onInfo, onToggleWatched, hold)
+                ListView(seriesId?.toString() ?: title, title, subtitle, list, entry, onPlay, onInfo, onToggleWatched, hold, recordings = actions != null)
             }
         }
     }
@@ -225,6 +227,8 @@ private fun ListView(
     onInfo: (EpisodeEntry) -> Unit,
     onToggleWatched: ((EpisodeEntry) -> Unit)?,
     onHold: ((EpisodeEntry) -> Unit)?,
+    // Recordings (not a library's episodes): their menus' questions are asked ahead too.
+    recordings: Boolean,
 ) {
     // Back from an episode's page (a new list): the episode that was pressed, else the first.
     val remembered = ListReturn.last[showKey]?.takeIf { id -> list.any { it.id == id } }
@@ -276,6 +280,11 @@ private fun ListView(
     val more = remember { mutableStateMapOf<UUID, LibItem>() }
     LaunchedEffect(focused.id) {
         if (focused.overview == null && focused.id !in more) attempt { Jdvr.backend.libItem(focused.id) }?.let { more[focused.id] = it }
+    }
+    // Resting on an episode asks ahead what Info and Hold OK need, so they open complete.
+    LaunchedEffect(focused.id) {
+        kotlinx.coroutines.delay(350)
+        ItemAsk.prefetchItem(focused.id, recording = recordings)
     }
 
     Column(Modifier.fillMaxSize().padding(start = 28.dp, top = 20.dp, end = 28.dp)) {
@@ -472,9 +481,13 @@ private fun TilesView(
     val details = remember { mutableStateMapOf<UUID, ItemDetails>() }
     LaunchedEffect(focusedId) {
         if (focusedId !in details) {
+            Answers.peek(ItemAsk.details(focusedId))?.let { details[focusedId] = it }
             kotlinx.coroutines.delay(200)
-            attempt { Jdvr.backend.details(focusedId) }?.let { details[focusedId] = it }
+            Answers.get(ItemAsk.details(focusedId))?.let { details[focusedId] = it }
         }
+        // And what Info and Hold OK need, so they open complete.
+        kotlinx.coroutines.delay(150)
+        ItemAsk.prefetchItem(focusedId, recording = actions != null)
     }
     val d = details[focused.id]
     // A cast member's page (from the rows below); Back returns to their card.

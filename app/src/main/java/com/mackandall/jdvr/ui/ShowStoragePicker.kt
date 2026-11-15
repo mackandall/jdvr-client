@@ -119,11 +119,11 @@ fun StoreShowButton(
     onChanged: (ShowStorage?) -> Unit = {},
 ) {
     val rights = deviceRights()
-    var storage by remember(itemId) { mutableStateOf<ShowStorage?>(null) }
+    var storage by remember(itemId) { mutableStateOf(Answers.peek(ItemAsk.storage(itemId))) }
     var picking by remember(itemId) { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     LaunchedEffect(itemId, rights.archive) {
-        storage = if (rights.archive) attempt { Jdvr.backend.showStorage(itemId) } else null
+        storage = if (rights.archive) Answers.get(ItemAsk.storage(itemId)) else null
     }
     val s = storage ?: return
     if (s.problem != null || s.folders.isEmpty()) return
@@ -143,6 +143,7 @@ fun StoreShowButton(
                 onNote(message)
                 scope.launch {
                     storage = attempt { Jdvr.backend.showStorage(itemId) } ?: storage
+                    Answers.put(ItemAsk.storage(itemId), storage)
                     onChanged(storage)
                 }
             },
