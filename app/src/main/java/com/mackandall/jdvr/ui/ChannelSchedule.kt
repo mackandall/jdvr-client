@@ -160,7 +160,7 @@ internal fun ChannelSchedule(
             }
             Column {
                 Text("${channel.number} ${channel.name}", color = Jc.Title, fontSize = 28.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text("Coming up on this channel · OK: watch, record, favourites · Back: the guide", color = Jc.Muted, fontSize = 15.sp)
+                Text(if (Jdvr.isNextPvr) "Coming up on this channel · OK: watch, record · Back: the guide" else "Coming up on this channel · OK: watch, record, favourites · Back: the guide", color = Jc.Muted, fontSize = 15.sp)
             }
         }
         error?.let { Text(it, color = Jc.Amber, fontSize = 15.sp) }
