@@ -15,6 +15,9 @@ interface ServerAlerts {
 
     /** Takes a problem off the open list; false when it failed. */
     suspend fun dismissAlert(id: String): Boolean = false
+
+    /** Dismisses every open problem; how many, or null when it failed. */
+    suspend fun dismissAllAlerts(): Int? = null
 }
 
 @Serializable
@@ -77,4 +80,11 @@ class AlertsPlugin(
     override suspend fun alerts(): AlertsList? = server.call(HttpMethod.GET, "/JellyDvrSchedule/Alerts")
 
     override suspend fun dismissAlert(id: String): Boolean = server.bytes(HttpMethod.POST, "/JellyDvrSchedule/Alerts/$id/Dismiss") != null
+
+    override suspend fun dismissAllAlerts(): Int? = server.call<DismissedCount>(HttpMethod.POST, "/JellyDvrSchedule/Alerts/DismissAll")?.dismissed
 }
+
+@Serializable
+data class DismissedCount(
+    @SerialName("Dismissed") val dismissed: Int = 0,
+)

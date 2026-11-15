@@ -118,6 +118,22 @@ fun ProblemsScreen(
             note?.let { Text(it, color = Jc.Muted, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(bottom = 4.dp)) }
         }
         Spacer(12)
+        // After an outage that failed a pile of recordings at once: all of them in one go.
+        if (openOnes.size >= 2) {
+            val confirmAll = rememberConfirm<Unit>(openOnes.size)
+            Button(if (confirmAll.isArmed) "Press again: dismiss all ${openOnes.size}" else "Dismiss all ${openOnes.size}") {
+                confirmAll.press {
+                    scope.launch {
+                        val n = attempt { Jdvr.backend.dismissAllAlerts() }
+                        note = if (n == null) "Couldn't dismiss them." else "Dismissed $n."
+                        open = null
+                        dismissed = true
+                        reload++
+                    }
+                }
+            }
+            Spacer(10)
+        }
         when {
             !loaded -> {
                 Text("Loading…", color = Jc.Muted, fontSize = 16.sp)
@@ -287,7 +303,15 @@ fun ProblemsPopup(
     var tv by remember { mutableStateOf<com.mackandall.jdvr.data.AlertsTv?>(null) }
     var checked by remember { mutableIntStateOf(0) }
     LaunchedEffect(resumed) {
-        val l = attempt { Jdvr.backend.alerts() } ?: return@LaunchedEffect
+        // Just after the TV wakes its network may not be up yet: try again for a minute or so.
+        var l = attempt { Jdvr.backend.alerts() }
+        var tries = 0
+        while (l == null && tries < 12) {
+            delay(5_000)
+            l = attempt { Jdvr.backend.alerts() }
+            tries++
+        }
+        if (l == null) return@LaunchedEffect
         tv = l.tv
         val seen = Jdvr.session.problemsSeenUtc
         fresh = if (l.tv.popupOnOpen) l.shownOpen.filter { newerThan(it, seen) } else emptyList()
