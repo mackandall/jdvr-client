@@ -59,6 +59,8 @@ fun Screen.menuIcon(): MenuIcon =
         Screen.Series -> MenuIcon.Series
         Screen.Trash -> MenuIcon.Trash
         Screen.Settings -> MenuIcon.Settings
+        // Not in the menu; Scheduled's icon if one is ever drawn for it.
+        Screen.Problems -> MenuIcon.Scheduled
     }
 
 /** A library's icon: by what it holds; an archive (by its name) as stored film, an old TV set, or a box. */

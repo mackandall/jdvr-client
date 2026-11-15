@@ -72,6 +72,11 @@ class Session(
         get() = prefs.getString("lastChannelId", null)
         set(v) = prefs.edit().putString("lastChannelId", v).apply()
 
+    /** The newest server problem this TV has shown (ISO time): the popup shows only newer ones. */
+    var problemsSeenUtc: String?
+        get() = prefs.getString("problemsSeenUtc", null)
+        set(v) = prefs.edit().putString("problemsSeenUtc", v).apply()
+
     /** Live channels watched, most recent first (the mini guide's Recent strip). */
     val recentChannels: List<String>
         get() = prefs.getString("recentChannels", "")!!.split(',').filter { it.isNotBlank() }

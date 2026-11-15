@@ -40,6 +40,10 @@ class HomeData {
     var extras by mutableStateOf<HomeExtras?>(null)
         private set
 
+    /** The server's problems (JellyDVR Schedule's alerts); null without them. */
+    var alerts by mutableStateOf<com.mackandall.jdvr.data.AlertsList?>(null)
+        private set
+
     /** Programmes JellyDVR Live is only buffering ([plainId]s): not real recordings. */
     var bufferIds by mutableStateOf<Set<String>>(emptySet())
         private set
@@ -62,6 +66,7 @@ class HomeData {
             launch { Jdvr.backend.recordedShows()?.let { shows = it } }
             launch { Jdvr.backend.tuners(null)?.let { tuners = it } }
             launch { attempt { Jdvr.backend.homeExtras() }?.let { extras = it } }
+            launch { attempt { Jdvr.backend.alerts() }?.let { alerts = it } }
             launch { bufferIds = Jdvr.backend.bufferPrograms() }
         }
         round++

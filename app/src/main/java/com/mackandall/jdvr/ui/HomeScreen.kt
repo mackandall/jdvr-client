@@ -206,8 +206,26 @@ fun HomeScreen(
                 dot = null,
             ) { onOpenScreen(com.mackandall.jdvr.Screen.Scheduled) }
         }
+    // The server's other problems (a stuck tuner, a full drive, an old guide) head the list;
+    // failed and short recordings are already there from Episode History.
+    val problemLines =
+        data.alerts
+            ?.takeIf { it.tv.problemsTile }
+            ?.shownOpen
+            .orEmpty()
+            .filter { it.kind != "failed" && it.kind != "short" }
+            .map { a ->
+                TileLine(
+                    key = "p${a.id}",
+                    title = a.title,
+                    detail = a.next ?: a.text,
+                    side = null,
+                    dot = Jc.Amber,
+                ) { onOpenScreen(com.mackandall.jdvr.Screen.Problems) }
+            }
     val attentionLines =
-        extras?.attention.orEmpty().mapIndexed { i, a ->
+        problemLines +
+            extras?.attention.orEmpty().mapIndexed { i, a ->
             TileLine(
                 key = "a$i",
                 title = a.title,
@@ -234,7 +252,7 @@ fun HomeScreen(
     val showNow = shown("now", nowLines.isNotEmpty())
     val showNext = shown("next")
     // Without Episode History there is nothing to say here.
-    val showAttention = extras != null && shown("attention", attentionLines.isNotEmpty())
+    val showAttention = (extras != null || problemLines.isNotEmpty()) && shown("attention", attentionLines.isNotEmpty())
     val showTuners = shown("tuners")
     val showFresh = shown("fresh")
     val showLibraries = shown("libraries")
