@@ -69,6 +69,9 @@ enum class Screen(
     Series("Series", "series"),
     Trash("Trash", "trash"),
     Settings("Settings", "settings"),
+
+    // Not in the menu (not in Prefs.MENU_DEFAULT): reached from the problems popup and Home.
+    Problems("Problems", "problems"),
 }
 
 /** A recording to play: from where, and (for a live buffer) the channel to go back to. */
@@ -445,9 +448,23 @@ fun AppRoot(
                     Screen.Settings -> {
                         SettingsScreen(entry = entry, libraries = libraries, openMenuPage = place.settingsMenuPage, onSwitchServer = onSwitchServer)
                     }
+
+                    Screen.Problems -> {
+                        com.mackandall.jdvr.ui
+                            .ProblemsScreen(entry = entry, onPlayRecording = { playingRecording = it })
+                    }
                 }
             }
         }
+        // New problems on the server (a failed recording, a stuck tuner): a popup when the app opens.
+        com.mackandall.jdvr.ui.ProblemsPopup(
+            resumed = librariesLoad,
+            playing = playerUp,
+            onSeeProblems = {
+                railOpen = false
+                goTo(Place(Screen.Problems))
+            },
+        )
         if (railOpen) {
             val activity = androidx.compose.ui.platform.LocalContext.current as? android.app.Activity
             BackHandler {

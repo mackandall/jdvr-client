@@ -140,6 +140,14 @@
     "imageUrl": "https://raw.githubusercontent.com/mackandall/jellyfin-plugin-episode-history/main/icon.png",
     "versions": [
       {
+        "version": "1.1.3.0",
+        "changelog": "Reports failed and short recordings to JellyDVR Schedule's alerts (needs Schedule 1.1.1.0). Live TV buffers are never recorded again; a stale stall warning clears when a recording is made again; faster programme lookups; the Recordings page only redraws cards that changed.",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/mackandall/jellyfin-plugin-episode-history/releases/download/v1.1.3.0/jellyfin-plugin-episode-history_1.1.3.0.zip",
+        "checksum": "735cd0cc6b66fb7a44a0f557e39a78fd",
+        "timestamp": "2026-11-15T22:37:39.0000000Z"
+      },
+      {
         "version": "1.1.2.0",
         "changelog": "Cancelling a whole series recording no longer logs a warning for its already-deleted episode timers.",
         "targetAbi": "12.0.0.0",
@@ -226,6 +234,14 @@
     "imageUrl": "https://raw.githubusercontent.com/mackandall/jellyfin-plugin-jellydvr-space/master/icon.png",
     "versions": [
       {
+        "version": "1.1.2.0",
+        "changelog": "Archive automatically (off by default): rules move finished recordings to your storage folders once they are processed (scanned, joined, not waiting to be recorded again) and watched or old enough; Preview shows what would move and what each recording waits for. Moving the last recording out of a folder no longer leaves a duplicate behind.",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/mackandall/jellyfin-plugin-jellydvr-space/releases/download/v1.1.2.0/jellyfin-plugin-jellydvr-space_1.1.2.0.zip",
+        "checksum": "cdeede67f5d5ded53ed246e6e1cb262d",
+        "timestamp": "2026-11-15T22:37:57.0000000Z"
+      },
+      {
         "version": "1.1.1.0",
         "changelog": "Archiving a re-recorded movie no longer fails on the old .nfo and poster left in the archive folder; the archive popup says when a recording has already moved.",
         "targetAbi": "12.0.0.0",
@@ -268,6 +284,14 @@
     "category": "Live TV",
     "imageUrl": "https://raw.githubusercontent.com/mackandall/jellyfin-plugin-jellydvr-schedule/main/icon.png",
     "versions": [
+      {
+        "version": "1.1.1.0",
+        "changelog": "Alerts: failed or short recordings, stuck tuners, a full recordings drive and an old guide, sent to your phone (ntfy), email and the TVs running JDVR, with quiet hours and reminders. New Alerts page; the stuck-recording and stall checks moved there. Dismiss all.",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/mackandall/jellyfin-plugin-jellydvr-schedule/releases/download/v1.1.1.0/jellyfin-plugin-jellydvr-schedule_1.1.1.0.zip",
+        "checksum": "1ec753801a279a15bd265ecec4dd077f",
+        "timestamp": "2026-11-15T22:37:53.0000000Z"
+      },
       {
         "version": "1.1.0.0",
         "changelog": "Recording rules: Live TV > Series shows series recordings and Recording Favourites in one list (Cards or Grouped layout, follows the Jellyfin theme). Pause a series recording (for a while, until a date, skip the next episode, or until the season starts) and resume it; Pause all / Resume all; switch a favourite off until a date. The JDVR 0.4.0 Recording rules screen uses it.",

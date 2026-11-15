@@ -212,27 +212,16 @@ private fun ScheduleRow(
                 // Only on a TV allowed to record (JellyDVR Space's device rights). Stopping a recording
                 // under way asks for a second press, like Stop recording elsewhere.
                 if (deviceRights().record) {
-                    var armed by remember(r.timerId) { mutableStateOf(false) }
-                    LaunchedEffect(armed) {
-                        if (armed) {
-                            delay(4000)
-                            armed = false
-                        }
-                    }
+                    val confirmCancel = rememberConfirm<Unit>(r.timerId)
                     Button(
                         when {
                             !r.recordingNow -> "Cancel recording"
-                            armed -> "Press again to stop recording"
+                            confirmCancel.isArmed -> "Press again to stop recording"
                             else -> "Stop this recording"
                         },
                         leading = { if (r.recordingNow) Dot(Jc.Recording) else CancelDot() },
                     ) {
-                        if (r.recordingNow && !armed) {
-                            armed = true
-                        } else {
-                            armed = false
-                            onCancel()
-                        }
+                        if (r.recordingNow) confirmCancel.press { onCancel() } else onCancel()
                     }
                 }
                 // Another airing of it instead (fewer tuners busy, commercial-free); Episode History.

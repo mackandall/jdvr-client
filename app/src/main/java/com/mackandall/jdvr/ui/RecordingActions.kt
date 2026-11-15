@@ -11,7 +11,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.tv.material3.Text
-import com.mackandall.jdvr.data.ActiveRecordings
 import com.mackandall.jdvr.data.Jdvr
 import com.mackandall.jdvr.data.attempt
 import com.mackandall.jdvr.data.attemptResult
@@ -55,23 +54,14 @@ fun StopRecordingButtons(
     val scope = rememberCoroutineScope()
     var active by remember(itemId) { mutableStateOf(Answers.peek(ItemAsk.active(itemId))) }
     var check by remember(itemId) { mutableIntStateOf(0) }
-    var armed by remember(itemId) { mutableStateOf<String?>(null) }
+    val confirmStop = rememberConfirm<String>(itemId)
     LaunchedEffect(itemId, check) { active = Answers.get(ItemAsk.active(itemId)) }
-    LaunchedEffect(armed) {
-        if (armed != null) {
-            delay(4000)
-            armed = null
-        }
-    }
     val a = active
     if (!rights.record || a == null || !a.canStop) return
     a.recordings.forEach { r ->
         val what = if (a.recordings.size > 1) ": ${r.name}" else ""
-        Button(if (armed == r.id) "Press again to stop recording$what" else "Stop recording$what", leading = { Dot(Jc.Recording) }) {
-            if (armed != r.id) {
-                armed = r.id
-            } else {
-                armed = null
+        Button(if (confirmStop.armed == r.id) "Press again to stop recording$what" else "Stop recording$what", leading = { Dot(Jc.Recording) }) {
+            confirmStop.press(r.id) {
                 scope.launch {
                     val stopped = attempt { Jdvr.backend.stopRecording(r.id) } ?: false
                     onNote(if (stopped) "Recording stopped: what was recorded so far is kept" else "Couldn't stop it (it may have just ended).")
@@ -106,13 +96,13 @@ fun RecordingActions(
     val scope = rememberCoroutineScope()
     var fav by remember(itemId) { mutableStateOf(Answers.peek(ItemAsk.favourite(itemId))) }
     var reload by remember { mutableIntStateOf(0) }
-    var armedDelete by remember(itemId) { mutableStateOf(false) }
+    val confirmDelete = rememberConfirm<Unit>(itemId)
     // Forget needs Episode History; on a server without it the button isn't offered.
     var canForget by remember { mutableStateOf(Answers.peek(ItemAsk.hasEpisodeHistory) == true) }
     LaunchedEffect(Unit) { canForget = Answers.get(ItemAsk.hasEpisodeHistory) == true }
-    var armedUnfav by remember(itemId) { mutableStateOf(false) }
-    var armedForget by remember(itemId) { mutableStateOf(false) }
-    var armedRemove by remember(itemId) { mutableStateOf(false) }
+    val confirmUnfav = rememberConfirm<Unit>(itemId)
+    val confirmForget = rememberConfirm<Unit>(itemId)
+    val confirmRemove = rememberConfirm<Unit>(itemId)
     var commercials by remember(itemId) { mutableStateOf(Answers.peek(ItemAsk.commercials(itemId))) }
     var commercialsCheck by remember(itemId) { mutableIntStateOf(0) }
     LaunchedEffect(itemId, commercialsCheck) {
@@ -136,23 +126,14 @@ fun RecordingActions(
     // Program start: a skip marker to remove, or a trim whose original was kept to undo.
     var start by remember(itemId) { mutableStateOf(Answers.peek(ItemAsk.programStart(itemId))) }
     var startCheck by remember(itemId) { mutableIntStateOf(0) }
-    var armedUndo by remember(itemId) { mutableStateOf(false) }
-    var armedFind by remember(itemId) { mutableStateOf(false) }
-    var armedClearStart by remember(itemId) { mutableStateOf(false) }
-    var armedAudio by remember(itemId) { mutableStateOf(false) }
+    val confirmUndo = rememberConfirm<Unit>(itemId)
+    val confirmFind = rememberConfirm<Unit>(itemId)
+    val confirmClearStart = rememberConfirm<Unit>(itemId)
+    val confirmAudio = rememberConfirm<Unit>(itemId)
     // Comskip's tools change the recording: only for users allowed to edit recordings.
     val edit = editPermission()
     val editTools = tools && edit != null && rights.edit
     LaunchedEffect(itemId, startCheck, editTools) { if (editTools) start = Answers.get(ItemAsk.programStart(itemId)) }
-    LaunchedEffect(armedUndo, armedFind, armedClearStart, armedAudio) {
-        if (armedUndo || armedFind || armedClearStart || armedAudio) {
-            delay(4000)
-            armedUndo = false
-            armedFind = false
-            armedClearStart = false
-            armedAudio = false
-        }
-    }
     LaunchedEffect(itemId, archiveCheck, rights.archive) {
         if (!manage || !rights.archive) return@LaunchedEffect
         archive = Answers.get(ItemAsk.archive(itemId))
@@ -166,15 +147,6 @@ fun RecordingActions(
         if (wasMoving && archive == null) {
             onNote("Moved to the archive")
             onDeleted()
-        }
-    }
-    LaunchedEffect(armedDelete, armedUnfav, armedForget, armedRemove) {
-        if (armedDelete || armedUnfav || armedForget || armedRemove) {
-            delay(4000)
-            armedDelete = false
-            armedUnfav = false
-            armedForget = false
-            armedRemove = false
         }
     }
 
@@ -231,11 +203,8 @@ fun RecordingActions(
                 }
             }
         } else {
-            Button(if (armedUnfav) "Press again: remove from favourites" else "★ In Recording Favourites") {
-                if (!armedUnfav) {
-                    armedUnfav = true
-                } else {
-                    armedUnfav = false
+            Button(if (confirmUnfav.isArmed) "Press again: remove from favourites" else "★ In Recording Favourites") {
+                confirmUnfav.press {
                     scope.launch {
                         onNote(attemptResult { Jdvr.backend.removeFavourite(rule.id)?.message ?: "Removed ${rule.title} from Recording Favourites" }.getOrElse { "Couldn't remove it: ${it.message}" })
                         reload++
@@ -280,11 +249,8 @@ fun RecordingActions(
             }
 
             c?.found == true -> {
-                Button(if (armedRemove) "Press again: remove commercials" else "Remove commercials", modifier = comModifier) {
-                    if (!armedRemove) {
-                        armedRemove = true
-                    } else {
-                        armedRemove = false
+                Button(if (confirmRemove.isArmed) "Press again: remove commercials" else "Remove commercials", modifier = comModifier) {
+                    confirmRemove.press {
                         scope.launch {
                             val r = attempt { Jdvr.backend.removeCommercials(itemId) }
                             onNote(r?.message?.ifEmpty { null } ?: "Couldn't remove them.")
@@ -310,15 +276,12 @@ fun RecordingActions(
     if (editTools && cut == null) {
         Button(
             when {
-                !armedFind -> "Find program start"
+                !confirmFind.isArmed -> "Find program start"
                 edit!!.programStartTrims -> "Press again: find it and cut before it. ${edit.undoNote}"
                 else -> "Press again: find it and skip to it"
             },
         ) {
-            if (!armedFind) {
-                armedFind = true
-            } else {
-                armedFind = false
+            confirmFind.press {
                 onNote("Looking for a remembered card…")
                 scope.launch {
                     onNote(attempt { Jdvr.backend.findProgramStart(itemId)?.message } ?: "Couldn't look: something may already be working on it.")
@@ -330,11 +293,8 @@ fun RecordingActions(
     val ps = start
     if (editTools && cut == null && ps?.action == "marker" && (ps.startSeconds ?: 0.0) >= 1) {
         val s = ps.startSeconds!!.toInt()
-        Button(if (armedClearStart) "Press again: play from the very start again" else "Remove program start (skips to ${s / 60}:${"%02d".format(s % 60)})") {
-            if (!armedClearStart) {
-                armedClearStart = true
-            } else {
-                armedClearStart = false
+        Button(if (confirmClearStart.isArmed) "Press again: play from the very start again" else "Remove program start (skips to ${s / 60}:${"%02d".format(s % 60)})") {
+            confirmClearStart.press {
                 scope.launch {
                     onNote(attempt { Jdvr.backend.clearProgramStart(itemId)?.message } ?: "Couldn't remove it.")
                     startCheck++
@@ -344,11 +304,8 @@ fun RecordingActions(
     }
     if (editTools && cut == null && ps?.canUndo == true) {
         val until = ps.undoUntil?.let { untilDate(it) }?.let { ", until $it" } ?: ""
-        Button(if (armedUndo) "Press again: put the original back" else "Undo trim (put the original back$until)") {
-            if (!armedUndo) {
-                armedUndo = true
-            } else {
-                armedUndo = false
+        Button(if (confirmUndo.isArmed) "Press again: put the original back" else "Undo trim (put the original back$until)") {
+            confirmUndo.press {
                 scope.launch {
                     onNote(attempt { Jdvr.backend.undoTrim(itemId)?.message } ?: "Couldn't undo it.")
                     startCheck++
@@ -357,11 +314,8 @@ fun RecordingActions(
         }
     }
     if (editTools && cut == null) {
-        Button(if (armedAudio) "Press again: cut off audio in the wrong format. ${edit!!.undoNote}" else "Fix audio format") {
-            if (!armedAudio) {
-                armedAudio = true
-            } else {
-                armedAudio = false
+        Button(if (confirmAudio.isArmed) "Press again: cut off audio in the wrong format. ${edit!!.undoNote}" else "Fix audio format") {
+            confirmAudio.press {
                 scope.launch {
                     onNote(attempt { Jdvr.backend.fixAudioFormat(itemId)?.message } ?: "Couldn't fix it: something may already be working on it.")
                     MoveWatcher.kick()
@@ -372,7 +326,7 @@ fun RecordingActions(
     // Episode History's "Forget this episode": delete it and forget it, so it records again.
     if (tools && manage && rights.delete && canDelete && cut == null && canForget) {
         Button(
-            if (armedForget) {
+            if (confirmForget.isArmed) {
                 "Press again: delete and forget"
             } else if (fav?.isMovie == true) {
                 "Forget this movie"
@@ -380,10 +334,7 @@ fun RecordingActions(
                 "Forget this episode"
             },
         ) {
-            if (!armedForget) {
-                armedForget = true
-            } else {
-                armedForget = false
+            confirmForget.press {
                 scope.launch {
                     val r = attempt { Jdvr.backend.forgetRecording(itemId) }
                     if (r == null) {
@@ -434,16 +385,13 @@ fun RecordingActions(
     val trashDays = rememberTrashDays()
     val deleteLabel =
         when {
-            manage -> if (armedDelete) (if (trashDays != null) "Press again: move to the trash" else "Press again to delete") else "Delete recording"
-            armedDelete -> if (trashDays != null) "Press again: move to the trash" else "Press again: delete$from for good"
+            manage -> if (confirmDelete.isArmed) (if (trashDays != null) "Press again: move to the trash" else "Press again to delete") else "Delete recording"
+            confirmDelete.isArmed -> if (trashDays != null) "Press again: move to the trash" else "Press again: delete$from for good"
             else -> "Delete$from"
         }
     if (canDelete && (if (manage) rights.delete else rights.deleteArchive) && cut == null) {
         Button(deleteLabel, leading = { TrashMark() }) {
-            if (!armedDelete) {
-                armedDelete = true
-            } else {
-                armedDelete = false
+            confirmDelete.press {
                 scope.launch {
                     attemptResult { Jdvr.backend.deleteRecording(itemId) }
                         .onSuccess {
@@ -493,16 +441,16 @@ fun ShowActions(
 ) {
     val scope = rememberCoroutineScope()
     var delete by remember(seriesId) { mutableStateOf(Answers.peek(ItemAsk.showDelete(seriesId, archive = false))) }
-    var armedDelete by remember(seriesId) { mutableStateOf(false) }
+    val confirmDelete = rememberConfirm<Unit>(seriesId)
     var deleting by remember(seriesId) { mutableStateOf(false) }
     var archive by remember(seriesId) { mutableStateOf(Answers.peek(ItemAsk.archive(seriesId))) }
     var archiveCheck by remember(seriesId) { mutableIntStateOf(0) }
     var picking by remember(seriesId) { mutableStateOf(false) }
     var forget by remember(seriesId) { mutableStateOf(Answers.peek(ItemAsk.showForget(seriesId))) }
-    var armedForget by remember(seriesId) { mutableStateOf(false) }
+    val confirmForget = rememberConfirm<Unit>(seriesId)
     // The show's archived copies: only on a TV allowed to delete from the archive.
     var archived by remember(seriesId) { mutableStateOf(Answers.peek(ItemAsk.showDelete(seriesId, archive = true))) }
-    var armedArchived by remember(seriesId) { mutableStateOf(false) }
+    val confirmArchived = rememberConfirm<Unit>(seriesId)
     val rights = deviceRights()
     // Asked together (one after the other, the buttons came in turn).
     LaunchedEffect(seriesId, rights.delete) { delete = if (rights.delete) Answers.get(ItemAsk.showDelete(seriesId, archive = false)) else null }
@@ -510,18 +458,6 @@ fun ShowActions(
     LaunchedEffect(seriesId) { forget = Answers.get(ItemAsk.showForget(seriesId)) }
     WatchLiveButtons(seriesId)
     StopRecordingButtons(seriesId, onNote)
-    LaunchedEffect(armedArchived) {
-        if (armedArchived) {
-            delay(4000)
-            armedArchived = false
-        }
-    }
-    LaunchedEffect(armedForget) {
-        if (armedForget) {
-            delay(4000)
-            armedForget = false
-        }
-    }
     LaunchedEffect(seriesId, archiveCheck, rights.archive) {
         if (!rights.archive) {
             archive = null
@@ -533,12 +469,6 @@ fun ShowActions(
             delay(5000)
             archive = attempt { Jdvr.backend.archiveChoices(seriesId) }
             Answers.put(ItemAsk.archive(seriesId), archive)
-        }
-    }
-    LaunchedEffect(armedDelete) {
-        if (armedDelete) {
-            delay(4000)
-            armedDelete = false
         }
     }
 
@@ -577,11 +507,8 @@ fun ShowActions(
     // Episode History's "Forget this show": its episodes record again (watched ones too).
     val f = forget
     if (f != null && f.episodes > 0) {
-        Button(if (armedForget) "Press again: forget all of ${f.show ?: "this show"}" else "Forget this show (${f.episodes} episode${if (f.episodes == 1) "" else "s"})") {
-            if (!armedForget) {
-                armedForget = true
-            } else {
-                armedForget = false
+        Button(if (confirmForget.isArmed) "Press again: forget all of ${f.show ?: "this show"}" else "Forget this show (${f.episodes} episode${if (f.episodes == 1) "" else "s"})") {
+            confirmForget.press {
                 scope.launch {
                     val r = attempt { Jdvr.backend.forgetShow(seriesId, dryRun = false) }
                     onNote(if (r == null) "Couldn't forget it." else "Forgotten: its episodes can be recorded again")
@@ -600,16 +527,13 @@ fun ShowActions(
         Button(
             when {
                 deleting -> "Deleting…"
-                armedDelete -> "Press again: delete $what ($size) $forGood"
+                confirmDelete.isArmed -> "Press again: delete $what ($size) $forGood"
                 else -> "Delete all $what"
             },
             leading = { TrashMark() },
         ) {
             if (deleting) return@Button
-            if (!armedDelete) {
-                armedDelete = true
-            } else {
-                armedDelete = false
+            confirmDelete.press {
                 deleting = true
                 scope.launch {
                     val r = attempt { Jdvr.backend.deleteShowRecordings(seriesId, dryRun = false) }
@@ -633,16 +557,13 @@ fun ShowActions(
         Button(
             when {
                 deleting -> "Deleting…"
-                armedArchived -> "Press again: delete $what ($size) from $from $forGood"
+                confirmArchived.isArmed -> "Press again: delete $what ($size) from $from $forGood"
                 else -> "Delete all $what"
             },
             leading = { TrashMark() },
         ) {
             if (deleting) return@Button
-            if (!armedArchived) {
-                armedArchived = true
-            } else {
-                armedArchived = false
+            confirmArchived.press {
                 deleting = true
                 scope.launch {
                     val r = attempt { Jdvr.backend.deleteShowRecordings(seriesId, dryRun = false, archive = true) }

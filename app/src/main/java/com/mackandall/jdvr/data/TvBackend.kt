@@ -7,7 +7,7 @@ import java.util.UUID
 /**
  * Everything the screens ask of the server. [JellyfinBackend] is the Jellyfin one. The
  * features in their own interfaces ([RecordingHistory], [Commercials], [Archiving], [RecordingRules],
- * [LiveBuffers]) come from our plugins there: they answer null when the plugin isn't installed, and
+ * [LiveBuffers], [ServerAlerts]) come from our plugins there: they answer null when the plugin isn't installed, and
  * the screens hide what's missing.
  */
 interface TvBackend :
@@ -15,7 +15,8 @@ interface TvBackend :
     Commercials,
     Archiving,
     RecordingRules,
-    LiveBuffers {
+    LiveBuffers,
+    ServerAlerts {
     /** The channels to show: those of the channel group picked in the guide. */
     suspend fun channels(): List<Channel>
 

@@ -40,7 +40,6 @@ import com.mackandall.jdvr.data.Jdvr
 import com.mackandall.jdvr.data.attempt
 import com.mackandall.jdvr.data.attemptResult
 import com.mackandall.jdvr.data.toUuid
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.LocalDate
@@ -292,25 +291,16 @@ fun RerecordButtons(
     var state by remember(itemId) { mutableStateOf(Answers.peek(ItemAsk.rerecord(itemId))) }
     var check by remember(itemId) { mutableIntStateOf(0) }
     var dialog by remember(itemId) { mutableStateOf<Boolean?>(null) }
-    var armedCancel by remember(itemId) { mutableStateOf(false) }
+    val confirmCancel = rememberConfirm<Unit>(itemId)
     val rights = deviceRights()
     val scope = rememberCoroutineScope()
     LaunchedEffect(itemId, check) { state = Answers.get(ItemAsk.rerecord(itemId)) }
-    LaunchedEffect(armedCancel) {
-        if (armedCancel) {
-            delay(4000)
-            armedCancel = false
-        }
-    }
     val s = state ?: return
     if (s.pending) {
         s.text?.let { Text(it, color = Jc.Amber, fontSize = 14.sp) }
         if (s.canManage && rights.record) {
-            Button(if (armedCancel) "Press again: cancel the re-record" else "Cancel re-record" + (s.short?.let { " ($it)" } ?: "")) {
-                if (!armedCancel) {
-                    armedCancel = true
-                } else {
-                    armedCancel = false
+            Button(if (confirmCancel.isArmed) "Press again: cancel the re-record" else "Cancel re-record" + (s.short?.let { " ($it)" } ?: "")) {
+                confirmCancel.press {
                     scope.launch {
                         onNote(if (Jdvr.backend.cancelRerecord(itemId)) "Re-record called off; this recording is kept as it is." else "Couldn't call it off.")
                         check++

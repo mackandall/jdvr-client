@@ -288,13 +288,7 @@ private fun SeriesRow(
     onMove: ((Boolean) -> Unit)? = null,
     onCancel: () -> Unit,
 ) {
-    var armed by remember(s.id) { mutableStateOf(false) }
-    LaunchedEffect(armed) {
-        if (armed) {
-            delay(4000)
-            armed = false
-        }
-    }
+    val confirmRemove = rememberConfirm<Unit>(s.id)
     Column(
         Modifier.fillMaxWidth().background(Jc.Panel, RoundedCornerShape(10.dp)).padding(14.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp),
@@ -337,10 +331,10 @@ private fun SeriesRow(
                     else -> null
                 }
             Button(
-                if (armed) "Press again: " + (what?.let { "remove the $it" } ?: "cancel the series") else what?.let { "Remove $it" } ?: "Cancel series recording",
+                if (confirmRemove.isArmed) "Press again: " + (what?.let { "remove the $it" } ?: "cancel the series") else what?.let { "Remove $it" } ?: "Cancel series recording",
                 leading = { SeriesDots(height = 14.dp, crossed = true) },
             ) {
-                if (armed) onCancel() else armed = true
+                confirmRemove.press { onCancel() }
             }
         }
     }
@@ -354,13 +348,7 @@ private fun FavouriteRow(
     onToggle: () -> Unit,
     onRemove: () -> Unit,
 ) {
-    var armed by remember(f.id) { mutableStateOf(false) }
-    LaunchedEffect(armed) {
-        if (armed) {
-            delay(4000)
-            armed = false
-        }
-    }
+    val confirmRemove = rememberConfirm<Unit>(f.id)
     Column(
         Modifier.fillMaxWidth().background(Jc.Panel, RoundedCornerShape(10.dp)).padding(14.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp),
@@ -395,7 +383,7 @@ private fun FavouriteRow(
         if (canManage) {
             Row(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(if (f.enabled) "Switch off" else "Switch on", modifier = modifier, onClick = onToggle)
-                Button(if (armed) "Press again: remove" else "Remove") { if (armed) onRemove() else armed = true }
+                Button(if (confirmRemove.isArmed) "Press again: remove" else "Remove") { confirmRemove.press { onRemove() } }
             }
         }
     }

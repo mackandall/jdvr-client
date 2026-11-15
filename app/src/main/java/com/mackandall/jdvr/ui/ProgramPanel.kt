@@ -41,16 +41,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.tv.material3.Text
-import com.mackandall.jdvr.data.Buffer
 import com.mackandall.jdvr.data.Channel
-import com.mackandall.jdvr.data.EhProgram
 import com.mackandall.jdvr.data.Jdvr
-import com.mackandall.jdvr.data.attempt
 import com.mackandall.jdvr.data.MarkSymbols
 import com.mackandall.jdvr.data.Program
-import com.mackandall.jdvr.data.ScheduleState
-import com.mackandall.jdvr.data.ShowForget
-import com.mackandall.jdvr.data.plainId
 import com.mackandall.jdvr.data.toUuid
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
@@ -89,7 +83,7 @@ internal fun ProgramPanel(
     // The timer whose Recording options are open.
     var recordingOptions by remember(program.id) { mutableStateOf<String?>(null) }
     // What the guide fetched ahead for this programme (resting on it), so the menu opens complete.
-    val known = remember(program.id) { PanelCache.cached(program.id) }
+    val known = remember(program.id) { Answers.peek(ProgramAsk.panel(program)) }
     // Whether the server's answers are in (cached or fresh); until then, buttons this server
     // usually offers hold their places.
     var loaded by remember(program.id) { mutableStateOf(known != null) }
@@ -99,13 +93,8 @@ internal fun ProgramPanel(
     var showForget by remember(program.id) { mutableStateOf(known?.showForget) }
     var buffer by remember(program.id) { mutableStateOf(known?.buffer) }
     var isBuffer by remember(program.id) { mutableStateOf(known?.isBuffer ?: false) }
-    var armed by remember(program.id) { mutableStateOf<String?>(null) }
-    LaunchedEffect(armed) {
-        if (armed != null) {
-            delay(4000)
-            armed = null
-        }
-    }
+    // "Press again" for removing a favourite, forgetting an episode or a show.
+    val confirm = rememberConfirm<String>(program.id)
     // Being recorded now: the recording, to watch from the start (with commercial skipping).
     var recordingItem by remember(program.id) { mutableStateOf(known?.recordingItem) }
     var schedule by remember(program.id) { mutableStateOf(known?.schedule) }
@@ -127,7 +116,7 @@ internal fun ProgramPanel(
 
     suspend fun refresh() {
         Jdvr.backend.program(p.id)?.let { p = it }
-        apply(PanelCache.get(p, allBuffers = true, fresh = true).await())
+        Answers.start(ProgramAsk.panel(p, allBuffers = true), fresh = true).await()?.let(::apply)
     }
     // Focus first: Watch live (or Record) is there from the start; the rest fills in around it.
     LaunchedEffect(program.id) {
@@ -140,7 +129,7 @@ internal fun ProgramPanel(
     }
     // Asked again on opening (the prefetch under way, or a new one): shown at once from what was
     // fetched ahead, then brought up to date.
-    LaunchedEffect(program.id) { apply(PanelCache.get(program, fresh = known != null).await()) }
+    LaunchedEffect(program.id) { Answers.get(ProgramAsk.panel(program))?.let(::apply) }
 
     // NextPVR: a keyword rule or a manual recording, started from this programme.
     var nextPvrRule by remember { mutableStateOf<String?>(null) }
@@ -384,7 +373,7 @@ internal fun ProgramPanel(
                         // Every later airing of it, with tuner clashes and commercial-free channels (Episode
                         // History); on NextPVR, from its own guide search.
                         // (Until the first answer: where this server's Episode History buttons go.)
-                        val ehSoon = !loaded && PanelCache.ehAnswers
+                        val ehSoon = !loaded && ProgramAsk.ehAnswers
                         if (eh != null || ehSoon || Jdvr.isNextPvr) {
                             Button("Other airings", modifier = Modifier.fillMaxWidth()) {
                                 if (onOtherAirings != null) onOtherAirings(p) else airingsHere = true
@@ -397,7 +386,7 @@ internal fun ProgramPanel(
                         if (airingsHere) {
                             AiringsDialog(programId = p.id, onNote = { msg -> if (onActed != null) onActed(msg) }, onDismiss = { airingsHere = false })
                         }
-                        if ((schedule != null || (!loaded && PanelCache.scheduleAnswers)) && rights.record) {
+                        if ((schedule != null || (!loaded && ProgramAsk.scheduleAnswers)) && rights.record) {
                             val fav = schedule?.favourite
                             Button(
                                 if (fav == null) "Add to Recording Favourites" else "Remove from Recording Favourites",
@@ -406,14 +395,13 @@ internal fun ProgramPanel(
                             ) {
                                 // Not known yet whether it's a favourite: wait for the answer.
                                 if (schedule == null) return@Button
-                                if (fav != null && armed != "fav") {
-                                    armed = "fav"
+                                if (fav == null) {
+                                    act { Jdvr.backend.addFavourite(p.id)?.message }
                                 } else {
-                                    armed = null
-                                    act { (if (fav == null) Jdvr.backend.addFavourite(p.id) else Jdvr.backend.removeFavourite(fav.id))?.message }
+                                    confirm.press("fav") { act { Jdvr.backend.removeFavourite(fav.id)?.message } }
                                 }
                             }
-                            if (armed == "fav") Text("Press again to remove it from Recording Favourites", color = Jc.Amber, fontSize = 13.sp)
+                            if (confirm.armed == "fav") Text("Press again to remove it from Recording Favourites", color = Jc.Amber, fontSize = 13.sp)
                         }
                         if (eh == null && ehSoon) {
                             Button("Mark watched", modifier = Modifier.fillMaxWidth(), leading = { Text("✓", color = Jc.Green) }) {}
@@ -426,11 +414,8 @@ internal fun ProgramPanel(
                                 }
                             }
                             if (info.canForget) {
-                                Button(if (armed == "forget") "Press again to forget" else "Forget this episode", modifier = Modifier.fillMaxWidth()) {
-                                    if (armed != "forget") {
-                                        armed = "forget"
-                                    } else {
-                                        armed = null
+                                Button(if (confirm.armed == "forget") "Press again to forget" else "Forget this episode", modifier = Modifier.fillMaxWidth()) {
+                                    confirm.press("forget") {
                                         act {
                                             Jdvr.backend.forgetProgram(p.id)
                                             "Forgotten: it can be recorded again."
@@ -440,11 +425,8 @@ internal fun ProgramPanel(
                             }
                         }
                         showForget?.takeIf { it.episodes > 0 }?.let { sf ->
-                            Button(if (armed == "forgetShow") "Press again: forget all of ${sf.show ?: "this show"}" else "Forget this show (${sf.episodes} episode${if (sf.episodes == 1) "" else "s"})", modifier = Modifier.fillMaxWidth()) {
-                                if (armed != "forgetShow") {
-                                    armed = "forgetShow"
-                                } else {
-                                    armed = null
+                            Button(if (confirm.armed == "forgetShow") "Press again: forget all of ${sf.show ?: "this show"}" else "Forget this show (${sf.episodes} episode${if (sf.episodes == 1) "" else "s"})", modifier = Modifier.fillMaxWidth()) {
+                                confirm.press("forgetShow") {
                                     act {
                                         val r = Jdvr.backend.forgetShow(p.id, dryRun = false)
                                         if (r == null) "Couldn't forget it." else "Forgot ${sf.show ?: "the show"}: its episodes can be recorded again" + if (r.keptInLibrary > 0) " (copies still in the library still count)." else "."

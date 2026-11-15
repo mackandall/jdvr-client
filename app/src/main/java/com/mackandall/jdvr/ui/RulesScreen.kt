@@ -440,13 +440,7 @@ private fun RuleDetail(
     onRecordings: () -> Unit,
     onRemove: () -> Unit,
 ) {
-    var armed by remember(r.id) { mutableStateOf(false) }
-    LaunchedEffect(armed) {
-        if (armed) {
-            delay(4000)
-            armed = false
-        }
-    }
+    val confirmRemove = rememberConfirm<Unit>(r.id)
     Column(
         Modifier
             .fillMaxWidth()
@@ -512,7 +506,7 @@ private fun RuleDetail(
             }
             Button("Recordings (${r.recorded})", compact = true, modifier = if (canManage) Modifier else first) { if (r.recorded > 0) onRecordings() }
             if (canManage) {
-                Button(if (armed) "Press again" else "Remove", compact = true) { if (armed) onRemove() else armed = true }
+                Button(if (confirmRemove.isArmed) "Press again" else "Remove", compact = true) { confirmRemove.press { onRemove() } }
             }
         }
         Text("Back: to the list" + if (r.unwatched > 0) " · ${r.unwatched} unwatched" else "", color = Jc.Muted, fontSize = 12.5.sp)

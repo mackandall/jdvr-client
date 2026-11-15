@@ -146,7 +146,7 @@ fun GuideScreen(
     LaunchedEffect(focused?.id) {
         val p = focused ?: return@LaunchedEffect
         delay(350)
-        PanelCache.prefetch(p)
+        Answers.prefetch(ProgramAsk.panel(p))
     }
     // The programme picked to watch: where focus goes back to when the player closes. Kept apart
     // from `focused`, because as the panel and then the player go away, focus falls on whatever
