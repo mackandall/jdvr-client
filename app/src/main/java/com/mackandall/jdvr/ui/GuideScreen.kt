@@ -141,6 +141,13 @@ fun GuideScreen(
     var error by remember { mutableStateOf<String?>(null) }
     var selected by remember { mutableStateOf<Program?>(null) }
     var focused by remember { mutableStateOf<Program?>(null) }
+    // Resting on a programme fetches what its menu needs, so OK opens it complete. Moving on
+    // before the pause is up fetches nothing (scrolling through the guide asks the server nothing).
+    LaunchedEffect(focused?.id) {
+        val p = focused ?: return@LaunchedEffect
+        delay(350)
+        PanelCache.prefetch(p)
+    }
     // The programme picked to watch: where focus goes back to when the player closes. Kept apart
     // from `focused`, because as the panel and then the player go away, focus falls on whatever
     // cell is at that spot on screen (rows above), and the guide scrolls to it.

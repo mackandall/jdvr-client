@@ -45,6 +45,7 @@ import com.mackandall.jdvr.data.Buffer
 import com.mackandall.jdvr.data.Channel
 import com.mackandall.jdvr.data.EhProgram
 import com.mackandall.jdvr.data.Jdvr
+import com.mackandall.jdvr.data.attempt
 import com.mackandall.jdvr.data.MarkSymbols
 import com.mackandall.jdvr.data.Program
 import com.mackandall.jdvr.data.ScheduleState
@@ -87,12 +88,17 @@ internal fun ProgramPanel(
     var seriesOptions by remember(program.id) { mutableStateOf(false) }
     // The timer whose Recording options are open.
     var recordingOptions by remember(program.id) { mutableStateOf<String?>(null) }
+    // What the guide fetched ahead for this programme (resting on it), so the menu opens complete.
+    val known = remember(program.id) { PanelCache.cached(program.id) }
+    // Whether the server's answers are in (cached or fresh); until then, buttons this server
+    // usually offers hold their places.
+    var loaded by remember(program.id) { mutableStateOf(known != null) }
     // Episode History (watched mark, a copy to play, forget) and JellyDVR Live (is this only a buffer).
-    var eh by remember(program.id) { mutableStateOf<EhProgram?>(null) }
+    var eh by remember(program.id) { mutableStateOf(known?.eh) }
     // What "Forget this show" would forget (administrators, a show with history).
-    var showForget by remember(program.id) { mutableStateOf<ShowForget?>(null) }
-    var buffer by remember(program.id) { mutableStateOf<Buffer?>(null) }
-    var isBuffer by remember(program.id) { mutableStateOf(false) }
+    var showForget by remember(program.id) { mutableStateOf(known?.showForget) }
+    var buffer by remember(program.id) { mutableStateOf(known?.buffer) }
+    var isBuffer by remember(program.id) { mutableStateOf(known?.isBuffer ?: false) }
     var armed by remember(program.id) { mutableStateOf<String?>(null) }
     LaunchedEffect(armed) {
         if (armed != null) {
@@ -101,31 +107,30 @@ internal fun ProgramPanel(
         }
     }
     // Being recorded now: the recording, to watch from the start (with commercial skipping).
-    var recordingItem by remember(program.id) { mutableStateOf<UUID?>(null) }
-    LaunchedEffect(program.id) {
-        if (program.isRecording && program.isOn()) recordingItem = Jdvr.backend.recordingOfProgram(program.id)
-    }
-    var schedule by remember(program.id) { mutableStateOf<ScheduleState?>(null) }
+    var recordingItem by remember(program.id) { mutableStateOf(known?.recordingItem) }
+    var schedule by remember(program.id) { mutableStateOf(known?.schedule) }
     var note by remember(program.id) { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     val first = remember { FocusRequester() }
     var inside by remember(program.id) { mutableStateOf(false) }
     val marks = Marks.parse(p.rawEpisodeTitle, symbols)
 
+    fun apply(i: PanelInfo) {
+        schedule = i.schedule ?: schedule
+        eh = i.eh
+        showForget = i.showForget
+        isBuffer = i.isBuffer
+        buffer = i.buffer
+        recordingItem = i.recordingItem
+        loaded = true
+    }
+
     suspend fun refresh() {
         Jdvr.backend.program(p.id)?.let { p = it }
-        schedule = Jdvr.backend.scheduleState(p.id)
-        eh = Jdvr.backend.ehProgram(p.id)
-        showForget = if (p.isSeries) Jdvr.backend.forgetShow(p.id, dryRun = true) else null
-        isBuffer = p.id.toString().plainId() in Jdvr.backend.bufferPrograms()
-        buffer = Jdvr.backend.buffers(p.channelId).lastOrNull { it.programId?.plainId() == p.id.toString().plainId() }
+        apply(PanelCache.get(p, allBuffers = true, fresh = true).await())
     }
+    // Focus first: Watch live (or Record) is there from the start; the rest fills in around it.
     LaunchedEffect(program.id) {
-        eh = Jdvr.backend.ehProgram(program.id)
-        if (program.isSeries) showForget = Jdvr.backend.forgetShow(program.id, dryRun = true)
-        isBuffer = program.id.toString().plainId() in Jdvr.backend.bufferPrograms()
-        if (isBuffer) buffer = Jdvr.backend.buffers(program.channelId).lastOrNull { it.programId?.plainId() == program.id.toString().plainId() }
-        schedule = Jdvr.backend.scheduleState(program.id)
         // Opened as a floating dialog, its window needs a frame or two before focus can land.
         repeat(20) {
             if (inside) return@LaunchedEffect
@@ -133,6 +138,9 @@ internal fun ProgramPanel(
             delay(50)
         }
     }
+    // Asked again on opening (the prefetch under way, or a new one): shown at once from what was
+    // fetched ahead, then brought up to date.
+    LaunchedEffect(program.id) { apply(PanelCache.get(program, fresh = known != null).await()) }
 
     fun act(block: suspend () -> String?) {
         scope.launch {
@@ -340,7 +348,9 @@ internal fun ProgramPanel(
                     },
                     right = {
                         // Every later airing of it, with tuner clashes and commercial-free channels (Episode History).
-                        if (eh != null) {
+                        // (Until the first answer: where this server's Episode History buttons go.)
+                        val ehSoon = !loaded && PanelCache.ehAnswers
+                        if (eh != null || ehSoon) {
                             Button("Other airings", modifier = Modifier.fillMaxWidth()) {
                                 if (onOtherAirings != null) onOtherAirings(p) else airingsHere = true
                             }
@@ -348,13 +358,15 @@ internal fun ProgramPanel(
                         if (airingsHere) {
                             AiringsDialog(programId = p.id, onNote = { msg -> if (onActed != null) onActed(msg) }, onDismiss = { airingsHere = false })
                         }
-                        if (schedule != null && rights.record) {
+                        if ((schedule != null || (!loaded && PanelCache.scheduleAnswers)) && rights.record) {
                             val fav = schedule?.favourite
                             Button(
                                 if (fav == null) "Add to Recording Favourites" else "Remove from Recording Favourites",
                                 modifier = Modifier.fillMaxWidth(),
                                 leading = { Text(if (fav == null) "☆" else "★", color = Jc.Gold, fontSize = 18.sp) },
                             ) {
+                                // Not known yet whether it's a favourite: wait for the answer.
+                                if (schedule == null) return@Button
                                 if (fav != null && armed != "fav") {
                                     armed = "fav"
                                 } else {
@@ -363,6 +375,9 @@ internal fun ProgramPanel(
                                 }
                             }
                             if (armed == "fav") Text("Press again to remove it from Recording Favourites", color = Jc.Amber, fontSize = 13.sp)
+                        }
+                        if (eh == null && ehSoon) {
+                            Button("Mark watched", modifier = Modifier.fillMaxWidth(), leading = { Text("✓", color = Jc.Green) }) {}
                         }
                         eh?.let { info ->
                             Button(if (info.markedWatched) "Unmark watched" else "Mark watched", modifier = Modifier.fillMaxWidth(), leading = { Text("✓", color = Jc.Green) }) {
