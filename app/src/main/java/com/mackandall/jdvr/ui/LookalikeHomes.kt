@@ -132,8 +132,9 @@ private fun rememberLookData(
     var recentlyAdded by remember { mutableStateOf<List<RecordingCard>?>(null) }
     LaunchedEffect(data.round) {
         if (!data.loaded) return@LaunchedEffect
-        Jdvr.backend.resumeItems(12)?.let { resume = it }
-        if (data.shows == null) recentlyAdded = Jdvr.backend.recentlyAdded(12) ?: recentlyAdded.orEmpty()
+        // Asked together.
+        launch { Jdvr.backend.resumeItems(12)?.let { resume = it } }
+        if (data.shows == null) launch { recentlyAdded = Jdvr.backend.recentlyAdded(12) ?: recentlyAdded.orEmpty() }
     }
     val bufferIds = data.bufferIds
 

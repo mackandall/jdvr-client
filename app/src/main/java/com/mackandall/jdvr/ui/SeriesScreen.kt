@@ -70,10 +70,15 @@ internal fun LegacySeriesScreen(entry: FocusRequester) {
     // Recording Favourites answered (or didn't: the JellyDVR Schedule plugin isn't on this server).
     var favouritesLoaded by remember { mutableStateOf(false) }
     LaunchedEffect(reload) {
-        series = attempt { Jdvr.backend.seriesTimers() }
-        scheduled = attempt { Jdvr.backend.seriesScheduled() } ?: emptyMap()
-        favourites = Jdvr.backend.favourites()
-        favouritesLoaded = true
+        // Asked together (one after the other, the page took their sum).
+        kotlinx.coroutines.coroutineScope {
+            launch { series = attempt { Jdvr.backend.seriesTimers() } }
+            launch { scheduled = attempt { Jdvr.backend.seriesScheduled() } ?: emptyMap() }
+            launch {
+                favourites = Jdvr.backend.favourites()
+                favouritesLoaded = true
+            }
+        }
     }
 
     fun act(block: suspend () -> String?) {

@@ -142,8 +142,9 @@ fun HomeScreen(
     // when there's no Recorded Shows.
     LaunchedEffect(data.round) {
         if (!loaded) return@LaunchedEffect
-        fromStart = last?.now?.takeIf { it.isRecording }?.let { Jdvr.backend.recordingOfProgram(it.id) }
-        if (data.shows == null) recentlyAdded = Jdvr.backend.recentlyAdded(6) ?: recentlyAdded.orEmpty()
+        // Asked together.
+        launch { fromStart = last?.now?.takeIf { it.isRecording }?.let { Jdvr.backend.recordingOfProgram(it.id) } }
+        if (data.shows == null) launch { recentlyAdded = Jdvr.backend.recentlyAdded(6) ?: recentlyAdded.orEmpty() }
     }
 
     // What each tile has to show.

@@ -84,23 +84,16 @@ fun DetailsPage(
     onPlay: (PlayRecording) -> Unit,
     actions: @Composable RowScope.(ItemDetails, (String) -> Unit) -> Unit = { _, _ -> },
 ) {
-    var d by remember { mutableStateOf<ItemDetails?>(null) }
+    // What was fetched ahead (focus resting on it) shows at once; it's asked again to update.
+    var d by remember(itemId) { mutableStateOf(Answers.peek(ItemAsk.details(itemId))) }
     var note by remember { mutableStateOf<String?>(null) }
-    var commercials by remember { mutableStateOf<CommercialBadge?>(null) }
-    LaunchedEffect(itemId, refresh, CommercialMarks.changed) {
-        commercials =
-            attempt {
-                Jdvr.backend
-                    .commercialBadges(listOf(itemId))
-                    .values
-                    .firstOrNull()
-            }
-    }
+    var commercials by remember(itemId) { mutableStateOf(Answers.peek(ItemAsk.badge(itemId))) }
+    LaunchedEffect(itemId, refresh, CommercialMarks.changed) { commercials = Answers.get(ItemAsk.badge(itemId)) }
     // Where this recording's show is stored, for "→ moves to …" under Stored.
     val rights = deviceRights()
-    var storage by remember { mutableStateOf<com.mackandall.jdvr.data.ShowStorage?>(null) }
+    var storage by remember(itemId) { mutableStateOf(Answers.peek(ItemAsk.storage(itemId))) }
     LaunchedEffect(itemId, refresh, rights.archive) {
-        storage = if (rights.archive) attempt { Jdvr.backend.showStorage(itemId) } else null
+        storage = if (rights.archive) Answers.get(ItemAsk.storage(itemId)) else null
     }
     LaunchedEffect(note) {
         if (note != null) {
@@ -112,7 +105,9 @@ fun DetailsPage(
     val scope = rememberCoroutineScope()
     val play = remember { FocusRequester() }
     LaunchedEffect(itemId, refresh) {
-        attemptResult { Jdvr.backend.details(itemId) }.onSuccess { d = it }.onFailure { error = it.message }
+        Answers.get(ItemAsk.details(itemId))?.let { d = it }
+            // Couldn't: ask once more, for what went wrong.
+            ?: attemptResult { Jdvr.backend.details(itemId) }.onSuccess { d = it }.onFailure { if (d == null) error = it.message }
     }
     LaunchedEffect(d != null) { if (d != null) play.tryFocus() }
 
@@ -341,11 +336,12 @@ private fun EmbuaryDetails(
         }
     }
     // The rest of the season (or the show, without seasons), for the Episodes row.
-    var episodes by remember(item.id) { mutableStateOf<List<com.mackandall.jdvr.data.LibItem>>(emptyList()) }
+    fun ofSeason(all: List<com.mackandall.jdvr.data.LibItem>?) = all.orEmpty().filter { item.season == null || it.season == item.season }
+    var episodes by remember(item.id) { mutableStateOf(item.seriesId?.takeIf { item.type == "Episode" }?.let { ofSeason(Answers.peek(ItemAsk.seriesEpisodes(it))) }.orEmpty()) }
     LaunchedEffect(item.id, item.played, item.resumeMs) {
         val series = item.seriesId
         if (item.type == "Episode" && series != null) {
-            episodes = attempt { Jdvr.backend.episodes(series, null) }.orEmpty().filter { item.season == null || it.season == item.season }
+            episodes = ofSeason(Answers.get(ItemAsk.seriesEpisodes(series)))
         }
     }
     val scroll = rememberScrollState()
