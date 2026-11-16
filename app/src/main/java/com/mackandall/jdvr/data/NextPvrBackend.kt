@@ -1,5 +1,6 @@
 package com.mackandall.jdvr.data
 
+import timber.log.Timber
 import com.mackandall.jdvr.ui.day
 import com.mackandall.jdvr.ui.time
 import kotlinx.coroutines.Dispatchers
@@ -368,27 +369,29 @@ class NextPvrBackend(
         val name = runCatching { channelInfo()[nextPvrId(p.channelId)]?.str("channelName") }.getOrNull() ?: return null
 
         fun plain(s: String) = s.filter { it.isLetterOrDigit() }.lowercase()
-        repeat(20) {
+        repeat(20) { attempt ->
             val file =
                 runCatching {
-                    call("system.status")
-                        .jsonObject["status"]
-                        ?.jsonArray
-                        .orEmpty()
-                        .flatMap { d ->
-                            d.jsonObject["streams"]
-                                ?.jsonArray
-                                .orEmpty()
-                                .map { it.jsonPrimitive.content }
-                        }.filter { it.startsWith("LIVE&") }
-                        .map { it.substringAfter('&') }
-                        .filter { it != old }
-                        .lastOrNull { f ->
-                            Regex("""live-(.+)-\d+-\d+\.ts$""")
-                                .find(f.substringAfterLast('/'))
-                                ?.groupValues
-                                ?.get(1)
-                                ?.let { plain(it) == plain(name) } == true
+                    val live =
+                        call("system.status")
+                            .jsonObject["status"]
+                            ?.jsonArray
+                            .orEmpty()
+                            .flatMap { d ->
+                                d.jsonObject["streams"]
+                                    ?.jsonArray
+                                    .orEmpty()
+                                    .map { it.jsonPrimitive.content }
+                            }.filter { it.startsWith("LIVE&") }
+                            .map { it.substringAfter('&') }
+                            .filter { it != old }
+                    // By the channel in its name; else (a buffer named some other way, as IPTV
+                    // sources may) the only live buffer there is, once it has had time to appear.
+                    live.lastOrNull { f -> bufferChannel(f)?.let { plain(it) == plain(name) } == true }
+                        ?: live.singleOrNull()?.takeIf { attempt >= 4 }
+                        ?: run {
+                            if (attempt == 19) Timber.w("No live buffer file for %s among %s", name, live)
+                            null
                         }
                 }.getOrNull()
             if (file != null) {
@@ -408,6 +411,16 @@ class NextPvrBackend(
     }
 
     override val liveCopyIsFile: Boolean get() = true
+
+    /** A path's file name, on a Linux or a Windows server (C:\\…\\live-KFOR-1-2.ts). */
+    private fun fileName(path: String) = path.substringAfterLast('/').substringAfterLast('\\')
+
+    /** The channel a live buffer file is named after (live-<channel name>-<n>-<tuner>.ts), or null. */
+    private fun bufferChannel(path: String): String? =
+        Regex("""^live-(.+)-\d+-\d+\.\w+$""", RegexOption.IGNORE_CASE)
+            .find(fileName(path))
+            ?.groupValues
+            ?.get(1)
 
     override fun liveCopyOpenUrl(url: String): String = pinnedNow(url)
 
@@ -1642,12 +1655,7 @@ class NextPvrBackend(
                 val live = st.startsWith("LIVE&")
                 val file = st.substringAfter('&')
                 if (live) {
-                    val name =
-                        Regex("""live-(.+)-\d+-\d+\.ts$""")
-                            .find(file.substringAfterLast('/'))
-                            ?.groupValues
-                            ?.get(1)
-                            .orEmpty()
+                    val name = bufferChannel(file).orEmpty()
                     val ch = channels.entries.firstOrNull { plain(it.value.str("channelName").orEmpty()) == plain(name) }
                     BusyInput(
                         channelId = ch?.let { channelUuid(it.key).toString() } ?: "",
@@ -1661,7 +1669,7 @@ class NextPvrBackend(
                         channelId = ch?.let { channelUuid(it).toString() } ?: "",
                         channelName = r?.str("channel") ?: "",
                         number = ch?.let { channels[it]?.str("channelNumberFormated") } ?: "",
-                        recording = listOf(r?.str("name") ?: file.substringAfterLast('/').substringBeforeLast('.')),
+                        recording = listOf(r?.str("name") ?: fileName(file).substringBeforeLast('.')),
                     )
                 }
             }
