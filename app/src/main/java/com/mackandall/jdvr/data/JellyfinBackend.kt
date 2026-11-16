@@ -48,7 +48,8 @@ class JellyfinBackend private constructor(
     Archiving by SpacePlugin(plugins),
     RecordingRules by SchedulePlugin(plugins),
     LiveBuffers by LivePlugin(plugins),
-    ServerAlerts by AlertsPlugin(plugins) {
+    ServerAlerts by AlertsPlugin(plugins),
+    SportsOverruns by OverrunsPlugin(plugins) {
     constructor() : this(PluginClient { Jdvr.api ?: error("Not signed in") })
 
     // The Jellyfin SDK reads replies on the calling thread: never the main one (Android forbids it).

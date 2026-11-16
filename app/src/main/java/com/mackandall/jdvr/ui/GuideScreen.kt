@@ -4,6 +4,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -58,6 +59,7 @@ import coil3.compose.AsyncImage
 import com.mackandall.jdvr.data.Channel
 import com.mackandall.jdvr.data.Jdvr
 import com.mackandall.jdvr.data.MarkSymbols
+import com.mackandall.jdvr.data.OverrunMarks
 import com.mackandall.jdvr.data.Program
 import com.mackandall.jdvr.data.attempt
 import com.mackandall.jdvr.data.plainId
@@ -192,6 +194,8 @@ fun GuideScreen(
                     emptySet()
                 }
             extras = GuideExtras(Jdvr.backend.bufferPrograms(), Jdvr.backend.guideScanning(), favourites)
+            // Sports overruns: late games and the recordings given extra time for them.
+            OverrunMarks.refresh(force = true)
             delay(60_000)
         }
     }
@@ -780,6 +784,18 @@ private fun GuideChips(p: Program) {
     if (x.realRecording(p)) Chip(if (p.seriesTimerId != null) "● series recording" else "● recording", Jc.Recording)
     if (x.isBuffer(p)) Chip("live TV buffer", Jc.Muted)
     if (x.scanning(p)) Chip("CS · finding commercials" + (x.scanning[p.id.toString().plainId()]?.let { " · ${it}m" } ?: ""), Jc.Amber)
+    OverrunChips(p.id.toString().plainId())
+}
+
+/** Sports overruns: the game's clock ("LIVE · 4th 2:10"), and a recording's extra time ("+22 min · game ran late"). */
+@Composable
+internal fun OverrunChips(programId: String) {
+    val om = OverrunMarks.latest ?: return
+    om.game(programId)?.let { g ->
+        Chip(g.label + if (g.late && !g.final) (g.estimatedEnd?.let { " · ends ≈ ${it.time()}" } ?: "") else "", if (g.final) Jc.Muted else Jc.Recording)
+    }
+    om.recording(programId)?.sentence?.let { Chip(it, Jc.Amber) }
+    om.shift(programId)?.let { Chip("≈ ${it.shiftMinutes} min late · game before it", Jc.Amber) }
 }
 
 private val BandHeight = 200.dp
@@ -1036,6 +1052,28 @@ private fun GuideRow(
                 }
             }
         }
+        // Sports overruns: a strip along the top from a late game's listed end to when it should end.
+        OverrunMarks.latest?.let { om ->
+            val left = if (tile == null) ChannelColumn else ChannelColumn - 6.dp
+            visible.forEach { p ->
+                val g = om.game(p.id.toString().plainId()) ?: return@forEach
+                val from = g.listedEnd ?: return@forEach
+                val until = g.estimatedEnd ?: return@forEach
+                if (!g.late || g.final) return@forEach
+                val a = if (from.isBefore(windowStart)) windowStart else from
+                val b = if (until.isAfter(windowEnd)) windowEnd else until
+                if (!b.isAfter(a)) return@forEach
+                Box(
+                    Modifier
+                        .align(Alignment.TopStart)
+                        .offset(x = left + perMinute * Duration.between(windowStart, a).toMinutes().toFloat())
+                        .padding(top = 1.dp)
+                        .width(perMinute * Duration.between(a, b).toMinutes().toFloat())
+                        .height(4.dp)
+                        .background(Jc.Amber, RoundedCornerShape(2.dp)),
+                )
+            }
+        }
         later.firstOrNull()?.let { next ->
             Text(
                 "● ${later.size} later · ${next.start.time()}",
@@ -1166,6 +1204,13 @@ private fun ProgramCell(
     }
     val marks = Marks.parse(program.rawEpisodeTitle, symbols)
     val extras = LocalGuideExtras.current
+    // Sports overruns: the game's clock, a recording's extra time, a show pushed back.
+    val overruns = OverrunMarks.latest
+    val plain = program.id.toString().plainId()
+    val ovGame = overruns?.game(plain)
+    val ovRec = overruns?.recording(plain)
+    val ovTag = ovRec?.tag
+    val ovShift = overruns?.shift(plain)
     // The name that fits the cell (wider guides make cells narrow): its room is the cell less the
     // padding, the recording dot and the CS tag.
     val measurer =
@@ -1174,7 +1219,7 @@ private fun ProgramCell(
     val density = androidx.compose.ui.platform.LocalDensity.current
     val shortNames = Jdvr.prefs.guideShortNames
     val pad = if (width < 60.dp) 4.dp else 8.dp
-    val room = width - 4.dp - pad * 2 - (if (program.isRecording) 14.dp else 0.dp) - (if (extras.scanning(program)) 28.dp else 0.dp)
+    val room = width - 4.dp - pad * 2 - (if (program.isRecording) 14.dp else 0.dp) - (if (extras.scanning(program)) 28.dp else 0.dp) - (if (ovTag != null) (ovTag.length * 7 + 12).dp else 0.dp)
     val name =
         remember(program.name, room, shortNames) {
             if (!shortNames) {
@@ -1263,6 +1308,13 @@ private fun ProgramCell(
         border = ClickableSurfaceDefaults.border(focusedBorder = if (npvr || chan || estuary) Border.None else Border(BorderStroke(2.dp, Jc.Focus))),
         scale = ClickableSurfaceDefaults.scale(focusedScale = 1f),
     ) {
+        Box(Modifier.fillMaxSize()) {
+        ovShift?.let { s ->
+            // Where it will really start: a thin amber bar from the shifted start.
+            val minutes = Duration.between(program.start, program.end).toMinutes().coerceAtLeast(1)
+            val inset = (width - 4.dp) * (s.shiftMinutes.toFloat() / minutes).coerceIn(0f, 0.95f)
+            Box(Modifier.align(Alignment.BottomStart).padding(start = inset, bottom = 2.dp).fillMaxWidth().height(3.dp).background(Jc.Amber.copy(alpha = 0.85f), RoundedCornerShape(2.dp)))
+        }
         Column((if (sage && cellFocused) Modifier.sageGloss() else Modifier).fillMaxSize().padding(horizontal = pad, vertical = 5.dp), verticalArrangement = Arrangement.Center) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 // Red for a recording, two dots when a series records it; faint for a live TV buffer
@@ -1276,6 +1328,20 @@ private fun ProgramCell(
                 }
                 Text(name, color = titleColor, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
                 if (extras.scanning(program)) Text("CS", color = Jc.OnAmber, fontSize = 10.sp, fontWeight = FontWeight.Bold, modifier = Modifier.background(Jc.Amber, RoundedCornerShape(4.dp)).padding(horizontal = 4.dp))
+                if (ovTag != null) {
+                    val follow = ovRec.role == "followup"
+                    val faint = ovRec.isEstimate || ovRec.kept
+                    Text(
+                        ovTag,
+                        color = if (faint) Jc.Amber else if (follow) Jc.Text else Jc.OnAmber,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        modifier =
+                            (if (faint) Modifier.border(1.dp, Jc.Amber, RoundedCornerShape(4.dp)) else Modifier.background(if (follow) Jc.Focus.copy(alpha = 0.5f) else Jc.Amber, RoundedCornerShape(4.dp)))
+                                .padding(horizontal = 4.dp),
+                    )
+                }
             }
             val sub = marks.title ?: if (program.isMovie) "Movie" else null
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -1283,8 +1349,10 @@ private fun ProgramCell(
                 if (marks.otherAiring) Text("↪", color = Jc.Focus, fontSize = 12.sp)
                 if (marks.inLibrary) Text("●", color = Jc.Green, fontSize = 12.sp)
                 if (marks.watched) Text("✓", color = Jc.Green, fontSize = 12.sp)
+                ovGame?.let { g -> Text(g.label, color = if (g.final) subColor else Jc.Recording, fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false) }
                 if (sub != null) Text(sub, color = subColor, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
+        }
         }
     }
 }

@@ -285,6 +285,14 @@
     "imageUrl": "https://raw.githubusercontent.com/mackandall/jellyfin-plugin-jellydvr-schedule/main/icon.png",
     "versions": [
       {
+        "version": "1.2.0.0",
+        "changelog": "Sports overruns: follows games on ESPN's scoreboard and moves the end of recordings after a late game (with postgame coverage), gives game recordings extra time and follow-ups joined afterwards; guide marks in the web guide and JDVR with Keep the normal end / Add 15 more minutes. Starts in preview mode.",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/mackandall/jellyfin-plugin-jellydvr-schedule/releases/download/v1.2.0.0/jellyfin-plugin-jellydvr-schedule_1.2.0.0.zip",
+        "checksum": "0f8f030cf2ad081ea12a03f0aec8f5e4",
+        "timestamp": "2026-11-16T08:09:42.0000000Z"
+      },
+      {
         "version": "1.1.1.0",
         "changelog": "Alerts: failed or short recordings, stuck tuners, a full recordings drive and an old guide, sent to your phone (ntfy), email and the TVs running JDVR, with quiet hours and reminders. New Alerts page; the stuck-recording and stall checks moved there. Dismiss all.",
         "targetAbi": "12.0.0.0",
