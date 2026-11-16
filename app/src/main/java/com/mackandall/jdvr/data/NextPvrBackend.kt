@@ -1673,8 +1673,22 @@ class NextPvrBackend(
                     )
                 }
             }
-        return TunerStatus(capacity = devices.size, full = busy.size >= devices.size, busy = busy)
+        // One IPTV (or Extras) source is one device carrying several streams: count its connection limit.
+        val capacity = devices.sumOf { d -> d["oid"]?.jsonPrimitive?.intOrNull?.let { connections(it) } ?: 1 }
+        return TunerStatus(capacity = capacity, full = busy.size >= capacity, busy = busy)
     }
+
+    private val connectionLimits = java.util.concurrent.ConcurrentHashMap<Int, Int>()
+
+    /** How many streams a device can carry at once (setting.connections: an IPTV source's limit, 1 for a tuner). */
+    private suspend fun connections(oid: Int): Int =
+        connectionLimits[oid] ?: runCatching {
+            call("setting.connections", mapOf("source_id" to oid))
+                .jsonObject["connections"]
+                ?.jsonPrimitive
+                ?.intOrNull
+                ?.coerceIn(1, 64)
+        }.getOrNull().let { n -> (n ?: 1).also { if (n != null) connectionLimits[oid] = it } }
 
     /**
      * The live stream (/live?channeloid=) kept open while the player is on the buffer file: once
