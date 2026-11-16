@@ -41,6 +41,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.tv.material3.Text
+import com.mackandall.jdvr.data.plainId
+import com.mackandall.jdvr.data.OverrunMarks
 import com.mackandall.jdvr.data.Channel
 import com.mackandall.jdvr.data.Jdvr
 import com.mackandall.jdvr.data.MarkSymbols
@@ -220,6 +222,7 @@ internal fun ProgramPanel(
                         if (isBuffer) Chip("Live TV buffer", Jc.Muted)
                         if (eh?.markedWatched == true) Chip("marked watched", Jc.Green)
                         if (rich) rememberStoredIn(p.id, p.isMovie)?.let { Chip("stored in $it", Jc.Focus) }
+                        OverrunChips(p.id.toString().plainId())
                     }
                 }
                 if (rich) {
@@ -242,6 +245,31 @@ internal fun ProgramPanel(
                 } else {
                     titles()
                     chips()
+                }
+                // Sports overruns: why this recording has extra time, and until when.
+                OverrunMarks.latest?.recording(p.id.toString().plainId())?.let { r ->
+                    val lines =
+                        listOfNotNull(
+                            when (r.role) {
+                                "followup" -> "Follow-up recording: the rest of ${r.gameTitle}, joined onto the game's recording afterwards."
+                                "game" -> "Game recording: extra time for overtime."
+                                else -> "Pushed back by the game: ${r.gameTitle}."
+                            },
+                            r.gameStatus.takeIf { it.isNotEmpty() }?.let { "Game: $it" + (if (r.score.isNotEmpty()) " · ${r.score}" else "") },
+                            when {
+                                r.kept -> "Kept to its normal end by hand."
+                                r.decided && r.total > 0 -> "Records until about ${r.newEnd?.time() ?: "?"} (+${r.total} min)."
+                                r.estimateMinutes > 0 -> "So far about +${r.estimateMinutes} min; decided 3 minutes before it starts."
+                                else -> null
+                            },
+                            if (r.recording) "Already recording: its end can't change now." else null,
+                        )
+                    Text(
+                        lines.joinToString("\n"),
+                        color = Jc.Amber,
+                        fontSize = 14.sp,
+                        modifier = Modifier.background(Jc.Amber.copy(alpha = 0.12f), RoundedCornerShape(8.dp)).padding(10.dp),
+                    )
                 }
                 p.overview?.let { ScrollingOverview(it, lines = 6, below = first) }
                 schedule?.outcome?.let {
@@ -300,6 +328,25 @@ internal fun ProgramPanel(
                             }
                             // Start early / end late, and (JellyDVR Space) where this one is stored.
                             Button("Recording options…", modifier = Modifier.fillMaxWidth()) { recordingOptions = p.timerId }
+                            // Sports overruns: put the normal end back, or add time by hand.
+                            val om = OverrunMarks.latest
+                            val ov = om?.recording(p.id.toString().plainId())
+                            if (om != null && ov != null && om.buttons && !ov.recording && ov.role != "followup") {
+                                Button(if (ov.kept) "Follow the game again" else "Keep the normal end", modifier = Modifier.fillMaxWidth()) {
+                                    act {
+                                        Jdvr.backend.keepNormalEnd(ov.timerId, !ov.kept)?.let { error(it) }
+                                        OverrunMarks.refresh(force = true)
+                                        if (ov.kept) "It follows the game again." else "Kept to its normal end."
+                                    }
+                                }
+                                Button("Add 15 more minutes", modifier = Modifier.fillMaxWidth()) {
+                                    act {
+                                        Jdvr.backend.addFifteen(ov.timerId)?.let { error(it) }
+                                        OverrunMarks.refresh(force = true)
+                                        "15 minutes added to the end."
+                                    }
+                                }
+                            }
                         } else {
                             Button("Record", modifier = recordModifier, leading = { Dot(Jc.Recording) }) {
                                 act {

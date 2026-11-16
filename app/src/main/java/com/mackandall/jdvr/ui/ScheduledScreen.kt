@@ -67,6 +67,7 @@ fun ScheduledScreen(
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(reload) {
+        com.mackandall.jdvr.data.OverrunMarks.refresh()
         // Asked together.
         kotlinx.coroutines.coroutineScope {
             launch { items = Jdvr.backend.schedule() }
@@ -189,6 +190,8 @@ private fun ScheduleRow(
                     modifier = Modifier.weight(1f),
                 )
                 if (r.recordingNow && !buffer) Chip("● Recording", Jc.Recording)
+                // Sports overruns: "+22 min · game ran late".
+                r.programId?.let { com.mackandall.jdvr.data.OverrunMarks.latest?.recording(it.replace("-", "").lowercase())?.sentence }?.let { Chip(it, Jc.Amber) }
                 if (buffer) {
                     Chip("Live TV buffer", Jc.Muted)
                 } else {
