@@ -357,9 +357,11 @@ class NextPvrBackend(
         .build()
         .toString()
 
-    // The session's lease (10 s on the server) renewed, or (restart) a fresh start of the channel: a fresh buffer.
+    // The session's lease (10 s on the server) renewed, or (restart) a fresh start of the channel: a
+    // fresh buffer. Stopped first: started again as it is, NextPVR leaves the old buffer file behind.
     private suspend fun leaseOrRestart(restartChannel: Int?) {
         if (restartChannel != null) {
+            runCatching { call("channel.stream.stop") }
             call("channel.stream.start", mapOf("channel_id" to restartChannel))
         } else {
             call("channel.transcode.lease")
