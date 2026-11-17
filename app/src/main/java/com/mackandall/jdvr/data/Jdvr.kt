@@ -56,6 +56,7 @@ object Jdvr {
                 .Builder()
                 .addInterceptor(NextPvrBackend.snapshotLength)
                 .addInterceptor(NextPvrBackend.LiveHold.interceptor)
+                .addInterceptor(NextPvrBackend.Timeshift.interceptor)
                 .build()
         val factory = OkHttpFactory(http)
         jellyfin =

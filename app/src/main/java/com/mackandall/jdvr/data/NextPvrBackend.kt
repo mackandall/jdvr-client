@@ -8,6 +8,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -325,20 +326,44 @@ class NextPvrBackend(
 
     // ---- live TV ----------------------------------------------------------------------------
 
-    /** NextPVR sends the channel as MPEG-TS straight from the tuner; the session is its client. */
+    /**
+     * Live TV is a NextPVR timeshift session (channel.stream.start, as Kodi and NextPVR's own web
+     * client use): the tuner writes a buffer file from tune-in, kept while the session's lease is
+     * renewed, and /live?channel_id=&sid= serves it, live or (with byte ranges) from any point.
+     * Reading the buffer file itself (/stream?f=) fails on Windows servers: NextPVR opens it
+     * read-only-shared while its writer has it open ("being used by another process", 2026-11-16).
+     */
     override suspend fun startLive(channelId: UUID): LivePlayback {
         val sid = session()
-        val url =
-            baseUrl
-                .toHttpUrl()
-                .newBuilder()
-                .addPathSegment("live")
-                .addQueryParameter("channeloid", nextPvrId(channelId).toString())
-                .addQueryParameter("client", "jdvr-$sid")
-                .addQueryParameter("sid", sid)
-                .build()
-                .toString()
+        val id = nextPvrId(channelId)
+        Timeshift.stop()
+        call("channel.stream.start", mapOf("channel_id" to id))
+        Timeshift.begin { leaseOrRestart(it) }
+        val url = timeshiftUrl(id, sid, Timeshift.LIVE)
         return LivePlayback(channelId, url, mediaSourceId = null, liveStreamId = null, playSessionId = null, playMethod = PlayMethod.DIRECT_PLAY)
+    }
+
+    private fun timeshiftUrl(
+        channel: Int,
+        sid: String,
+        role: String,
+    ) = baseUrl
+        .toHttpUrl()
+        .newBuilder()
+        .addPathSegment("live")
+        .addQueryParameter("channel_id", channel.toString())
+        .addQueryParameter("sid", sid)
+        .addQueryParameter(Timeshift.ROLE, role)
+        .build()
+        .toString()
+
+    // The session's lease (10 s on the server) renewed, or (restart) a fresh start of the channel: a fresh buffer.
+    private suspend fun leaseOrRestart(restartChannel: Int?) {
+        if (restartChannel != null) {
+            call("channel.stream.start", mapOf("channel_id" to restartChannel))
+        } else {
+            call("channel.transcode.lease")
+        }
     }
 
     override suspend fun reportStart(p: LivePlayback) = Unit
@@ -353,71 +378,26 @@ class NextPvrBackend(
     /** Frees the tuner (closing the stream alone leaves it open a while). */
     override suspend fun reportStopped(p: LivePlayback) {
         LiveHold.release()
-        runCatching { call("channel.stop") }
+        Timeshift.stop()
+        runCatching { call("channel.stream.stop") }
     }
 
     override suspend fun warmHls(url: String) = Unit
 
-    // NextPVR writes what the tuner sends to a buffer file from tune-in (system.status names it:
-    // "LIVE&…/live-<channel name>-<n>-<tuner>.ts"); /stream?f= serves it with byte ranges, so it
-    // seeks like a recording. The tuner starts writing once the player opens the stream.
+    // The session's buffer file, from tune-in: the same /live, read with byte ranges (seeks like a recording).
     override suspend fun liveCopyUrl(
         p: LivePlayback,
         notThis: String?,
-    ): String? {
-        val old = notThis?.toHttpUrl()?.queryParameter("f")
-        val name = runCatching { channelInfo()[nextPvrId(p.channelId)]?.str("channelName") }.getOrNull() ?: return null
-
-        fun plain(s: String) = s.filter { it.isLetterOrDigit() }.lowercase()
-        repeat(20) { attempt ->
-            val file =
-                runCatching {
-                    val live =
-                        call("system.status")
-                            .jsonObject["status"]
-                            ?.jsonArray
-                            .orEmpty()
-                            .flatMap { d ->
-                                d.jsonObject["streams"]
-                                    ?.jsonArray
-                                    .orEmpty()
-                                    .map { it.jsonPrimitive.content }
-                            }.filter { it.startsWith("LIVE&") }
-                            .map { it.substringAfter('&') }
-                            .filter { it != old }
-                    // By the channel in its name; else (a buffer named some other way, as IPTV
-                    // sources may) the only live buffer there is, once it has had time to appear.
-                    live.lastOrNull { f -> bufferChannel(f)?.let { plain(it) == plain(name) } == true }
-                        ?: live.singleOrNull()?.takeIf { attempt >= 4 }
-                        ?: run {
-                            if (attempt == 19) Timber.w("No live buffer file for %s among %s", name, live)
-                            null
-                        }
-                }.getOrNull()
-            if (file != null) {
-                return baseUrl
-                    .toHttpUrl()
-                    .newBuilder()
-                    .addPathSegment("stream")
-                    .addQueryParameter("f", file)
-                    .addQueryParameter("mode", "http")
-                    .addQueryParameter("sid", session())
-                    .build()
-                    .toString()
-            }
-            delay(500)
-        }
-        return null
-    }
+    ): String? = timeshiftUrl(nextPvrId(p.channelId), session(), Timeshift.COPY)
 
     override val liveCopyIsFile: Boolean get() = true
 
     /** A path's file name, on a Linux or a Windows server (C:\\…\\live-KFOR-1-2.ts). */
     private fun fileName(path: String) = path.substringAfterLast('/').substringAfterLast('\\')
 
-    /** The channel a live buffer file is named after (live-<channel name>-<n>-<tuner>.ts), or null. */
+    /** The channel a live buffer file is named after (live-<channel name>-<n>-<tuner>.ts, or live-<channel name>-<n>.ts for a timeshift session), or null. */
     private fun bufferChannel(path: String): String? =
-        Regex("""^live-(.+)-\d+-\d+\.\w+$""", RegexOption.IGNORE_CASE)
+        Regex("""^live-(.+?)(?:-\d+)?-\d+\.\w+$""", RegexOption.IGNORE_CASE)
             .find(fileName(path))
             ?.groupValues
             ?.get(1)
@@ -426,7 +406,10 @@ class NextPvrBackend(
 
     override fun liveCopyGrowingUrl(url: String): String? = growingFile(url)
 
-    override fun holdLive(on: Boolean) = if (on) LiveHold.park() else LiveHold.release()
+    override fun holdLive(on: Boolean) {
+        Timeshift.onBuffer(on)
+        if (on) LiveHold.park() else LiveHold.release()
+    }
 
     // ---- recordings -------------------------------------------------------------------------
 
@@ -1773,6 +1756,129 @@ class NextPvrBackend(
                             override fun source() = source
                         },
                     ).build()
+            }
+    }
+
+    /**
+     * The timeshift session's upkeep and its reads. The lease is renewed every few seconds while
+     * the channel plays or sits paused on the buffer (the server lets the tuner go after 10 s
+     * without). Its /live serves one reader at a time: each request ends the one before.
+     *
+     * - The live stream: the buffer from its start, as it grows. Back to live from the buffer, the
+     *   channel is started afresh first: a fresh buffer from now, as a new /live always gave.
+     * - The buffer copy: an open range ("from here on") would stream for ever without saying the
+     *   length, so it's asked as a closed range up to the size pinned when playback opened (see
+     *   [snapshotLength]); reading on past it (no pin), it streams as the buffer grows, marked 206
+     *   so the player doesn't skip what it asked to start at.
+     */
+    object Timeshift {
+        const val ROLE = "jdvrts"
+        const val LIVE = "live"
+        const val COPY = "copy"
+
+        private const val LEASE_MS = 4_000L
+
+        private val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + Dispatchers.IO)
+
+        @Volatile private var job: kotlinx.coroutines.Job? = null
+
+        // Renews the lease (null) or starts the given channel afresh.
+        @Volatile private var upkeep: (suspend (Int?) -> Unit)? = null
+
+        // Played from the buffer since the channel started: going live again starts it afresh (a
+        // fresh buffer from now). The player opening the live stream again by itself (a retry) doesn't.
+        @Volatile private var wasOnBuffer = false
+        @Volatile private var restartNext = false
+
+        fun onBuffer(on: Boolean) {
+            if (on) {
+                wasOnBuffer = true
+            } else if (wasOnBuffer) {
+                wasOnBuffer = false
+                restartNext = true
+            }
+        }
+
+        fun begin(upkeep: suspend (Int?) -> Unit) {
+            this.upkeep = upkeep
+            wasOnBuffer = false
+            restartNext = false
+            job?.cancel()
+            job =
+                scope.launch {
+                    while (true) {
+                        delay(LEASE_MS)
+                        runCatching { upkeep(null) }.onFailure { Timber.w(it, "NextPVR timeshift lease not renewed") }
+                    }
+                }
+        }
+
+        fun stop() {
+            job?.cancel()
+            job = null
+            upkeep = null
+        }
+
+        val interceptor =
+            okhttp3.Interceptor { chain ->
+                val request = chain.request()
+                val url = request.url
+                val role = url.queryParameter(ROLE)
+                if (url.encodedPath != "/live" || role == null) return@Interceptor chain.proceed(request)
+                // An IPTV/HLS source can take 15 s or more before its first bytes reach the buffer.
+                @Suppress("NAME_SHADOWING")
+                val chain = chain.withReadTimeout(45, java.util.concurrent.TimeUnit.SECONDS)
+                val range = request.header("Range")?.substringAfter("bytes=")
+                val from = range?.substringBefore('-')?.toLongOrNull() ?: 0L
+                val to = range?.substringAfter('-', "")?.toLongOrNull()
+                if (role == LIVE) {
+                    if (range == null && restartNext) {
+                        restartNext = false
+                        run {
+                            val channel = url.queryParameter("channel_id")?.toIntOrNull()
+                            Timber.i("NextPVR timeshift: channel %s started afresh", channel)
+                            upkeep?.let { u -> kotlinx.coroutines.runBlocking { runCatching { u(channel) } } }
+                        }
+                    }
+                    // Without a range the server sends what the buffer holds now and stops: "from here
+                    // on" streams as it grows.
+                    val response = chain.proceed(request.newBuilder().header("Range", "bytes=$from-").build())
+                    return@Interceptor if (response.code == 200 && from > 0) response.newBuilder().code(206).build() else response
+                }
+                val mark = url.queryParameter(SNAPSHOT)
+                if (mark == null) {
+                    // Reading on as the buffer grows: from here, for as long as it streams.
+                    val response = chain.proceed(request.newBuilder().header("Range", "bytes=$from-").build())
+                    return@Interceptor if (response.code == 200 && from > 0) response.newBuilder().code(206).build() else response
+                }
+                val pinned =
+                    autoLengths[mark] ?: run {
+                        // The size now: a one-byte read says it (Content-Range: …/<size>).
+                        val probe =
+                            chain.proceed(
+                                request
+                                    .newBuilder()
+                                    .url(url.newBuilder().removeAllQueryParameters(SNAPSHOT).build())
+                                    .header("Range", "bytes=0-0")
+                                    .build(),
+                            )
+                        val size = probe.header("Content-Range")?.substringAfterLast('/')?.trim()?.toLongOrNull()
+                        probe.close()
+                        (size ?: return@Interceptor chain.proceed(request)).also { autoLengths[mark] = it }
+                    }
+                val end = minOf(to ?: (pinned - 1), pinned - 1)
+                if (from > end) {
+                    return@Interceptor okhttp3.Response
+                        .Builder()
+                        .request(request)
+                        .protocol(okhttp3.Protocol.HTTP_1_1)
+                        .code(416)
+                        .message("Range Not Satisfiable")
+                        .header("Content-Range", "bytes */$pinned")
+                        .body(okhttp3.ResponseBody.Companion.run { ByteArray(0).toResponseBody(null) })
+                        .build()
+                }
+                chain.proceed(request.newBuilder().header("Range", "bytes=$from-$end").build())
             }
     }
 
