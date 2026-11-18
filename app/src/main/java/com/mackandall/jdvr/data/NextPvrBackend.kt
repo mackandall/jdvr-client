@@ -108,13 +108,24 @@ class NextPvrBackend(
     ): JsonElement =
         withContext(Dispatchers.IO) {
             var reply = get(serviceUrl(method, params, session()))
-            if (failed(reply)) {
+            // Only an expired session (code 8, "Invalid Session."): signing in again on any failure
+            // ("Not Allowed" from setting.connections on a tuner) swapped the session under the
+            // live picture, whose timeshift then lapsed without its lease (2026-11-17).
+            if (sessionExpired(reply)) {
                 sid = null
                 reply = get(serviceUrl(method, params, session()))
             }
             if (failed(reply)) error("NextPVR: " + ((reply as JsonObject)["msg"]?.jsonPrimitive?.contentOrNull ?: "failed"))
             reply
         }
+
+    private fun sessionExpired(reply: JsonElement): Boolean {
+        val o = reply as? JsonObject ?: return false
+        if (!failed(o)) return false
+        val code = o["code"]?.jsonPrimitive?.intOrNull
+        val msg = o["msg"]?.jsonPrimitive?.contentOrNull.orEmpty()
+        return code == 8 || msg.contains("session", ignoreCase = true)
+    }
 
     private fun failed(reply: JsonElement) =
         (reply as? JsonObject)
@@ -343,6 +354,32 @@ class NextPvrBackend(
         return LivePlayback(channelId, url, mediaSourceId = null, liveStreamId = null, playSessionId = null, playMethod = PlayMethod.DIRECT_PLAY)
     }
 
+    /**
+     * A second picture: NextPVR's plain live stream, on a session and client of its own (its own
+     * tuner), so it leaves the main picture's timeshift session alone. Closing the connection frees the tuner.
+     */
+    override suspend fun startPictureLive(
+        channelId: UUID,
+        slot: Int,
+    ): LivePlayback {
+        // A NextPVR session of its own: a session serves one /live at a time, so a picture's
+        // stream on the main session took the big picture's connection over (2026-11-17).
+        val sid = withContext(Dispatchers.IO) { login(baseUrl, pinMd5) }
+        val url =
+            baseUrl
+                .toHttpUrl()
+                .newBuilder()
+                .addPathSegment("live")
+                .addQueryParameter("channeloid", nextPvrId(channelId).toString())
+                .addQueryParameter("client", "jdvr-$sid-pip$slot")
+                .addQueryParameter("sid", sid)
+                .build()
+                .toString()
+        return LivePlayback(channelId, url, mediaSourceId = null, liveStreamId = null, playSessionId = null, playMethod = PlayMethod.DIRECT_PLAY)
+    }
+
+    override suspend fun stopPictureLive(p: LivePlayback) = Unit
+
     private fun timeshiftUrl(
         channel: Int,
         sid: String,
@@ -407,6 +444,18 @@ class NextPvrBackend(
     override fun liveCopyOpenUrl(url: String): String = pinnedNow(url)
 
     override fun liveCopyGrowingUrl(url: String): String? = growingFile(url)
+
+    // The recording's size now (instead of the one startItem pinned), then on as the tuner writes: a
+    // picture following it stopped ~8 s in every 20 reopening it at each end (2026-11-17).
+    override fun followingUrl(url: String): String =
+        pinnedNow(
+            url
+                .toHttpUrl()
+                .newBuilder()
+                .removeAllQueryParameters(SNAPSHOT)
+                .build()
+                .toString(),
+        )
 
     override fun holdLive(on: Boolean) {
         Timeshift.onBuffer(on)
@@ -678,6 +727,10 @@ class NextPvrBackend(
 
     // No commercials from NextPVR yet; whether it's still recording (the player says so, and goes on).
     override suspend fun liveSegments(itemId: UUID): Pair<Boolean, List<Segment>> = (itemId.mostSignificantBits == RECORDING && runCatching { recording(itemId).recordingNow }.getOrDefault(false)) to emptyList()
+
+    override suspend fun channelsRecording(): Set<UUID> = recordings().filter { it.status == "recording" }.mapNotNull { r -> r.channelId?.let { channelUuid(it) } }.toSet()
+
+    override suspend fun recordingOnChannel(channelId: UUID): UUID? = recordings().firstOrNull { it.status == "recording" && it.channelId == nextPvrId(channelId) }?.uuid
 
     override suspend fun recordingOfProgram(programId: UUID): UUID? = recordings().firstOrNull { it.done && it.o.int("epgEventId") == nextPvrId(programId) }?.uuid
 
@@ -1673,7 +1726,12 @@ class NextPvrBackend(
                 ?.jsonPrimitive
                 ?.intOrNull
                 ?.coerceIn(1, 64)
-        }.getOrNull().let { n -> (n ?: 1).also { if (n != null) connectionLimits[oid] = it } }
+        }.let { r ->
+            val n = r.getOrNull()
+            // Refused ("Not Allowed": not an IPTV source) means one stream; don't ask every time.
+            val refused = r.exceptionOrNull()?.message?.contains("Not Allowed", ignoreCase = true) == true
+            (n ?: 1).also { if (n != null || refused) connectionLimits[oid] = it }
+        }
 
     /**
      * The live stream (/live?channeloid=) kept open while the player is on the buffer file: once
@@ -1707,7 +1765,8 @@ class NextPvrBackend(
         val interceptor =
             okhttp3.Interceptor { chain ->
                 val url = chain.request().url
-                if (url.encodedPath != "/live" || url.queryParameter("channeloid") == null) return@Interceptor chain.proceed(chain.request())
+                // Not a second picture's stream (client …-pipN): closing that one must free its tuner.
+                if (url.encodedPath != "/live" || url.queryParameter("channeloid") == null || url.queryParameter("client")?.contains("-pip") == true) return@Interceptor chain.proceed(chain.request())
                 val response = keeper.newCall(chain.request()).execute()
                 val body = response.body
                 val raw = body.source()

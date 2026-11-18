@@ -176,7 +176,7 @@ internal class RecordingSession(
 }
 
 /** The recording, with the subtitle files Jellyfin keeps beside the video as extra tracks. */
-private fun mediaItemOf(p: ItemPlayback): MediaItem =
+internal fun mediaItemOf(p: ItemPlayback): MediaItem =
     MediaItem
         .Builder()
         .setUri(p.url)

@@ -77,8 +77,6 @@ import java.time.ZoneId
 import java.util.UUID
 import android.view.KeyEvent as AndroidKeyEvent
 
-/** Sparse-PCR recordings needed an 8 MB TS search window to seek (the Wholphin fix). */
-private const val TS_SEARCH_BYTES = 8 * 1024 * 1024
 
 /**
  * Full-screen live TV. Up/down (or channel up/down) change channel, digits type a channel number,
@@ -87,8 +85,8 @@ private const val TS_SEARCH_BYTES = 8 * 1024 * 1024
  */
 @OptIn(UnstableApi::class)
 @Composable
-fun PlayerScreen(
-    channelId: UUID,
+internal fun PlayerScreen(
+    picture: MainPicture,
     onExit: () -> Unit,
     onChannelChange: (UUID) -> Unit,
     onPlayRecording: (com.mackandall.jdvr.PlayRecording) -> Unit,
@@ -98,63 +96,55 @@ fun PlayerScreen(
     val symbols = rememberMarkSymbols()
     val focus = remember { FocusRequester() }
     val playFocus = remember { FocusRequester() }
-    val ui = remember { LiveOverlays(scope) }
+    // The stream lives in the picture (it goes on playing in the guide after Back); this only shows it.
+    val ui = picture.ui
     val info = remember { LiveInfo() }
-    val player = remember { livePlayer(context) }
-    val stream = remember(channelId) { LiveStream(channelId, player, scope, ui) }
-    val formats = rememberPlayingFormats(player)
+    val player = picture.player
+    val stream = picture.stream
+    val extra = LivePictures.extra
+    val swapped = LivePictures.swapped
+    // The big picture: what the info bars show and the remote's pause, rewind and channel keys act
+    // on (after Swap, the second picture's channel).
+    val bigExtra = extra?.takeIf { swapped }
+    val big: LiveTransport = bigExtra?.transport ?: stream
+    val bigPlayer = bigExtra?.player ?: player
+    val channelId = big.channelId
+    val formats = rememberPlayingFormats(bigPlayer)
     var tick by remember { mutableIntStateOf(0) }
     val exit by androidx.compose.runtime.rememberUpdatedState(onExit)
-
-    DisposableEffect(stream) {
-        val listener =
-            object : Player.Listener {
-                override fun onPlayerError(e: PlaybackException) {
-                    Timber.w(e, "Playback error")
-                    if (!stream.reconnect("the stream stopped (${e.errorCodeName})")) {
-                        stream.error = liveErrorText(e)
-                        stream.tuning = false
-                    }
-                }
-
-                override fun onRenderedFirstFrame() {
-                    stream.tuning = false
-                }
-
-                override fun onPlaybackStateChanged(state: Int) {
-                    if (state == Player.STATE_ENDED) stream.copyEnded()
-                }
-            }
-        player.addListener(listener)
-        onDispose {
-            player.removeListener(listener)
-            Jdvr.backend.holdLive(false)
-        }
+    // Another channel for the big picture.
+    val change: (UUID) -> Unit = { id ->
+        if (bigExtra != null) info.channel(id)?.let { LivePictures.changeExtra(context, it) } else onChannelChange(id)
     }
-    DisposableEffect(Unit) {
-        val logger = playerLog("live", player).also { player.addListener(it) }
-        onDispose {
-            player.removeListener(logger)
-            player.release()
-        }
-    }
+    // Picture in picture: the channel list to pick its channel from, and its own menu.
+    var pickPicture by remember { mutableStateOf(false) }
+    var pictureMenu by remember { mutableStateOf(false) }
+    // Hold OK swaps the pictures: OK down waits to see whether it's held; let go first, it's a press.
+    var okDownAt by remember { mutableStateOf(0L) }
+    var okHeld by remember { mutableStateOf(false) }
+
     LaunchedEffect(Unit) {
+        picture.setVolume(if (swapped) 0f else 1f)
         info.loadChannels()
         focus.requestFocus()
     }
 
-    // Start the channel; stop it when leaving (or trying again).
-    DisposableEffect(stream, stream.attempt) {
-        val job = stream.start()
-        onDispose { stream.stopPlaying(job) }
-    }
     // Leaving the app (Home, another app, the TV sleeping) leaves live TV too: it frees the tuner.
     OnLeaveApp { exit() }
-    LaunchedEffect(stream, stream.attempt) { stream.watchForStalls() }
+    // The picture in picture's panels and questions have the remote while they show.
+    val pictureAsks = LivePictures.giveWay != null || extra?.state == PictureState.RECORDING_STOPPED
+    LaunchedEffect(pickPicture, pictureMenu, pictureAsks) {
+        ui.pictureOpen = pickPicture || pictureMenu || pictureAsks
+        // After the panel's focused row has gone: asked at once, the request was lost and the
+        // remote did nothing until focus came back.
+        if (!ui.pictureOpen) {
+            delay(50)
+            focus.tryFocus()
+        }
+    }
     LaunchedEffect(stream.tuning, stream.attempt) {
         if (!stream.tuning && ui.note?.startsWith("Reconnecting") == true) ui.note = null
     }
-    LaunchedEffect(stream.attempt) { stream.forgiveReconnects() }
 
     LaunchedEffect(channelId, ui.actionsOpen) { info.loadRecording(channelId) }
     LaunchedEffect(ui.actionsOpen) {
@@ -168,8 +158,8 @@ fun PlayerScreen(
         }
     }
     // The controls tuck away after 8 s untouched.
-    LaunchedEffect(ui.actionsOpen, ui.lastKeyAt, stream.pausedAt) {
-        if (!ui.actionsOpen || stream.pausedAt != null) return@LaunchedEffect
+    LaunchedEffect(ui.actionsOpen, ui.lastKeyAt, big.pausedAt) {
+        if (!ui.actionsOpen || big.pausedAt != null) return@LaunchedEffect
         delay(8000)
         ui.actionsOpen = false
     }
@@ -184,7 +174,7 @@ fun PlayerScreen(
     LaunchedEffect(ui.typedAt) {
         if (ui.typed.isEmpty()) return@LaunchedEffect
         delay(2000)
-        info.channels.firstOrNull { it.number == ui.typed }?.let { onChannelChange(it.id) }
+        info.channels.firstOrNull { it.number == ui.typed }?.let { change(it.id) }
         ui.typed = ""
     }
     LaunchedEffect(Unit) {
@@ -213,7 +203,7 @@ fun PlayerScreen(
     val stop: () -> Unit =
         remember(channelId) {
             {
-                Jdvr.backend.stopBuffering(channelId)
+                Jdvr.backend.stopBuffering(stream.channelId)
                 exit()
             }
         }
@@ -223,7 +213,7 @@ fun PlayerScreen(
         val channels = info.channels
         if (channels.isEmpty()) return
         val i = channels.indexOfFirst { it.id == channelId }
-        onChannelChange(channels[((if (i < 0) 0 else i) + delta).mod(channels.size)].id)
+        change(channels[((if (i < 0) 0 else i) + delta).mod(channels.size)].id)
     }
 
     Box(
@@ -234,53 +224,107 @@ fun PlayerScreen(
             .focusable()
             .onPreviewKeyEvent { e ->
                 ui.lastKeyAt = System.currentTimeMillis()
-                if (e.type != KeyEventType.KeyDown || !stream.showing) return@onPreviewKeyEvent false
+                val code = e.key.nativeKeyCode
+                val isOk = code == AndroidKeyEvent.KEYCODE_DPAD_CENTER || code == AndroidKeyEvent.KEYCODE_ENTER
+                // Only on the picture itself: no menu, list or question has the remote, no number typed.
+                val canHold =
+                    Jdvr.prefs.holdOkSwap && extra != null && stream.showing && !ui.anyPanel && !pictureMenu && !pickPicture &&
+                        ui.typed.isEmpty() && extra.state != PictureState.RECORDING_STOPPED && LivePictures.giveWay == null
+                if (isOk && (canHold || okDownAt != 0L)) {
+                    val now = System.currentTimeMillis()
+                    when {
+                        e.type == KeyEventType.KeyDown && e.nativeKeyEvent.repeatCount == 0 -> {
+                            okDownAt = now
+                            okHeld = false
+                        }
+
+                        e.type == KeyEventType.KeyDown -> {
+                            // A repeat means held: Android repeats a key only once it's been held for the
+                            // long-press time (400 ms on the Shield and onn); a tap never repeats.
+                            if (!okHeld && okDownAt != 0L) {
+                                okHeld = true
+                                LivePictures.swap()
+                                ui.flash(if (LivePictures.swapped) "Swapped · hold OK to swap back" else "Swapped back", 2500)
+                            }
+                        }
+
+                        else -> {
+                            // Let go before it counted as held: the usual OK.
+                            val held = okHeld
+                            okDownAt = 0L
+                            okHeld = false
+                            if (!held && big.showing) {
+                                onRemoteKey(code, big, ui, step = ::step, onNumber = { n -> info.channels.firstOrNull { it.number == n }?.let { change(it.id) } })
+                            }
+                        }
+                    }
+                    return@onPreviewKeyEvent true
+                }
+                if (e.type != KeyEventType.KeyDown || !big.showing) return@onPreviewKeyEvent false
                 // The mini guide uses ⏩ ⏪ to jump two hours.
                 if (ui.miniOpen && e.key.nativeKeyCode in setOf(AndroidKeyEvent.KEYCODE_MEDIA_FAST_FORWARD, AndroidKeyEvent.KEYCODE_MEDIA_REWIND)) return@onPreviewKeyEvent false
-                stream.onMediaKey(e.key.nativeKeyCode, record = record, stop = stop)
+                big.onMediaKey(e.key.nativeKeyCode, record = record, stop = stop)
             }.onKeyEvent { e ->
-                e.type == KeyEventType.KeyDown && stream.showing &&
-                    onRemoteKey(e.key.nativeKeyCode, stream, ui, step = ::step, onNumber = { n -> info.channels.firstOrNull { it.number == n }?.let { onChannelChange(it.id) } })
+                e.type == KeyEventType.KeyDown && big.showing &&
+                    onRemoteKey(e.key.nativeKeyCode, big, ui, step = ::step, onNumber = { n -> info.channels.firstOrNull { it.number == n }?.let { change(it.id) } })
             },
     ) {
-        AndroidView(
-            factory = { ctx ->
-                PlayerView(ctx).apply {
-                    useController = false
-                    // Switching to the HLS copy keeps the last frame up instead of flashing black.
-                    setShutterBackgroundColor(android.graphics.Color.TRANSPARENT)
-                    setKeepContentOnPlayerReset(true)
-                    this.player = player
-                }
-            },
-            modifier = Modifier.fillMaxSize(),
-        )
+        // Swapped (picture in picture): the second picture shows big, this channel in the corner.
+        LivePictureView(bigPlayer, Modifier.fillMaxSize())
 
         val channel = info.channel(channelId)
         // Read every second: the info bars come and go with the time.
-        val osd = tick.let { stream.tuning || System.currentTimeMillis() < ui.osdUntil || ui.actionsOpen || stream.pausedAt != null }
-        if (stream.tuning && stream.showing) TuningFiller(channel)
-        if (!ui.miniOpen && !ui.infoOpen && osd && stream.showing) {
+        val osd = tick.let { big.tuning || System.currentTimeMillis() < ui.osdUntil || ui.actionsOpen || big.pausedAt != null }
+        if (big.tuning && big.showing && bigExtra == null) TuningFiller(channel)
+        if (!ui.miniOpen && !ui.infoOpen && osd && big.showing) {
             channel?.let { TopInfoBox(it, symbols, info.nowDetails, info.nextUp, Modifier.align(Alignment.TopCenter)) }
         }
         if (!ui.miniOpen && (osd || stream.error != null)) {
             LiveControls(
                 channel,
                 symbols,
-                stream,
+                big,
                 info,
                 ui,
                 formats,
-                player,
+                bigPlayer,
                 playFocus,
                 Modifier.align(Alignment.BottomCenter),
                 tick = tick,
                 onRecord = record,
                 onStop = stop,
                 onFromStart = fromStart,
+                onPicture = {
+                    ui.actionsOpen = false
+                    when {
+                        !LivePictures.canPip -> ui.flash("This TV can play one picture at a time.", 4000)
+                        LivePictures.extra == null -> pickPicture = true
+                        else -> pictureMenu = true
+                    }
+                },
             )
         }
         LiveMessages(stream, ui, onExit)
+        // Picture in picture: the small picture, its menu and the channel list to pick it from.
+        if (extra != null) {
+            PictureInPicture(picture, extra, swapped, info.channel(stream.channelId), barUp = !ui.miniOpen && !ui.infoOpen && osd && big.showing, onFailed = { msg ->
+                LivePictures.closeExtra()
+                ui.flash(msg, 5000)
+            })
+            if (pictureMenu) {
+                PictureMenu(extra, swapped, onChange = {
+                    pictureMenu = false
+                    pickPicture = true
+                }, onClose = { pictureMenu = false })
+            }
+        }
+        if (pickPicture && info.channels.isNotEmpty()) {
+            PicturePicker(info.channels, stream.channelId, onPick = { c ->
+                pickPicture = false
+                LivePictures.openExtra(context, c)
+                if (Jdvr.prefs.holdOkSwap) ui.flash("Hold OK to swap the pictures", 3000)
+            }, onClose = { pickPicture = false })
+        }
         // Info: the guide's programme panel on the right, with all its options.
         if (ui.infoOpen) {
             channel?.now?.let { now ->
@@ -321,7 +365,7 @@ fun PlayerScreen(
                 symbols = symbols,
                 onWatch = {
                     ui.miniOpen = false
-                    if (it != channelId) onChannelChange(it)
+                    if (it != channelId) change(it)
                 },
                 onClose = { ui.miniOpen = false },
                 modifier = Modifier.fillMaxSize(),
@@ -350,23 +394,8 @@ internal fun OnLeaveApp(action: () -> Unit) {
     }
 }
 
-@OptIn(UnstableApi::class)
-private fun livePlayer(context: android.content.Context): ExoPlayer {
-    val extractors = DefaultExtractorsFactory().setTsExtractorTimestampSearchBytes(TS_SEARCH_BYTES)
-    return ExoPlayer
-        .Builder(context, renderersFactory(context))
-        .setMediaSourceFactory(
-            DefaultMediaSourceFactory(GrowingFileDataSource.Factory(OkHttpDataSource.Factory(Jdvr.http)), extractors)
-                .setLoadErrorHandlingPolicy(NoRetryOnServerError),
-        ).build()
-        .apply {
-            playWhenReady = true
-            applySubtitlePreference(this)
-        }
-}
-
 /** The remote's media keys: they work whether or not the controls are showing. */
-private fun LiveStream.onMediaKey(
+private fun LiveTransport.onMediaKey(
     code: Int,
     record: () -> Unit,
     stop: () -> Unit,
@@ -389,7 +418,7 @@ private fun LiveStream.onMediaKey(
 /** The remote over the bare picture: channels, the mini guide, the controls, rewind and digits. */
 private fun onRemoteKey(
     code: Int,
-    stream: LiveStream,
+    stream: LiveTransport,
     ui: LiveOverlays,
     step: (Int) -> Unit,
     onNumber: (String) -> Unit,
@@ -455,7 +484,7 @@ private fun onRemoteKey(
 private fun LiveControls(
     channel: Channel?,
     symbols: MarkSymbols?,
-    stream: LiveStream,
+    stream: LiveTransport,
     info: LiveInfo,
     ui: LiveOverlays,
     formats: PlayingFormats?,
@@ -467,6 +496,7 @@ private fun LiveControls(
     onRecord: () -> Unit,
     onStop: () -> Unit,
     onFromStart: (UUID) -> Unit,
+    onPicture: () -> Unit,
 ) {
     val offset = tick.let { stream.behindLiveMs() }
     val paused = stream.pausedAt
@@ -494,6 +524,7 @@ private fun LiveControls(
             playFocus = playFocus,
             clock = false,
             record = channel?.now?.takeIf { com.mackandall.jdvr.ui.TvRights.info.record }?.let { TransportAction(TransportIcon.Record, active = recording) { onRecord() } },
+            picture = TransportAction(TransportIcon.Picture) { onPicture() },
         ) {
             Button("Info") {
                 ui.actionsOpen = false
@@ -1025,7 +1056,7 @@ private fun TunersBusy(
  * better by asking again a few seconds later, so the player gives up at once and says so, instead
  * of retrying for half a minute behind the tuning spinner. Other errors keep the usual retries.
  */
-private object NoRetryOnServerError : androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy() {
+internal object NoRetryOnServerError : androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy() {
     override fun getRetryDelayMsFor(info: androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy.LoadErrorInfo): Long {
         val e = info.exception
         if (e is androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException && e.responseCode >= 500) return androidx.media3.common.C.TIME_UNSET
@@ -1034,7 +1065,7 @@ private object NoRetryOnServerError : androidx.media3.exoplayer.upstream.Default
 }
 
 /** What went wrong with a live channel, in words. */
-private fun liveErrorText(e: PlaybackException): String =
+internal fun liveErrorText(e: PlaybackException): String =
     when (e.errorCode) {
         PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS, PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND -> {
             "The server couldn't start this channel. It may be off the air, or its tuner may be busy or not working."

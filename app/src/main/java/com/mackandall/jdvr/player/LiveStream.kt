@@ -34,6 +34,39 @@ private const val STALL_MS = 12_000L
 private const val GOOD_SPELL_MS = 90_000L
 
 /**
+ * What the remote's pause, rewind and fast-forward act on: the big picture's stream (the channel
+ * being watched, or after Swap the second picture's own stream or recording).
+ */
+internal interface LiveTransport {
+    val channelId: UUID
+    val pausedAt: Instant?
+    val showing: Boolean
+    val tuning: Boolean
+    val error: String?
+
+    // Away from live: fast-forward and Next (back to live) work.
+    val onHls: Boolean
+
+    fun behindLiveMs(): Long
+
+    fun bufferFrom(behind: Long): LocalDateTime?
+
+    fun pause()
+
+    fun resume()
+
+    fun playPause() = if (pausedAt == null) pause() else resume()
+
+    fun rewind()
+
+    fun forward()
+
+    fun toLive()
+
+    fun backToTuneIn()
+}
+
+/**
  * One channel's live stream in the player: the tuner check, opening it, reconnecting by itself, and
  * pause and rewind. A new one for each channel; [close] when the player moves on.
  *
@@ -42,14 +75,17 @@ private const val GOOD_SPELL_MS = 90_000L
  */
 @Stable
 internal class LiveStream(
-    val channelId: UUID,
+    override val channelId: UUID,
     private val player: ExoPlayer,
     private val scope: CoroutineScope,
     private val ui: LiveOverlays,
-) {
+    // 0: the channel being watched. 1 on: a second picture's own stream (no timeshift on NextPVR,
+    // and it leaves the main picture's held stream and the recent channels alone).
+    private val slot: Int = 0,
+) : LiveTransport {
     // Between choosing a channel and its first picture: the tuning filler covers the old one.
-    var tuning by mutableStateOf(true)
-    var error by mutableStateOf<String?>(null)
+    override var tuning by mutableStateOf(true)
+    override var error by mutableStateOf<String?>(null)
 
     // All tuners taken: what they're doing, instead of the picture.
     var busy by mutableStateOf<TunerStatus?>(null)
@@ -65,9 +101,9 @@ internal class LiveStream(
     // spliced in with a wild timestamp froze the server's transcode, 2026-10-15). Up to three fresh
     // starts in a row, a little further apart each time; the error only shows if they all fail.
     private var reconnects by mutableIntStateOf(0)
-    var pausedAt by mutableStateOf<Instant?>(null)
+    override var pausedAt by mutableStateOf<Instant?>(null)
         private set
-    var onHls by mutableStateOf(false)
+    override var onHls by mutableStateOf(false)
         private set
     private var directStartedAt by mutableLongStateOf(0L)
     private var hlsStartedAt by mutableStateOf<Long?>(null)
@@ -86,7 +122,7 @@ internal class LiveStream(
     private var opened: LivePlayback? = null
 
     /** Nothing in the way of the picture (no tuners-busy list, no error). */
-    val showing get() = busy == null && error == null
+    override val showing get() = busy == null && error == null
 
     val canHls get() = copyUrl != null && hlsStartedAt != null
 
@@ -131,7 +167,7 @@ internal class LiveStream(
             error = null
             busy = null
             tuning = true
-            ui.showOsd(6000)
+            if (slot == 0) ui.showOsd(6000)
             try {
                 val tuners = Jdvr.backend.tuners(channelId)
                 if (tuners != null && tuners.isChannel && tuners.full) {
@@ -142,16 +178,22 @@ internal class LiveStream(
                 // Opening takes 10+ s, and Back, Stop or a channel change meanwhile cancels this, but
                 // the server opens the stream anyway: wait for it regardless and close what comes back,
                 // or that tuner input stays taken until Jellyfin restarts (four were, 2026-10-06).
-                val p = withContext(NonCancellable) { Jdvr.backend.startLive(channelId) }
+                val p = withContext(NonCancellable) { if (slot == 0) Jdvr.backend.startLive(channelId) else Jdvr.backend.startPictureLive(channelId, slot) }
                 if (!isActive) {
                     Timber.i("Channel %s opened after its player left; closing it", channelId)
-                    p.liveStreamId?.let { id -> MainScope().launch { attempt { Jdvr.backend.closeLiveStream(id) } } }
+                    if (slot == 0) {
+                        p.liveStreamId?.let { id -> MainScope().launch { attempt { Jdvr.backend.closeLiveStream(id) } } }
+                    } else {
+                        MainScope().launch { attempt { Jdvr.backend.stopPictureLive(p) } }
+                    }
                     return@launch
                 }
                 playback = p
                 opened = p
-                Jdvr.session.lastChannelId = channelId.toString()
-                Jdvr.session.pushRecentChannel(channelId.toString())
+                if (slot == 0) {
+                    Jdvr.session.lastChannelId = channelId.toString()
+                    Jdvr.session.pushRecentChannel(channelId.toString())
+                }
                 player.setMediaItem(MediaItem.fromUri(p.url))
                 player.playWhenReady = true // a new channel plays even if the last was paused
                 player.prepare()
@@ -165,7 +207,8 @@ internal class LiveStream(
                         Jdvr.backend.warmHls(hls)
                     }
                 }
-                if (p.hlsUrl == null && Jdvr.backend.liveCopyIsFile) launch { findCopy(p) }
+                // NextPVR's buffer file belongs to the main picture's timeshift session.
+                if (p.hlsUrl == null && Jdvr.backend.liveCopyIsFile && slot == 0) launch { findCopy(p) }
                 Jdvr.backend.reportStart(p)
                 while (true) {
                     delay(10_000)
@@ -190,7 +233,7 @@ internal class LiveStream(
         opened?.let { p ->
             // Finished in the background even as the screen goes away (waiting for it here froze
             // the screen for ~2 s).
-            MainScope().launch { attempt { Jdvr.backend.reportStopped(p) } }
+            MainScope().launch { attempt { if (slot == 0) Jdvr.backend.reportStopped(p) else Jdvr.backend.stopPictureLive(p) } }
         }
         opened = null
     }
@@ -234,7 +277,7 @@ internal class LiveStream(
 
     // How far behind live the picture is. Jellyfin's live HLS has no programme date-times, so the
     // player's own live offset is unknown: the copy's end (its duration so far) is live instead.
-    fun behindLiveMs(): Long =
+    override fun behindLiveMs(): Long =
         if (onHls && Jdvr.backend.liveCopyIsFile) {
             // A buffer file from tune-in: its position is the time since then.
             (android.os.SystemClock.elapsedRealtime() - directStartedAt - player.currentPosition).coerceAtLeast(0)
@@ -248,7 +291,7 @@ internal class LiveStream(
         }
 
     // Where rewinding can go back to: the start of the HLS copy (about when you tuned in).
-    fun bufferFrom(behind: Long): LocalDateTime? =
+    override fun bufferFrom(behind: Long): LocalDateTime? =
         when {
             onHls -> LocalDateTime.now().minusNanos((behind + player.currentPosition) * 1_000_000)
             hlsStartedAt != null -> LocalDateTime.now().minusNanos((android.os.SystemClock.elapsedRealtime() - hlsStartedAt!!) * 1_000_000)
@@ -261,7 +304,7 @@ internal class LiveStream(
     ) {
         val url = copyUrl ?: return
         // Leaving the live stream: it stays open (NextPVR would drop the buffer with it).
-        if (!onHls) Jdvr.backend.holdLive(true)
+        if (!onHls && slot == 0) Jdvr.backend.holdLive(true)
         // NextPVR's buffer is one file, opened anywhere: start (and rewind) on the full picture at or
         // before the moment, or the first pictures are broken (green while paused, a hitch on Play).
         if (Jdvr.backend.liveCopyIsFile) player.setSeekParameters(androidx.media3.exoplayer.SeekParameters.PREVIOUS_SYNC)
@@ -283,21 +326,22 @@ internal class LiveStream(
         }
     }
 
-    fun rewind() {
+    override fun rewind() {
         when {
             onHls -> seekCopy((player.currentPosition - 10_000).coerceAtLeast(0))
             canHls -> switchToHls(hlsPositionOf(player.currentPosition - 10_000), play = pausedAt == null)
+            slot > 0 -> ui.flash("Rewind isn't available on this picture: it has no buffer of its own on this server. Pause works.", 4000)
             else -> ui.flash("Rewind isn't available on this channel.")
         }
         ui.showOsd()
     }
 
     // Back to live: the direct stream again (truly live, not the HLS copy's few seconds behind).
-    fun toLive() {
+    override fun toLive() {
         val p = playback ?: return
         if (onHls && copyUrl != p.url) {
             // NextPVR: a fresh live stream starts a fresh buffer (the old one goes with the held stream).
-            Jdvr.backend.holdLive(false)
+            if (slot == 0) Jdvr.backend.holdLive(false)
             player.setSeekParameters(androidx.media3.exoplayer.SeekParameters.DEFAULT)
             player.setMediaItem(MediaItem.fromUri(p.url))
             player.playWhenReady = true
@@ -341,7 +385,7 @@ internal class LiveStream(
         }
     }
 
-    fun forward() {
+    override fun forward() {
         if (!onHls) return
         // No further than live: within 30 s of it, back to the live stream itself.
         if (behindLiveMs() <= 30_000) toLive() else seekCopy(player.currentPosition + 30_000)
@@ -349,7 +393,7 @@ internal class LiveStream(
     }
 
     // Back to where you tuned in: the start of the HLS copy.
-    fun backToTuneIn() {
+    override fun backToTuneIn() {
         if (onHls) {
             player.seekTo(0)
         } else if (canHls) {
@@ -360,7 +404,7 @@ internal class LiveStream(
 
     // Pause freezes the direct stream at once; once the HLS copy has caught up to that frame (it
     // runs ~10 s behind), it takes over, still paused, so Play is instant however long the pause.
-    fun pause() {
+    override fun pause() {
         if (pausedAt != null) return
         pausedAt = Instant.now()
         player.pause()
@@ -375,13 +419,11 @@ internal class LiveStream(
         }
     }
 
-    fun resume() {
+    override fun resume() {
         if (pausedAt == null) return
         pausedAt = null
         swapJob?.cancel()
         player.play()
         ui.showOsd()
     }
-
-    fun playPause() = if (pausedAt == null) pause() else resume()
 }

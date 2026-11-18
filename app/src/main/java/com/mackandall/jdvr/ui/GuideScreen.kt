@@ -1,5 +1,6 @@
 package com.mackandall.jdvr.ui
 
+import com.mackandall.jdvr.player.pictureBorder
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -120,7 +121,7 @@ private fun floorToHalfHour(t: LocalDateTime): LocalDateTime = t.truncatedTo(Chr
  * panel (watch, record, record series, record this instead, Recording Favourite).
  */
 @Composable
-fun GuideScreen(
+internal fun GuideScreen(
     entry: FocusRequester,
     onPlay: (UUID) -> Unit,
     onPlayRecording: (com.mackandall.jdvr.PlayRecording) -> Unit,
@@ -129,11 +130,16 @@ fun GuideScreen(
     // Opened at a later time (SageTV's "Tonight") or on a chosen channel ("Jump to a channel").
     startAt: LocalDateTime? = null,
     startChannel: UUID? = null,
+    // The channel playing on in the guide's picture after Back from live TV (null: none).
+    livePicture: com.mackandall.jdvr.player.MainPicture? = null,
+    // Watch here: that channel in the guide's picture, staying in the guide.
+    onWatchHere: (UUID) -> Unit = {},
 ) {
     val infoOnTop = Jdvr.prefs.guideInfo == com.mackandall.jdvr.data.Prefs.TOP
     val infoBelow = Jdvr.prefs.guideInfo == com.mackandall.jdvr.data.Prefs.BOTTOM
     // Above or below: the details on a band, the grid at full width.
     val infoBand = infoOnTop || infoBelow
+    val sideLeft = !infoBand && Jdvr.prefs.guideSide == com.mackandall.jdvr.data.Prefs.LEFT
     var channels by remember { mutableStateOf<List<Channel>?>(null) }
     var windowStart by remember { mutableStateOf(floorToHalfHour(maxOf(startAt ?: LocalDateTime.now(), LocalDateTime.now()))) }
     var programs by remember { mutableStateOf<Map<UUID, List<Program>>>(emptyMap()) }
@@ -300,6 +306,15 @@ fun GuideScreen(
                 selected = null
                 onPlay(p.channelId)
             },
+            onWatchHere =
+                if (livePicture != null && p.channelId != livePicture.channelId) {
+                    {
+                        closePanel()
+                        onWatchHere(p.channelId)
+                    }
+                } else {
+                    null
+                },
             onPlayItem = {
                 returnTo = p
                 selected = null
@@ -550,17 +565,36 @@ fun GuideScreen(
         ) {
             GuideArt(art)
             Column(Modifier.fillMaxSize()) {
+                // "Beside the guide": a quarter of the width shows the programme the cursor is on, or its
+                // actions after OK; on the right, or the left (Settings › Guide).
+                @Composable
+                fun RowScope.sidePanel() {
+                    if (!infoBand && scheduleFor == null) {
+                        Box(Modifier.weight(0.26f).fillMaxHeight().background(guidePanel(0.6f))) {
+                            val p = selected
+                            if (p == null) {
+                                focused?.let { InfoPanel(it, channels?.firstOrNull { c -> c.id == it.channelId }, symbols, hint = if (tileFocused != null) TILE_HINT else liveHint(it, livePicture), live = livePicture, liveChannel = channels?.firstOrNull { c -> c.id == livePicture?.channelId }) }
+                                    ?: if (channels?.isEmpty() != true) Text("Move through the guide to see a programme here; OK for what you can do with it.", color = Jc.Muted, fontSize = 15.sp, modifier = Modifier.padding(22.dp)) else Unit
+                            } else {
+                                // Its actions open over the guide (below), docked or floating.
+                                InfoPanel(p, channels?.firstOrNull { c -> c.id == p.channelId }, symbols, live = livePicture, liveChannel = channels?.firstOrNull { c -> c.id == livePicture?.channelId })
+                            }
+                        }
+                    }
+                }
+
                 // "Above the guide" / "Below the guide" (Settings): the details on a band, the grid at full width.
                 @Composable
                 fun band() =
                     // Light: the picture sits behind the details.
                     Box(Modifier.fillMaxWidth().height(BandHeight).background(guidePanel(0.3f))) {
-                        focused?.let { InfoBand(it, channels?.firstOrNull { c -> c.id == it.channelId }, symbols, hint = if (tileFocused != null) TILE_HINT else null) }
+                        focused?.let { InfoBand(it, channels?.firstOrNull { c -> c.id == it.channelId }, symbols, hint = if (tileFocused != null) TILE_HINT else liveHint(it, livePicture), live = livePicture, liveChannel = channels?.firstOrNull { c -> c.id == livePicture?.channelId }) }
                             ?: if (channels?.isEmpty() != true) Text("Move through the guide to see a programme here; OK for what you can do with it.", color = Jc.Muted, fontSize = 15.sp, modifier = Modifier.padding(22.dp)) else Unit
                     }
                 // Not in a channel's schedule: its list takes the whole height, its menu the details.
                 if (infoOnTop && scheduleFor == null) band()
                 Row(Modifier.weight(1f).fillMaxWidth()) {
+                    if (sideLeft) sidePanel()
                     val sched = scheduleFor
                     if (sched != null) {
                         ChannelSchedule(
@@ -680,8 +714,16 @@ fun GuideScreen(
                                                     symbols = symbols,
                                                     pendingFocus = pendingFocus?.takeIf { it.first == ch.id }?.second,
                                                     onFocusTaken = { pendingFocus = null },
-                                                    onSelect = { selected = it },
+                                                    onSelect = { p ->
+                                                        if (livePicture != null && p.channelId == livePicture.channelId && p.isOn()) {
+                                                            returnTo = p
+                                                            onPlay(p.channelId)
+                                                        } else {
+                                                            selected = p
+                                                        }
+                                                    },
                                                     onFocused = { onCellFocused(it) },
+                                                    playing = livePicture?.channelId == ch.id,
                                                     entry = if (ch.id == (home?.channelId ?: list.first().id)) entry else null,
                                                     entryProgram = home?.id,
                                                     onShift = { minutes -> shift(minutes, ch.id) },
@@ -715,19 +757,7 @@ fun GuideScreen(
                             }
                         }
                     }
-                    // Side layout: the right quarter shows the programme the cursor is on, or its actions after OK.
-                    if (!infoBand && scheduleFor == null) {
-                        Box(Modifier.weight(0.26f).fillMaxHeight().background(guidePanel(0.6f))) {
-                            val p = selected
-                            if (p == null) {
-                                focused?.let { InfoPanel(it, channels?.firstOrNull { c -> c.id == it.channelId }, symbols, hint = if (tileFocused != null) TILE_HINT else null) }
-                                    ?: if (channels?.isEmpty() != true) Text("Move through the guide to see a programme here; OK for what you can do with it.", color = Jc.Muted, fontSize = 15.sp, modifier = Modifier.padding(22.dp)) else Unit
-                            } else {
-                                // Its actions open over the guide (below), docked or floating.
-                                InfoPanel(p, channels?.firstOrNull { c -> c.id == p.channelId }, symbols)
-                            }
-                        }
-                    }
+                    if (!sideLeft) sidePanel()
                 }
                 if (infoBelow && scheduleFor == null) band()
             }
@@ -824,6 +854,8 @@ private fun InfoBand(
     channel: Channel?,
     symbols: MarkSymbols?,
     hint: String? = null,
+    live: com.mackandall.jdvr.player.MainPicture? = null,
+    liveChannel: Channel? = null,
 ) {
     val marks = Marks.parse(p.rawEpisodeTitle, symbols)
     val now = LocalDateTime.now()
@@ -837,6 +869,14 @@ private fun InfoBand(
     }
     Row(Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 14.dp), horizontalArrangement = Arrangement.spacedBy(22.dp)) {
         Column(Modifier.width(PictureWidth), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            // A channel playing on in the guide (Back from live TV): its picture instead of the art.
+            if (live != null) {
+                LiveBox(live)
+                if (p.channelId != live.channelId || !on) {
+                    LiveCaption(liveChannel)
+                    return@Column
+                }
+            } else
             // The channel's logo underneath: it shows when the programme has no picture.
             Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f).background(Jc.Panel2, RoundedCornerShape(10.dp)), contentAlignment = Alignment.Center) {
                 channel?.logoUrl?.let { AsyncImage(model = it, contentDescription = null, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize(0.5f)) }
@@ -923,9 +963,15 @@ private fun InfoPanel(
     channel: Channel?,
     symbols: MarkSymbols?,
     hint: String? = null,
+    live: com.mackandall.jdvr.player.MainPicture? = null,
+    liveChannel: Channel? = null,
 ) {
     val marks = Marks.parse(p.rawEpisodeTitle, symbols)
     Column(Modifier.fillMaxSize().padding(22.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        if (live != null) {
+            LiveBox(live)
+            if (p.channelId != live.channelId || !p.isOn()) LiveCaption(liveChannel)
+        }
         Text(p.name, color = Jc.Title, fontSize = 24.sp, fontWeight = FontWeight.SemiBold, maxLines = 3)
         val episode = listOfNotNull(p.seasonEpisode, marks.title).joinToString(" · ")
         if (episode.isNotEmpty()) Text(episode, color = Jc.Text, fontSize = 17.sp)
@@ -1004,6 +1050,8 @@ private fun GuideRow(
     onShift: (Long) -> Boolean,
     // The channel's logo as a button (opens its schedule); null: just a label.
     tile: ChannelTile? = null,
+    // Playing in the guide's picture: marked beside its logo.
+    playing: Boolean = false,
 ) {
     val windowEnd = windowStart.plusMinutes(windowMinutes)
     val visible = programs.filter { it.end.isAfter(windowStart) && it.start.isBefore(windowEnd) }.sortedBy { it.start }
@@ -1011,6 +1059,15 @@ private fun GuideRow(
     val extras = LocalGuideExtras.current
     val later = if (Jdvr.prefs.guideLaterTabs) programs.filter { !it.start.isBefore(windowEnd) && extras.realRecording(it) }.sortedBy { it.start } else emptyList()
     Box(Modifier.height(RowHeight).fillMaxWidth()) {
+        if (playing) {
+            Box(
+                Modifier
+                    .align(Alignment.TopStart)
+                    .padding(top = 4.dp)
+                    .background(Jc.Focus, RoundedCornerShape(3.dp))
+                    .padding(horizontal = 3.dp),
+            ) { Text("▶", color = Jc.OnFocus, fontSize = 8.sp) }
+        }
         Row(Modifier.fillMaxSize().padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
             if (tile == null) {
                 Row(Modifier.width(ChannelColumn).fillMaxHeight(), verticalAlignment = Alignment.CenterVertically) { ChannelLabel(channel) }
@@ -1412,4 +1469,77 @@ internal fun estuaryGenreColour(p: Program): Color {
         "children" in g || "kids" in g || "animat" in g || "anime" in g -> EstuaryKids
         else -> EstuaryOther
     }
+}
+
+/** What OK does on [p] while a channel plays in the guide's picture (null: the usual hint). */
+private fun liveHint(
+    p: Program,
+    live: com.mackandall.jdvr.player.MainPicture?,
+): String? {
+    live ?: return null
+    return when {
+        p.channelId == live.channelId && p.isOn() -> "OK  Full screen · Back  " + if (Jdvr.prefs.guideBack == com.mackandall.jdvr.data.Prefs.FULL) "Full screen" else "Stop playing"
+        p.isOn() -> "OK  Watch here · full screen · record"
+        else -> null
+    }
+}
+
+/** The channel playing on in the guide: its video, LIVE, and whether its sound is on. */
+@Composable
+private fun LiveBox(live: com.mackandall.jdvr.player.MainPicture) {
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .aspectRatio(16f / 9f)
+            .clip(RoundedCornerShape(10.dp))
+            .background(Color.Black)
+            .pictureBorder(RoundedCornerShape(10.dp)),
+    ) {
+        com.mackandall.jdvr.player.LivePictureView(live.player, Modifier.fillMaxSize())
+        if (live.stream.tuning) {
+            Text("Tuning…", color = Color.White, fontSize = 13.sp, modifier = Modifier.align(Alignment.Center))
+        }
+        Text(
+            "LIVE",
+            color = Color.White,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Bold,
+            modifier =
+                Modifier
+                    .align(Alignment.TopStart)
+                    .padding(6.dp)
+                    .background(Jc.Recording, RoundedCornerShape(4.dp))
+                    .padding(horizontal = 5.dp, vertical = 1.dp),
+        )
+        val sound =
+            when (Jdvr.prefs.guideSound) {
+                com.mackandall.jdvr.data.Prefs.MUTE -> "muted"
+                com.mackandall.jdvr.data.Prefs.ON -> "sound on"
+                else -> "sound low"
+            }
+        Text(
+            sound,
+            color = Color.White,
+            fontSize = 10.sp,
+            modifier =
+                Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(6.dp)
+                    .background(Color.Black.copy(alpha = 0.7f), RoundedCornerShape(4.dp))
+                    .padding(horizontal = 5.dp, vertical = 1.dp),
+        )
+    }
+}
+
+/** Under the guide's picture when the cursor is elsewhere: which channel is playing in it. */
+@Composable
+private fun LiveCaption(channel: Channel?) {
+    val now = channel?.now
+    Text(
+        listOfNotNull("In the picture", channel?.let { "${it.number} ${it.name}" }, now?.name).joinToString(" · "),
+        color = Jc.Focus,
+        fontSize = 12.sp,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+    )
 }

@@ -49,7 +49,10 @@ internal class LiveOverlays(
     var typed by mutableStateOf("")
     var typedAt by mutableLongStateOf(0L)
 
-    val anyPanel get() = actionsOpen || miniOpen || infoOpen
+    // Picture in picture's channel list, menu or a question of its has the remote.
+    var pictureOpen by mutableStateOf(false)
+
+    val anyPanel get() = actionsOpen || miniOpen || infoOpen || pictureOpen
 
     fun showOsd(forMs: Long = 5000) {
         osdUntil = System.currentTimeMillis() + forMs
