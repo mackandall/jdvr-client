@@ -108,6 +108,34 @@ fun SettingsScreen(
             options = listOf(Opt(Prefs.BOTTOM, "Below the guide"), Opt(Prefs.TOP, "Above the guide"), Opt(Prefs.SIDE, "Beside the guide")),
             selected = prefs.guideInfo,
         ) { prefs.changeGuideInfo(it) }
+        if (prefs.guideInfo == Prefs.SIDE) {
+            Options(
+                label = "Details beside the guide",
+                help = "Which side of the grid the details go.",
+                options = listOf(Opt(Prefs.RIGHT, "On the right"), Opt(Prefs.LEFT, "On the left")),
+                selected = prefs.guideSide,
+            ) { prefs.changeGuideSide(it) }
+        }
+        Options(
+            label = "Keep playing in the guide",
+            help = "Back from live TV opens the guide with the channel still playing in the details picture. Off: the player stops, as before.",
+            options = listOf(Opt(true, "On"), Opt(false, "Off")),
+            selected = prefs.guideKeepPlaying,
+        ) { prefs.changeGuideKeepPlaying(it) }
+        if (prefs.guideKeepPlaying) {
+            Options(
+                label = "Sound in the guide",
+                help = "While the channel plays in the guide's picture.",
+                options = listOf(Opt(Prefs.ON, "On"), Opt(Prefs.LOWER, "Lower"), Opt(Prefs.MUTE, "Mute")),
+                selected = prefs.guideSound,
+            ) { prefs.changeGuideSound(it) }
+            Options(
+                label = "Back in the guide while playing",
+                help = "Stop playing: the picture goes back to the programme's art and the tuner is freed. Full screen again: back to the channel (Back there stops it).",
+                options = listOf(Opt(Prefs.STOP, "Stop playing"), Opt(Prefs.FULL, "Full screen again")),
+                selected = prefs.guideBack,
+            ) { prefs.changeGuideBack(it) }
+        }
         Options(
             label = "Hours shown",
             help = "How much of the evening the guide spans. Wider guides fit more on screen with narrower cells; ⏪/⏩ or the Hours button in the guide change it too.",
@@ -329,6 +357,31 @@ fun SettingsScreen(
                 selected = prefs.stillWatchingAfter,
             ) { prefs.changeStillWatchingAfter(it) }
         }
+        Section("Picture in picture")
+        Options(
+            label = "Corner",
+            help = "Where the second picture sits over live TV (OK › Picture in the player).",
+            options = listOf(Opt("br", "Bottom right"), Opt("tr", "Top right"), Opt("bl", "Bottom left"), Opt("tl", "Top left")),
+            selected = prefs.pipCorner,
+        ) { prefs.changePipCorner(it) }
+        Options(
+            label = "Size",
+            help = "How big the second picture is.",
+            options = listOf(Opt(Prefs.SMALL, "Small"), Opt(Prefs.MEDIUM, "Medium"), Opt(Prefs.LARGE, "Large")),
+            selected = prefs.pipSize,
+        ) { prefs.changePipSize(it) }
+        Options(
+            label = "Border",
+            help = "A light border round the small live pictures: the second picture here and the channel playing on in the guide.",
+            options = listOf(Opt(Prefs.OFF_BORDER, "Off"), Opt(Prefs.THIN_BORDER, "Thin"), Opt(Prefs.MEDIUM_BORDER, "Medium")),
+            selected = prefs.pictureBorder,
+        ) { prefs.changePictureBorder(it) }
+        Options(
+            label = "Hold OK in live TV",
+            help = "With a second picture open, holding OK swaps the two pictures; the sound follows the big one. Off: holding OK is just a press.",
+            options = listOf(Opt(true, "Swap the pictures"), Opt(false, "Off")),
+            selected = prefs.holdOkSwap,
+        ) { prefs.changeHoldOkSwap(it) }
         Section("Remote")
         Options(
             label = "Hold OK on a poster or episode",

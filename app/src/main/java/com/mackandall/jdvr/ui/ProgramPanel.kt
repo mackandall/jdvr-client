@@ -77,6 +77,8 @@ internal fun ProgramPanel(
     rich: Boolean = false,
     // Under the buttons (the channel schedule: more of the show on this channel).
     extra: (@Composable () -> Unit)? = null,
+    // A channel plays in the guide's picture: "Watch here" puts this one there instead.
+    onWatchHere: (() -> Unit)? = null,
 ) {
     var p by remember(program.id) { mutableStateOf(program) }
     var airingsHere by remember(program.id) { mutableStateOf(false) }
@@ -293,7 +295,12 @@ internal fun ProgramPanel(
                     left = {
                         if (p.isOn()) {
                             if (rights.liveTv) {
-                                Button("Watch live", modifier = Modifier.fillMaxWidth().focusRequester(first), onClick = onWatch)
+                                if (onWatchHere != null) {
+                                    Button("Watch here", modifier = Modifier.fillMaxWidth().focusRequester(first), onClick = onWatchHere)
+                                    Button("Watch full screen", modifier = Modifier.fillMaxWidth(), onClick = onWatch)
+                                } else {
+                                    Button("Watch live", modifier = Modifier.fillMaxWidth().focusRequester(first), onClick = onWatch)
+                                }
                             } else {
                                 Button("Live TV is off for this TV", modifier = Modifier.fillMaxWidth().focusRequester(first)) {}
                             }

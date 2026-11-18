@@ -55,7 +55,32 @@ interface TvBackend :
     suspend fun cancelSeries(seriesTimerId: String)
 
     /** Opens the channel's live stream and works out how to play it. */
+    /**
+     * The recording being made on [channelId] right now, by channel (a manual timeslot has no guide
+     * programme to look it up by), or null when the backend can't tell: then it's looked up by the
+     * programme on now.
+     */
+    suspend fun recordingOnChannel(channelId: UUID): UUID? = null
+
+    /** The channels recording right now, fresh; null when the backend can't tell (the guide's flags are used). */
+    suspend fun channelsRecording(): Set<UUID>? = null
+
+    /** A recording still being made, as a stream that reads on as it grows (NextPVR); else as it is. */
+    fun followingUrl(url: String): String = url
+
     suspend fun startLive(channelId: UUID): LivePlayback
+
+    /**
+     * A second picture's own live stream (picture in picture): a separate play session, no pause
+     * or rewind. [slot] tells pictures apart where the server needs it.
+     */
+    suspend fun startPictureLive(
+        channelId: UUID,
+        slot: Int,
+    ): LivePlayback = startLive(channelId)
+
+    /** Lets go of a [startPictureLive] stream (frees its tuner). */
+    suspend fun stopPictureLive(p: LivePlayback) = reportStopped(p)
 
     /** Request the HLS playlist once, so the server starts the remux now (from tune-in). */
     suspend fun warmHls(url: String)

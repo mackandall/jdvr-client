@@ -21,6 +21,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.tv.material3.Border
@@ -32,7 +33,7 @@ import com.mackandall.jdvr.ui.Jc
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 
-enum class TransportIcon { Previous, Rewind, Stop, Play, Pause, Forward, Next, Record }
+enum class TransportIcon { Previous, Rewind, Stop, Play, Pause, Forward, Next, Record, Picture }
 
 /** One transport action: what it draws, whether it does anything here, and what it does. */
 class TransportAction(
@@ -60,6 +61,8 @@ fun TransportBar(
     next: TransportAction,
     playFocus: FocusRequester,
     record: TransportAction? = null,
+    // Picture in picture: beside Record, as the live row's text buttons fill the width.
+    picture: TransportAction? = null,
     // Off where the screen shows the time elsewhere (live TV: on the key hints line).
     clock: Boolean = true,
     extras: @Composable RowScope.() -> Unit = {},
@@ -72,10 +75,11 @@ fun TransportBar(
         TransportButton(forward)
         TransportButton(next)
         record?.let {
-            Spacer(Modifier.width(6.dp))
+            Spacer(Modifier.width(2.dp))
             TransportButton(it)
         }
-        Spacer(Modifier.width(14.dp))
+        picture?.let { TransportButton(it) }
+        Spacer(Modifier.width(8.dp))
         extras()
         Spacer(Modifier.weight(1f))
         if (clock) {
@@ -93,7 +97,7 @@ private fun TransportButton(
 ) {
     Surface(
         onClick = { if (action.enabled) action.onClick() },
-        modifier = modifier.size(width = 58.dp, height = 44.dp),
+        modifier = modifier.size(width = 50.dp, height = 44.dp),
         shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(10.dp)),
         colors =
             ClickableSurfaceDefaults.colors(
@@ -106,7 +110,7 @@ private fun TransportButton(
         scale = ClickableSurfaceDefaults.scale(focusedScale = 1.08f),
     ) {
         val color = LocalContentColor.current
-        Box(Modifier.size(width = 58.dp, height = 44.dp), contentAlignment = Alignment.Center) {
+        Box(Modifier.size(width = 50.dp, height = 44.dp), contentAlignment = Alignment.Center) {
             val tint = if (action.icon == TransportIcon.Record && action.enabled) Jc.Recording else color
             Canvas(Modifier.size(20.dp)) { drawIcon(action.icon, tint) }
         }
@@ -180,6 +184,12 @@ private fun DrawScope.drawIcon(
 
         TransportIcon.Record -> {
             drawCircle(color, radius = w * 0.42f)
+        }
+
+        // A screen with a small one in its corner.
+        TransportIcon.Picture -> {
+            drawRect(color, Offset(0f, h * 0.1f), Size(w, h * 0.8f), style = Stroke(w * 0.09f))
+            drawRect(color, Offset(w * 0.48f, h * 0.45f), Size(w * 0.38f, h * 0.32f))
         }
     }
 }

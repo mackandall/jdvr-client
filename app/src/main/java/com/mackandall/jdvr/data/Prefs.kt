@@ -18,6 +18,36 @@ class Prefs(
     var guideInfo by mutableStateOf(p.getString("guideInfo", BOTTOM) ?: BOTTOM)
         private set
 
+    /** Guide beside layout: the details on the "right" (as before) or the "left" of the grid. */
+    var guideSide by mutableStateOf(p.getString("guideSide", RIGHT) ?: RIGHT)
+        private set
+
+    /** Back from live TV to the guide: the channel keeps playing in the details picture. */
+    var guideKeepPlaying by mutableStateOf(p.getBoolean("guideKeepPlaying", true))
+        private set
+
+    /** The channel's sound while it plays in the guide: "on", "lower" or "mute". */
+    var guideSound by mutableStateOf(p.getString("guideSound", LOWER) ?: LOWER)
+        private set
+
+    /** Back in the guide while a channel plays there: "stop" it, or "full" screen again. */
+    var guideBack by mutableStateOf(p.getString("guideBack", STOP) ?: STOP)
+        private set
+
+    /** Picture in picture: its corner ("br", "tr", "bl", "tl") and size (small, medium, large). */
+    var pipCorner by mutableStateOf(p.getString("pipCorner", "br") ?: "br")
+        private set
+    var pipSize by mutableStateOf(p.getString("pipSize", MEDIUM) ?: MEDIUM)
+        private set
+
+    /** A border round the small live pictures (the guide's and picture in picture): "off", "thin" or "medium". */
+    var pictureBorder by mutableStateOf(p.getString("pictureBorder", OFF_BORDER) ?: OFF_BORDER)
+        private set
+
+    /** Live TV with a second picture open: holding OK swaps the two (off: holding OK is just a press). */
+    var holdOkSwap by mutableStateOf(p.getBoolean("holdOkSwap", true))
+        private set
+
     /** Guide and search: a programme's actions "docked" on the right, or "floating" in the middle. */
     var programActions by mutableStateOf(p.getString("programActions", DOCKED) ?: DOCKED)
         private set
@@ -469,6 +499,46 @@ class Prefs(
         p.edit().putString("guideInfo", v).apply()
     }
 
+    fun changeGuideSide(v: String) {
+        guideSide = v
+        p.edit().putString("guideSide", v).apply()
+    }
+
+    fun changeGuideKeepPlaying(v: Boolean) {
+        guideKeepPlaying = v
+        p.edit().putBoolean("guideKeepPlaying", v).apply()
+    }
+
+    fun changeGuideSound(v: String) {
+        guideSound = v
+        p.edit().putString("guideSound", v).apply()
+    }
+
+    fun changeGuideBack(v: String) {
+        guideBack = v
+        p.edit().putString("guideBack", v).apply()
+    }
+
+    fun changePipCorner(v: String) {
+        pipCorner = v
+        p.edit().putString("pipCorner", v).apply()
+    }
+
+    fun changePipSize(v: String) {
+        pipSize = v
+        p.edit().putString("pipSize", v).apply()
+    }
+
+    fun changeHoldOkSwap(v: Boolean) {
+        holdOkSwap = v
+        p.edit().putBoolean("holdOkSwap", v).apply()
+    }
+
+    fun changePictureBorder(v: String) {
+        pictureBorder = v
+        p.edit().putString("pictureBorder", v).apply()
+    }
+
     fun changeProgramActions(v: String) {
         programActions = v
         p.edit().putString("programActions", v).apply()
@@ -494,6 +564,10 @@ class Prefs(
     }
 
     companion object {
+        const val OFF_BORDER = "off"
+        const val THIN_BORDER = "thin"
+        const val MEDIUM_BORDER = "medium"
+
         // Home's tiles, row by row, and the presets of Settings › Home.
         val HOME_TILES = listOf("live", "weather", "now", "next", "attention", "tuners", "fresh", "libraries")
         const val PROBLEMS_POPUP = "popup"
@@ -518,6 +592,12 @@ class Prefs(
         const val HOLD_DETAILS = "details"
         // The guide's widths, in hours (Settings › Guide, ⏪/⏩ and the Hours button in the guide).
         val GUIDE_HOURS = listOf(2, 3, 4, 6, 8)
+        const val RIGHT = "right"
+        const val LEFT = "left"
+        const val LOWER = "lower"
+        const val MUTE = "mute"
+        const val STOP = "stop"
+        const val FULL = "full"
         const val SIDE = "side"
         const val TOP = "top"
         const val BOTTOM = "bottom"

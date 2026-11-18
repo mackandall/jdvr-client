@@ -209,6 +209,39 @@ fun AppRoot(
     LaunchedEffect(screen, currentLibrary, libraries) { if (screen == Screen.Library && libraries.isNotEmpty() && currentLibrary == null) place = Place(Screen.Home) }
     var playingChannel by remember { mutableStateOf<UUID?>(null) }
     var playingRecording by remember { mutableStateOf<PlayRecording?>(null) }
+    val appContext = androidx.compose.ui.platform.LocalContext.current
+    // Live TV: the picture (it outlives the full-screen player: Back can leave it playing in the
+    // guide), and the player shown full screen over it.
+    fun watchChannel(id: UUID) {
+        com.mackandall.jdvr.player.LivePictures.watch(appContext, id)
+        playingChannel = id
+    }
+    // Back from live TV: in the guide (Settings › Guide › Keep playing), the channel plays on in
+    // the details picture; anywhere else, or with it off, it stops.
+    fun leaveLive() {
+        val m = com.mackandall.jdvr.player.LivePictures.main
+        val keep = Jdvr.prefs.guideKeepPlaying && screen == Screen.Guide && !railOpen && m != null && m.stream.showing && !m.stream.tuning
+        playingChannel = null
+        if (keep) {
+            // Swapped: the channel watched big plays on in the guide (the one in the corner closes).
+            val big = com.mackandall.jdvr.player.LivePictures.extra?.takeIf { com.mackandall.jdvr.player.LivePictures.swapped }
+            if (big != null) com.mackandall.jdvr.player.LivePictures.watch(appContext, big.channelId)
+            com.mackandall.jdvr.player.LivePictures.closeExtra()
+            m.setVolume(com.mackandall.jdvr.player.guideVolume())
+        } else {
+            com.mackandall.jdvr.player.LivePictures.closeAll()
+        }
+    }
+    val livePicture = com.mackandall.jdvr.player.LivePictures.main
+    // Playing in the guide (not full screen).
+    val inGuidePicture = playingChannel == null && livePicture != null
+    // Leaving the guide (another section, a recording) stops it.
+    LaunchedEffect(screen, playingRecording, inGuidePicture) {
+        if (inGuidePicture && (screen != Screen.Guide || playingRecording != null)) com.mackandall.jdvr.player.LivePictures.closeAll()
+    }
+    LaunchedEffect(inGuidePicture, Jdvr.prefs.guideSound) {
+        if (inGuidePicture) livePicture?.setVolume(com.mackandall.jdvr.player.guideVolume())
+    }
     // Bumped when a recording or video stops, so screens re-read watched marks and resume points.
     var played by remember { mutableIntStateOf(0) }
     LaunchedEffect(playingRecording == null) { if (playingRecording == null) played++ }
@@ -280,6 +313,10 @@ fun AppRoot(
         // Back, as in Wholphin: from a section to where it was opened from (else Home), from Home
         // to the menu, and from the menu on Home out of the app.
         val backActivity = androidx.compose.ui.platform.LocalContext.current as? android.app.Activity
+        // The guide with a channel playing in its picture: Back stops it, or (Settings › Guide)
+        // goes back to it full screen. Always composed, after the one below, so it comes first.
+        val guideBackLive = inGuidePicture && !railOpen && screen == Screen.Guide
+        if (inGuidePicture) com.mackandall.jdvr.player.OnLeaveApp { com.mackandall.jdvr.player.LivePictures.closeAll() }
         BackHandler(enabled = !railOpen && playingChannel == null && playingRecording == null) {
             when {
                 backStack.isNotEmpty() -> {
@@ -304,6 +341,14 @@ fun AppRoot(
                 else -> {
                     railOpen = true
                 }
+            }
+        }
+        BackHandler(enabled = guideBackLive) {
+            val m = com.mackandall.jdvr.player.LivePictures.main
+            if (Jdvr.prefs.guideBack == com.mackandall.jdvr.data.Prefs.FULL && m != null) {
+                playingChannel = m.channelId
+            } else {
+                com.mackandall.jdvr.player.LivePictures.closeAll()
             }
         }
         // While a player is up, the screen under it is out of reach: a key the player has no use
@@ -332,7 +377,7 @@ fun AppRoot(
                 .onPreviewKeyEvent { playerUp }
                 .onFocusChanged { screenHasFocus = it.hasFocus },
         ) {
-            androidx.compose.runtime.CompositionLocalProvider(com.mackandall.jdvr.ui.LocalWatchLive provides { id: UUID -> playingChannel = id }) {
+            androidx.compose.runtime.CompositionLocalProvider(com.mackandall.jdvr.ui.LocalWatchLive provides { id: UUID -> watchChannel(id) }) {
                 when (screen) {
                     Screen.Home -> {
                         // Both SageTV themes: Home is SageTV's menu (Gemstone draws it in its own look).
@@ -347,7 +392,7 @@ fun AppRoot(
                                 onOpenRecordings = { goTo(Place(Screen.RecordedShows, recordingsPreset = it)) },
                                 onOpenLibrary = { goTo(Place(Screen.Library, libraryId = it)) },
                                 onOpenMenuSettings = { goTo(Place(Screen.Settings, settingsMenuPage = true)) },
-                                onPlayChannel = { playingChannel = it },
+                                onPlayChannel = { watchChannel(it) },
                                 onSignOut = {
                                     Jdvr.signOut()
                                     signedIn = false
@@ -369,7 +414,7 @@ fun AppRoot(
                         } else {
                             HomeScreen(
                                 entry = entry,
-                                onPlayChannel = { playingChannel = it },
+                                onPlayChannel = { watchChannel(it) },
                                 onPlayRecording = { playingRecording = it },
                                 onOpenScreen = { goTo(Place(it)) },
                                 onOpenShow = { goTo(Place(Screen.RecordedShows, openShow = it)) },
@@ -384,11 +429,11 @@ fun AppRoot(
                     }
 
                     Screen.Guide -> {
-                        GuideScreen(entry = entry, onPlay = { playingChannel = it }, onPlayRecording = { playingRecording = it }, watching = playingChannel, startAt = place.guideAt, startChannel = place.guideChannel)
+                        GuideScreen(entry = entry, onPlay = { watchChannel(it) }, onPlayRecording = { playingRecording = it }, watching = playingChannel ?: livePicture?.channelId, livePicture = livePicture.takeIf { inGuidePicture }, onWatchHere = { livePicture?.changeChannel(it) }, startAt = place.guideAt, startChannel = place.guideChannel)
                     }
 
                     Screen.LiveTv -> {
-                        ChannelsScreen(entry = entry, onPlay = { playingChannel = it })
+                        ChannelsScreen(entry = entry, onPlay = { watchChannel(it) })
                     }
 
                     Screen.RecordedShows -> {
@@ -403,7 +448,7 @@ fun AppRoot(
 
                     Screen.Search -> {
                         com.mackandall.jdvr.ui
-                            .SearchScreen(entry = entry, refresh = played, onPlayChannel = { playingChannel = it }, onPlay = { playingRecording = it })
+                            .SearchScreen(entry = entry, refresh = played, onPlayChannel = { watchChannel(it) }, onPlay = { playingRecording = it })
                     }
 
                     Screen.Scheduled -> {
@@ -510,14 +555,19 @@ fun AppRoot(
             )
         }
         playingChannel?.let { channelId ->
-            BackHandler { playingChannel = null }
+            BackHandler { leaveLive() }
+            val picture = com.mackandall.jdvr.player.LivePictures.main ?: com.mackandall.jdvr.player.LivePictures.watch(appContext, channelId)
             PlayerScreen(
-                channelId = channelId,
-                onExit = { playingChannel = null },
-                onChannelChange = { playingChannel = it },
+                picture = picture,
+                onExit = {
+                    playingChannel = null
+                    com.mackandall.jdvr.player.LivePictures.closeAll()
+                },
+                onChannelChange = { watchChannel(it) },
                 // Rewind into the buffer, or watch the recording from the start.
                 onPlayRecording = {
                     playingChannel = null
+                    com.mackandall.jdvr.player.LivePictures.closeAll()
                     playingRecording = it
                 },
             )
@@ -532,7 +582,7 @@ fun AppRoot(
                     onPlayRecording = { playingRecording = it },
                     onBackToLive = { channelId ->
                         playingRecording = null
-                        playingChannel = channelId
+                        watchChannel(channelId)
                     },
                 )
             }
