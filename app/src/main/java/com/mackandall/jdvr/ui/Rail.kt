@@ -147,17 +147,20 @@ fun Rail(
                     val s = Screen.entries.firstOrNull { it.key == k } ?: return@forEach
                     if (s == Screen.RecordedShows && !showRecorded) return@forEach
                     if (s == Screen.Trash && !showTrash) return@forEach
+                    // Problems: only while something is open (Settings › Problems: Silent leaves it out),
+                    // with their count; moved or hidden like the rest in Settings › Menu.
+                    if (s == Screen.Problems) {
+                        if (problems > 0 || selected == Screen.Problems) {
+                            add(Entry(k, s.label, s == selected, Kind.Item, icon = s.menuIcon(), count = problems) { onSelect(s) })
+                        }
+                        return@forEach
+                    }
                     // What this TV may not do (JellyDVR Space's device rights) isn't in its menu.
                     if (s == Screen.LiveTv && !rights.liveTv) return@forEach
                     if (s == Screen.Series && !rights.record) return@forEach
                     // A line under the libraries when they're listed one by one.
                     val afterLibs = lastOrNull()?.let { it.kind == Kind.Item && it.key.startsWith("lib:") } == true
                     add(Entry(k, s.label, s == selected, Kind.Item, divider = afterLibs, icon = s.menuIcon()) { onSelect(s) })
-                    // Problems right under Home, only while something is open (Settings › Problems: Silent
-                    // leaves it out), so it's seen as soon as the menu opens.
-                    if (s == Screen.Home && (problems > 0 || selected == Screen.Problems)) {
-                        add(Entry("problems", Screen.Problems.label, selected == Screen.Problems, Kind.Item, icon = Screen.Problems.menuIcon(), count = problems) { onSelect(Screen.Problems) })
-                    }
                 }
             }
             if (!icons) {

@@ -617,7 +617,7 @@ class Prefs(
         const val OPEN = "open"
         const val CLOSED = "closed"
         const val LAST = "last"
-        val MENU_DEFAULT = listOf("search", "home", "guide", "livetv", "recorded", "libraries", "scheduled", "series", "trash")
+        val MENU_DEFAULT = listOf("search", "home", "problems", "guide", "livetv", "recorded", "libraries", "scheduled", "series", "trash")
 
         /** A saved order, minus keys no longer known, plus new ones at the end. */
         fun normalizeMenu(saved: String?): List<String> {
@@ -627,7 +627,15 @@ class Prefs(
                     .split(',')
                     .filter { it in MENU_DEFAULT }
                     .distinct()
-            return known + MENU_DEFAULT.filter { it !in known }
+            // An entry added in a later version goes after the one it follows by default (Problems
+            // under Home), not at the end.
+            val result = known.toMutableList()
+            MENU_DEFAULT.forEachIndexed { i, k ->
+                if (k in result) return@forEachIndexed
+                val after = MENU_DEFAULT.take(i).lastOrNull { it in result }
+                result.add(if (after == null) 0 else result.indexOf(after) + 1, k)
+            }
+            return result
         }
     }
 }
