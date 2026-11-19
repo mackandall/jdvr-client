@@ -3,6 +3,7 @@ package com.mackandall.jdvr.ui
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -112,9 +113,17 @@ internal fun LegacySeriesScreen(entry: FocusRequester) {
                     null
                 }.getOrElse { "Didn't work: ${it.message ?: it.javaClass.simpleName}" }
             series = attempt { Jdvr.backend.seriesTimers() } ?: series
-            // Keep the moved series on screen (the top row can scroll off above).
+            // Keep the moved series wholly on screen: off (or cut) at the top, scroll it to the top;
+            // off or cut at the bottom, scroll just enough to show all of it.
             series?.indexOfFirst { it.id == s.id }?.takeIf { it >= 0 }?.let { i ->
-                if (seriesList.layoutInfo.visibleItemsInfo.none { it.index == i && it.offset >= 0 }) seriesList.animateScrollToItem(i)
+                val info = seriesList.layoutInfo
+                val item = info.visibleItemsInfo.firstOrNull { it.index == i }
+                when {
+                    item == null -> seriesList.animateScrollToItem(i)
+                    item.offset < info.viewportStartOffset -> seriesList.animateScrollToItem(i)
+                    item.offset + item.size > info.viewportEndOffset - info.afterContentPadding ->
+                        seriesList.animateScrollBy((item.offset + item.size - info.viewportEndOffset + info.afterContentPadding).toFloat())
+                }
             }
         }
     }
