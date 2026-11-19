@@ -195,37 +195,40 @@ fun SettingsScreen(
             options = listOf(Opt(true, "Silver"), Opt(false, "Theme colour")),
             selected = prefs.progressSilver,
         ) { prefs.changeProgressSilver(it) }
-        Section("Problems")
-        // Failed or short recordings, a stuck tuner, a full drive: how they reach this TV.
-        val serverWay = if (OpenProblems.serverPopup) "pop up" else "quiet"
-        Options(
-            label = "Show problems",
-            help =
-                "Pop up: a window when the app opens or wakes. Quiet: no window; a count on Problems in the menu, " +
-                    "a mark on the left edge of the screen and the Needs attention tile on Home. Silent: nothing shows; " +
-                    "they're still listed below. Each TV keeps its own choice.",
-            options =
-                listOf(
-                    Opt("", "As the server says ($serverWay)"),
-                    Opt(Prefs.PROBLEMS_POPUP, "Pop up"),
-                    Opt(Prefs.PROBLEMS_QUIET, "Quiet"),
-                    Opt(Prefs.PROBLEMS_SILENT, "Silent"),
-                ),
-            selected = prefs.problemsShow,
-        ) { prefs.changeProblemsShow(it) }
-        if (OpenProblems.mode == Prefs.PROBLEMS_QUIET) {
+        // NextPVR has no problems list (JellyDVR Schedule's alerts), so nothing to set there.
+        if (!Jdvr.isNextPvr) {
+            Section("Problems")
+            // Failed or short recordings, a stuck tuner, a full drive: how they reach this TV.
+            val serverWay = if (OpenProblems.serverPopup) "pop up" else "quiet"
             Options(
-                label = "Failed recordings",
-                help = "When nothing at all was recorded: still pop up a window (and a banner while watching, if the server allows it), or only count it like the rest.",
-                options = listOf(Opt(false, "Count only"), Opt(true, "Still pop up")),
-                selected = prefs.problemsPopupFailed,
-            ) { prefs.changeProblemsPopupFailed(it) }
+                label = "Show problems",
+                help =
+                    "Pop up: a window when the app opens or wakes. Quiet: no window; a count on Problems in the menu, " +
+                        "a mark on the left edge of the screen and the Needs attention tile on Home. Silent: nothing shows; " +
+                        "they're still listed below. Each TV keeps its own choice.",
+                options =
+                    listOf(
+                        Opt("", "As the server says ($serverWay)"),
+                        Opt(Prefs.PROBLEMS_POPUP, "Pop up"),
+                        Opt(Prefs.PROBLEMS_QUIET, "Quiet"),
+                        Opt(Prefs.PROBLEMS_SILENT, "Silent"),
+                    ),
+                selected = prefs.problemsShow,
+            ) { prefs.changeProblemsShow(it) }
+            if (OpenProblems.mode == Prefs.PROBLEMS_QUIET) {
+                Options(
+                    label = "Failed recordings",
+                    help = "When nothing at all was recorded: still pop up a window (and a banner while watching, if the server allows it), or only count it like the rest.",
+                    options = listOf(Opt(false, "Count only"), Opt(true, "Still pop up")),
+                    selected = prefs.problemsPopupFailed,
+                ) { prefs.changeProblemsPopupFailed(it) }
+            }
+            Choice(
+                label = "Problems list",
+                help = "Every open problem and what cleared this week.",
+                value = if (OpenProblems.count > 0) "${OpenProblems.count} open · Open…" else "Open…",
+            ) { onOpenProblems() }
         }
-        Choice(
-            label = "Problems list",
-            help = "Every open problem and what cleared this week.",
-            value = if (OpenProblems.count > 0) "${OpenProblems.count} open · Open…" else "Open…",
-        ) { onOpenProblems() }
         Section("Menu")
         Choice(
             label = "Menu entries",
@@ -580,7 +583,7 @@ private fun MenuSettings(libraries: List<Library>) {
         val child: Boolean,
     )
     val rows =
-        prefs.menuOrder.flatMap { k ->
+        prefs.menuOrder.filter { it != "problems" || !Jdvr.isNextPvr }.flatMap { k ->
             if (k == "libraries") {
                 listOf(MRow(k, if (prefs.librariesGrouped) "Libraries" else "Libraries (each on its own line)", false)) +
                     libs.map { MRow("lib:${it.id}", it.name, true) }
