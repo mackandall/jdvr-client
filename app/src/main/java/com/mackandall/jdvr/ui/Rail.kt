@@ -5,6 +5,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -75,6 +76,8 @@ private data class Entry(
     val kind: Kind,
     val divider: Boolean = false,
     val icon: MenuIcon? = null,
+    // A count beside the label (open problems).
+    val count: Int = 0,
     val click: () -> Unit,
 )
 
@@ -101,6 +104,8 @@ fun Rail(
     // Recorded Shows: only on a server that has Live TV or recordings.
     showRecorded: Boolean = true,
     showTrash: Boolean = false,
+    // Open server problems: a Problems entry with their count while there are any.
+    problems: Int = 0,
 ) {
     val prefs = Jdvr.prefs
     val rights = deviceRights()
@@ -148,6 +153,11 @@ fun Rail(
                     // A line under the libraries when they're listed one by one.
                     val afterLibs = lastOrNull()?.let { it.kind == Kind.Item && it.key.startsWith("lib:") } == true
                     add(Entry(k, s.label, s == selected, Kind.Item, divider = afterLibs, icon = s.menuIcon()) { onSelect(s) })
+                    // Problems right under Home, only while something is open (Settings › Problems: Silent
+                    // leaves it out), so it's seen as soon as the menu opens.
+                    if (s == Screen.Home && (problems > 0 || selected == Screen.Problems)) {
+                        add(Entry("problems", Screen.Problems.label, selected == Screen.Problems, Kind.Item, icon = Screen.Problems.menuIcon(), count = problems) { onSelect(Screen.Problems) })
+                    }
                 }
             }
             if (!icons) {
@@ -255,7 +265,27 @@ fun Rail(
                         val m = slot(i).onFocusChanged { if (it.isFocused) focusedKey = e.key }
                         when (e.kind) {
                             Kind.Item -> {
-                                RailItem(e.label, e.on, m, width = itemWidth, icon = e.icon, iconSet = iconSet, iconScale = iconScale(i), onClick = e.click)
+                                RailItem(
+                                    e.label,
+                                    e.on,
+                                    m,
+                                    width = itemWidth,
+                                    icon = e.icon,
+                                    iconSet = iconSet,
+                                    iconScale = iconScale(i),
+                                    trailing =
+                                        if (e.count > 0) {
+                                            {
+                                                Box(
+                                                    Modifier.padding(end = 6.dp).height(22.dp).widthIn(min = 22.dp).background(Jc.Amber, RoundedCornerShape(11.dp)).padding(horizontal = 6.dp),
+                                                    contentAlignment = Alignment.Center,
+                                                ) { Text("${e.count}", color = Jc.OnAmber, fontSize = 12.sp, fontWeight = FontWeight.Bold) }
+                                            }
+                                        } else {
+                                            null
+                                        },
+                                    onClick = e.click,
+                                )
                             }
 
                             Kind.Child -> {
