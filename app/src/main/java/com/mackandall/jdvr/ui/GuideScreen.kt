@@ -251,6 +251,15 @@ internal fun GuideScreen(
         }
     }
 
+    // A channel's tuner was let go (Stop, or leaving live TV): its buffer's recording mark goes as
+    // soon as the server has answered, not at the next refresh.
+    val stopsAnswered = com.mackandall.jdvr.data.BufferEvents.answered
+    LaunchedEffect(stopsAnswered) {
+        if (stopsAnswered == 0) return@LaunchedEffect
+        reload++
+        attempt { Jdvr.backend.bufferPrograms() }?.let { extras = extras.copy(buffers = it) }
+    }
+
     // Keep "now" honest: refresh dots and the window's start every couple of minutes.
     LaunchedEffect(Unit) {
         while (true) {
