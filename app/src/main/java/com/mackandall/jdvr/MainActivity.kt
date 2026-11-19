@@ -73,7 +73,7 @@ enum class Screen(
     Trash("Trash", "trash"),
     Settings("Settings", "settings"),
 
-    // Not in the menu (not in Prefs.MENU_DEFAULT): reached from the problems popup and Home.
+    // In the menu only while the server has open problems (and from the popup, Home and Settings).
     Problems("Problems", "problems"),
 }
 

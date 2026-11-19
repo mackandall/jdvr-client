@@ -527,9 +527,13 @@ private fun MenuSettings(libraries: List<Library>) {
                 listOf(
                     MRow(
                         k,
-                        com.mackandall.jdvr.Screen.entries
-                            .first { s -> s.key == k }
-                            .label,
+                        if (k == "problems") {
+                            "Problems (only while something is open)"
+                        } else {
+                            com.mackandall.jdvr.Screen.entries
+                                .first { s -> s.key == k }
+                                .label
+                        },
                         false,
                     ),
                 )
