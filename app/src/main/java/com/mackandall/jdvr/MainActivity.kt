@@ -6,7 +6,10 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.Composable
@@ -417,7 +420,13 @@ fun AppRoot(
                     }
 
                     Screen.Settings -> {
-                        SettingsScreen(entry = entry, libraries = libraries, openMenuPage = place.settingsMenuPage, onSwitchServer = onSwitchServer)
+                        SettingsScreen(
+                            entry = entry,
+                            libraries = libraries,
+                            openMenuPage = place.settingsMenuPage,
+                            onSwitchServer = onSwitchServer,
+                            onOpenProblems = { goTo(Place(Screen.Problems)) },
+                        )
                     }
 
                     Screen.Problems -> {
@@ -425,6 +434,27 @@ fun AppRoot(
                             .ProblemsScreen(entry = entry, onPlayRecording = { playingRecording = it })
                     }
                 }
+            }
+        }
+        // Quiet problems (Settings › Problems): a short amber mark on the left edge, where the menu
+        // opens, while any are open. It takes no focus; ◄ opens the menu with Problems in it.
+        if (!railOpen && !playerUp && screen != Screen.Problems &&
+            com.mackandall.jdvr.ui.OpenProblems.count > 0 &&
+            com.mackandall.jdvr.ui.OpenProblems.mode == com.mackandall.jdvr.data.Prefs.PROBLEMS_QUIET
+        ) {
+            androidx.compose.foundation.layout.Box(
+                androidx.compose.ui.Modifier.fillMaxSize(),
+                contentAlignment = androidx.compose.ui.Alignment.CenterStart,
+            ) {
+                androidx.compose.foundation.layout.Box(
+                    androidx.compose.ui.Modifier
+                        .width(6.dp)
+                        .height(64.dp)
+                        .background(
+                            com.mackandall.jdvr.ui.Jc.Amber,
+                            androidx.compose.foundation.shape.RoundedCornerShape(topEnd = 3.dp, bottomEnd = 3.dp),
+                        ),
+                )
             }
         }
         // New problems on the server (a failed recording, a stuck tuner): a popup when the app opens.
@@ -458,6 +488,10 @@ fun AppRoot(
                 libraries = shownLibraries,
                 showRecorded = hasDvr,
                 showTrash = hasTrash,
+                problems =
+                    com.mackandall.jdvr.ui.OpenProblems.count.takeIf {
+                        com.mackandall.jdvr.ui.OpenProblems.mode != com.mackandall.jdvr.data.Prefs.PROBLEMS_SILENT
+                    } ?: 0,
                 selectedLibrary = libraryId,
                 onSelectLibrary = {
                     startAt(Place(Screen.Library, libraryId = it.id))

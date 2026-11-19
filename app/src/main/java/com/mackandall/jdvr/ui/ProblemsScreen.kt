@@ -42,6 +42,7 @@ import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
 import com.mackandall.jdvr.PlayRecording
 import com.mackandall.jdvr.data.AlertsList
+import com.mackandall.jdvr.data.Prefs
 import com.mackandall.jdvr.data.Jdvr
 import com.mackandall.jdvr.data.ServerAlert
 import com.mackandall.jdvr.data.attempt
@@ -83,7 +84,10 @@ fun ProblemsScreen(
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(reload) {
-        attempt { Jdvr.backend.alerts() }?.let { list = it }
+        attempt { Jdvr.backend.alerts() }?.let {
+            list = it
+            OpenProblems.note(it)
+        }
         loaded = true
         // Seen here: the popup won't bring these up again.
         list?.let { Jdvr.session.problemsSeenUtc = newestOf(it.open) ?: Jdvr.session.problemsSeenUtc }
@@ -274,6 +278,24 @@ private fun ProblemRow(
     }
 }
 
+/**
+ * What the menu and its edge mark need from the server's problems: how many this TV shows open, and
+ * the server's "pop up" switch (for TVs that follow it). Kept fresh by [ProblemsPopup] and the
+ * Problems page.
+ */
+object OpenProblems {
+    var count by mutableIntStateOf(0)
+    var serverPopup by mutableStateOf(true)
+
+    fun note(l: AlertsList) {
+        count = l.shownOpen.size
+        serverPopup = l.tv.popupOnOpen
+    }
+
+    /** This TV's way of showing them (Settings › Problems). */
+    val mode get() = Jdvr.prefs.problemsMode(serverPopup)
+}
+
 /** The newest creation time among [alerts] (ISO), for "seen up to". */
 fun newestOf(alerts: List<ServerAlert>): String? = alerts.mapNotNull { a -> runCatching { Instant.parse(a.createdUtc) }.getOrNull() }.maxOrNull()?.toString()
 
@@ -313,13 +335,34 @@ fun ProblemsPopup(
         }
         if (l == null) return@LaunchedEffect
         tv = l.tv
+        OpenProblems.note(l)
         val seen = Jdvr.session.problemsSeenUtc
-        fresh = if (l.tv.popupOnOpen) l.shownOpen.filter { newerThan(it, seen) } else emptyList()
+        val newer = l.shownOpen.filter { newerThan(it, seen) }
+        // This TV's choice (Settings › Problems): a window for all, for failed recordings only, or none.
+        fresh =
+            when (OpenProblems.mode) {
+                Prefs.PROBLEMS_POPUP -> newer
+                Prefs.PROBLEMS_QUIET -> if (Jdvr.prefs.problemsPopupFailed) newer.filter { it.severe } else emptyList()
+                else -> emptyList()
+            }
         checked++
     }
+    // The count in the menu and its edge mark: kept up to date while the app is open.
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(180_000)
+            attempt { Jdvr.backend.alerts() }?.let { OpenProblems.note(it) }
+        }
+    }
     // During playback: look every two minutes for a recording that failed.
-    LaunchedEffect(playing, tv?.popupDuringPlayback) {
-        if (!playing || tv?.popupDuringPlayback != true) return@LaunchedEffect
+    val bannerAllowed =
+        when (OpenProblems.mode) {
+            Prefs.PROBLEMS_POPUP -> true
+            Prefs.PROBLEMS_QUIET -> Jdvr.prefs.problemsPopupFailed
+            else -> false
+        }
+    LaunchedEffect(playing, tv?.popupDuringPlayback, bannerAllowed) {
+        if (!playing || tv?.popupDuringPlayback != true || !bannerAllowed) return@LaunchedEffect
         var seenWhilePlaying = Jdvr.session.problemsSeenUtc
         while (true) {
             delay(120_000)

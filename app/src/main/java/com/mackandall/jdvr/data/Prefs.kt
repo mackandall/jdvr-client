@@ -320,6 +320,31 @@ class Prefs(
     var menuIcons by mutableStateOf(p.getBoolean("menuIcons", true))
         private set
 
+    /**
+     * How the server's problems reach this TV: [PROBLEMS_POPUP], [PROBLEMS_QUIET] (a count in the
+     * menu, a mark on its edge, the Home tile), [PROBLEMS_SILENT] (only on the Problems page), or ""
+     * to follow the server's "pop up when the app opens" switch.
+     */
+    var problemsShow by mutableStateOf(p.getString("problemsShow", "") ?: "")
+        private set
+
+    /** In [PROBLEMS_QUIET]: still pop up for a recording that failed outright. */
+    var problemsPopupFailed by mutableStateOf(p.getBoolean("problemsPopupFailed", false))
+        private set
+
+    fun changeProblemsShow(v: String) {
+        problemsShow = v
+        p.edit().putString("problemsShow", v).apply()
+    }
+
+    fun changeProblemsPopupFailed(v: Boolean) {
+        problemsPopupFailed = v
+        p.edit().putBoolean("problemsPopupFailed", v).apply()
+    }
+
+    /** [problemsShow] with "" resolved by the server's switch. */
+    fun problemsMode(serverPopup: Boolean): String = problemsShow.ifEmpty { if (serverPopup) PROBLEMS_POPUP else PROBLEMS_QUIET }
+
     fun changeMenuOrder(v: List<String>) {
         menuOrder = v
         p.edit().putString("menuOrder", v.joinToString(",")).apply()
@@ -471,6 +496,9 @@ class Prefs(
     companion object {
         // Home's tiles, row by row, and the presets of Settings › Home.
         val HOME_TILES = listOf("live", "weather", "now", "next", "attention", "tuners", "fresh", "libraries")
+        const val PROBLEMS_POPUP = "popup"
+        const val PROBLEMS_QUIET = "quiet"
+        const val PROBLEMS_SILENT = "silent"
         const val CALM = "calm"
         const val STANDARD = "standard"
         const val EVERYTHING = "everything"
