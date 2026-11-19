@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -31,6 +32,7 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -528,7 +530,7 @@ private fun MenuSettings(libraries: List<Library>) {
                     MRow(
                         k,
                         if (k == "problems") {
-                            "Problems (only while something is open)"
+                            "Problems (only while open)"
                         } else {
                             com.mackandall.jdvr.Screen.entries
                                 .first { s -> s.key == k }
@@ -590,6 +592,16 @@ private fun MenuSettings(libraries: List<Library>) {
         rows.forEachIndexed { i, r ->
             androidx.compose.runtime.key(r.key) {
                 val isLifted = lifted == r.key
+                // A picked-up entry keeps focus while it moves, so the page wouldn't follow it: after each
+                // move, scroll it into view with a row's room above and below for where it goes next.
+                val bring = remember { androidx.compose.foundation.relocation.BringIntoViewRequester() }
+                var rowHeight by remember { mutableStateOf(0) }
+                LaunchedEffect(isLifted, i) {
+                    if (isLifted && rowHeight > 0) {
+                        val h = rowHeight.toFloat()
+                        bring.bringIntoView(androidx.compose.ui.geometry.Rect(0f, -h * 1.5f, 1f, h * 2.5f))
+                    }
+                }
                 val hidden =
                     when {
                         r.key == "home" -> false
@@ -597,7 +609,11 @@ private fun MenuSettings(libraries: List<Library>) {
                         else -> r.key in prefs.hiddenMenu
                     }
                 Row(
-                    Modifier.fillMaxWidth(0.7f).padding(start = if (r.child) 36.dp else 0.dp),
+                    Modifier
+                        .fillMaxWidth(0.7f)
+                        .padding(start = if (r.child) 36.dp else 0.dp)
+                        .bringIntoViewRequester(bring)
+                        .onSizeChanged { rowHeight = it.height },
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
