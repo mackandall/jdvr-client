@@ -1,5 +1,8 @@
 package com.mackandall.jdvr.data
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.setValue
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.launch
 import kotlinx.serialization.SerialName
@@ -92,6 +95,13 @@ class LivePlugin(
     override fun stopBuffering(channelId: UUID) {
         kotlinx.coroutines.MainScope().launch {
             server.call<Stopped>(HttpMethod.POST, "/JellyDvrLive/Channel/${channelId.plain()}/Stop")
+            // Answered: the buffer is stopped (or was left running), so recording marks can be re-read.
+            BufferEvents.answered++
         }
     }
+}
+
+/** Bumped each time the server answers a Stop, so the guide re-reads its recording marks then. */
+object BufferEvents {
+    var answered by mutableIntStateOf(0)
 }

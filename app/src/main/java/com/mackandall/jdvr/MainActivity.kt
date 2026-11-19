@@ -266,7 +266,8 @@ fun AppRoot(
     val inGuidePicture = playingChannel == null && livePicture != null
     // Leaving the guide (another section, a recording) stops it.
     LaunchedEffect(screen, playingRecording, inGuidePicture) {
-        if (inGuidePicture && (screen != Screen.Guide || playingRecording != null)) com.mackandall.jdvr.player.LivePictures.closeAll()
+        // A recording opening from it (perhaps its own buffer) keeps the tuner's grace.
+        if (inGuidePicture && (screen != Screen.Guide || playingRecording != null)) com.mackandall.jdvr.player.LivePictures.closeAll(free = playingRecording == null)
     }
     LaunchedEffect(inGuidePicture, Jdvr.prefs.guideSound) {
         if (inGuidePicture) livePicture?.setVolume(com.mackandall.jdvr.player.guideVolume())
@@ -596,7 +597,8 @@ fun AppRoot(
                 // Rewind into the buffer, or watch the recording from the start.
                 onPlayRecording = {
                     playingChannel = null
-                    com.mackandall.jdvr.player.LivePictures.closeAll()
+                    // It plays the buffer (or the recording) next: keep it going.
+                    com.mackandall.jdvr.player.LivePictures.closeAll(free = false)
                     playingRecording = it
                 },
             )

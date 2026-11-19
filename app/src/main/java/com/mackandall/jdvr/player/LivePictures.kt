@@ -154,12 +154,20 @@ internal class MainPicture(
         }
     }
 
-    fun close() {
+    /**
+     * [free]: done with live TV (Back out of it, left the guide or the app), so JellyDVR Live lets
+     * the tuner go now rather than a minute after the last viewer, as Stop does. Not when a
+     * recording of it opens next (rewind into the buffer, watch from the start): that needs it.
+     */
+    fun close(free: Boolean = true) {
         if (closed) return
         closed = true
         scope.cancel()
         job?.let { stream.stopPlaying(it) }
         Jdvr.backend.holdLive(false)
+        if (free) {
+            Jdvr.backend.stopBuffering(channelId)
+        }
         player.removeListener(listener)
         player.removeListener(logger)
         player.release()
@@ -552,10 +560,10 @@ internal object LivePictures {
         return MainPicture(context.applicationContext, channelId).also { main = it }
     }
 
-    /** Stops everything: the stream, the tuner, the second picture. */
-    fun closeAll() {
+    /** Stops everything: the stream, the tuner (unless not [free]: see [MainPicture.close]), the second picture. */
+    fun closeAll(free: Boolean = true) {
         closeExtra()
-        main?.close()
+        main?.close(free)
         main = null
     }
 
