@@ -117,6 +117,24 @@ fun SettingsScreen(
             ) { prefs.changeGuideSide(it) }
         }
         Options(
+            label = "CH+ / CH− in the guide",
+            help = "How far one press of Channel up or down (or Page up or down) moves through the channels. A screenful keeps the last row of the old page in sight.",
+            options = Prefs.GUIDE_PAGE_ROWS.map { Opt(it, if (it == 0) "A screenful" else "$it channels") },
+            selected = prefs.guidePageRows,
+        ) { prefs.changeGuidePageRows(it) }
+        Options(
+            label = "Holding CH+ / CH−",
+            help = "Speeds up: held down, it moves twice as far after about a second and four times as far after about two, for long channel lists.",
+            options = listOf(Opt(false, "Steady"), Opt(true, "Speeds up")),
+            selected = prefs.guideFastHold,
+        ) { prefs.changeGuideFastHold(it) }
+        Options(
+            label = "OK on a programme on now",
+            help = "Watch the channel: one press tunes it; hold OK (or press Menu) for its actions. Programmes later on still open their actions.",
+            options = listOf(Opt(false, "Show its actions"), Opt(true, "Watch the channel")),
+            selected = prefs.guideOkWatch,
+        ) { prefs.changeGuideOkWatch(it) }
+        Options(
             label = "Keep playing in the guide",
             help = "Back from live TV opens the guide with the channel still playing in the details picture. Off: the player stops, as before.",
             options = listOf(Opt(true, "On"), Opt(false, "Off")),
