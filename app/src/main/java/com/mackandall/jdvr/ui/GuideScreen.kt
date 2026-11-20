@@ -160,6 +160,13 @@ internal fun GuideScreen(
     // from `focused`, because as the panel and then the player go away, focus falls on whatever
     // cell is at that spot on screen (rows above), and the guide scrolls to it.
     var returnTo by remember { mutableStateOf<Program?>(null) }
+
+    // How long the key now pressed has been held (its repeats), for CH+/CH− speeding up.
+    var keyRepeats by remember { mutableStateOf(0) }
+
+    // Actions opened by holding OK: the held press's repeats and release are swallowed, or they would
+    // press the panel's first button (Watch live) and tune the channel. A fresh OK press works again.
+    var okHeld by remember { mutableStateOf(false) }
     // The channel whose schedule is open (◄ from now to its logo, OK): shown in place of the grid.
     var scheduleFor by remember { mutableStateOf<Channel?>(null) }
     // Its programmes (for the menu's "more on this channel"), and one picked there to bring on screen.
@@ -379,13 +386,22 @@ internal fun GuideScreen(
     }
 
     // ▲▼: the programme on at the anchor time in the next channel with guide data that way.
-    fun moveVertical(dir: Int): Boolean {
+    fun moveVertical(
+        dir: Int,
+        rows: Int = 1,
+    ): Boolean {
         val list = channels ?: return false
         val from = focused ?: return false
         val at = maxOf(anchor ?: from.start, windowStart)
         val windowEnd = windowStart.plusMinutes(windowMinutes)
         var t = list.indexOfFirst { it.id == from.channelId }
         if (t < 0) return false
+        // A page (CH+/CH−): straight to the row a page away (the last row at most), then on as for ▲▼.
+        if (rows > 1) {
+            val goal = (t + dir * rows).coerceIn(0, list.lastIndex)
+            if (goal == t) return true
+            t = goal - dir
+        }
         var target: Program? = null
         while (target == null) {
             t += dir
@@ -430,7 +446,19 @@ internal fun GuideScreen(
         return true
     }
 
-    // ▲▼ go logo to logo; ► back to what's on now; ◄ isn't used, so it opens the menu.
+    // A CH+/CH− step (Settings › Guide): a screenful (the rows on screen less one, so the last row stays
+    // in sight) or a set number of channels; held down with "Speeds up", ×2 after ~1 s and ×4 after ~2 s.
+    fun pageRows(): Int {
+        val step = Jdvr.prefs.guidePageRows.takeIf { it > 0 } ?: (listState.layoutInfo.visibleItemsInfo.size - 1).coerceAtLeast(1)
+        val boost = if (!Jdvr.prefs.guideFastHold) 1 else when {
+            keyRepeats >= 30 -> 4
+            keyRepeats >= 10 -> 2
+            else -> 1
+        }
+        return step * boost
+    }
+
+    // ▲▼ go logo to logo; CH+/CH− a page; ► back to what's on now; ◄ isn't used, so it opens the menu.
     fun onTileKey(
         ch: Channel,
         key: Key,
@@ -438,8 +466,22 @@ internal fun GuideScreen(
         val list = channels ?: return false
         val i = list.indexOfFirst { it.id == ch.id }
         return when (key) {
-            Key.DirectionUp -> if (i <= 0) true.also { (if (groups.size > 1) groupFocus else hoursFocus).tryFocus() } else focusTile(i - 1, -1)
-            Key.DirectionDown -> if (i >= list.lastIndex) true else focusTile(i + 1, 1)
+            Key.DirectionUp -> {
+                if (i <= 0) true.also { (if (groups.size > 1) groupFocus else hoursFocus).tryFocus() } else focusTile(i - 1, -1)
+            }
+
+            Key.DirectionDown -> {
+                if (i >= list.lastIndex) true else focusTile(i + 1, 1)
+            }
+
+            Key.ChannelUp, Key.PageUp -> {
+                if (i <= 0) true else focusTile((i - pageRows()).coerceAtLeast(0), -1)
+            }
+
+            Key.ChannelDown, Key.PageDown -> {
+                if (i >= list.lastIndex) true else focusTile((i + pageRows()).coerceAtMost(list.lastIndex), 1)
+            }
+
             Key.DirectionRight -> {
                 val windowEnd = windowStart.plusMinutes(windowMinutes)
                 val p = programs[ch.id].orEmpty().firstOrNull { it.end.isAfter(windowStart) && it.start.isBefore(windowEnd) }
@@ -545,7 +587,17 @@ internal fun GuideScreen(
         // A key pressed in the guide means focus is where the user put it: the way back in follows it again.
         Box(
             Modifier.fillMaxSize().onPreviewKeyEvent { e ->
-                if (e.type == KeyEventType.KeyDown) returnTo = null
+                if (okHeld && (e.key == Key.DirectionCenter || e.key == Key.Enter || e.key == Key.NumPadEnter)) {
+                    if (e.type == KeyEventType.KeyDown && e.nativeKeyEvent.repeatCount == 0) {
+                        okHeld = false
+                    } else {
+                        return@onPreviewKeyEvent true
+                    }
+                }
+                if (e.type == KeyEventType.KeyDown) {
+                    returnTo = null
+                    keyRepeats = e.nativeKeyEvent.repeatCount
+                }
                 // ⏩ shows more hours, ⏪ fewer (not while a programme's actions are open).
                 if (e.type == KeyEventType.KeyDown && selected == null) {
                     when (e.key) {
@@ -558,6 +610,9 @@ internal fun GuideScreen(
                     when (e.key) {
                         Key.DirectionDown -> return@onPreviewKeyEvent moveVertical(1)
                         Key.DirectionUp -> return@onPreviewKeyEvent moveVertical(-1)
+                        // CH+/CH− (and Page keys): a page at a time, for long channel lists.
+                        Key.ChannelDown, Key.PageDown -> return@onPreviewKeyEvent moveVertical(1, pageRows())
+                        Key.ChannelUp, Key.PageUp -> return@onPreviewKeyEvent moveVertical(-1, pageRows())
                     }
                 }
                 false
@@ -706,13 +761,18 @@ internal fun GuideScreen(
                                                     pendingFocus = pendingFocus?.takeIf { it.first == ch.id }?.second,
                                                     onFocusTaken = { pendingFocus = null },
                                                     onSelect = { p ->
-                                                        if (livePicture != null && p.channelId == livePicture.channelId && p.isOn()) {
+                                                        if (p.isOn() && (Jdvr.prefs.guideOkWatch || (livePicture != null && p.channelId == livePicture.channelId))) {
                                                             returnTo = p
                                                             onPlay(p.channelId)
                                                         } else {
                                                             selected = p
                                                         }
                                                     },
+                                                    // OK watches: holding OK (or Menu) opens the actions.
+                                                    onHold = if (Jdvr.prefs.guideOkWatch) ({ p ->
+                                                        okHeld = true
+                                                        selected = p
+                                                    }) else null,
                                                     onFocused = { onCellFocused(it) },
                                                     playing = livePicture?.channelId == ch.id,
                                                     entry = if (ch.id == (home?.channelId ?: list.first().id)) entry else null,
@@ -1025,6 +1085,7 @@ private fun GuideRow(
     onFocused: (Program) -> Unit,
     entry: FocusRequester?,
     entryProgram: UUID? = null,
+    onHold: ((Program) -> Unit)? = null,
     onShift: (Long) -> Boolean,
     // The channel's logo as a button (opens its schedule); null: just a label.
     tile: ChannelTile? = null,
@@ -1078,6 +1139,7 @@ private fun GuideRow(
                         requestFocus = wantFocus,
                         onFocusTaken = onFocusTaken,
                         onClick = { onSelect(p) },
+                        onHold = onHold?.let { h -> { h(p) } },
                         onFocused = { onFocused(p) },
                         entry = if (p.id == entryProgram || (i == 0 && visible.none { it.id == entryProgram })) entry else null,
                         onEdgeRight = if (i == visible.lastIndex) ({ onShift(STEP_MINUTES) }) else null,
@@ -1221,6 +1283,7 @@ private fun ProgramCell(
     onFocused: () -> Unit,
     entry: FocusRequester?,
     onEdgeRight: (() -> Boolean)?,
+    onHold: (() -> Unit)? = null,
     onEdgeLeft: (() -> Boolean)?,
 ) {
     // Its own handle (stable), registered so the guide can refocus it; plus the screen's entry when
@@ -1300,6 +1363,7 @@ private fun ProgramCell(
         }
     Surface(
         onClick = onClick,
+        onLongClick = onHold,
         modifier =
             Modifier
                 .width((width - 4.dp).coerceAtLeast(8.dp))
@@ -1317,6 +1381,9 @@ private fun ProgramCell(
 
                         // At now already: not used, so it reaches the screen and opens the rail.
                         e.key == Key.DirectionLeft && onEdgeLeft != null -> onEdgeLeft()
+
+                        // OK watches: Menu (or Info) opens the actions, as holding OK does.
+                        onHold != null && (e.key == Key.Menu || e.key == Key.Info) -> true.also { onHold() }
 
                         else -> false
                     }
@@ -1445,14 +1512,17 @@ internal fun estuaryGenreColour(p: Program): Color {
     }
 }
 
-/** What OK does on [p] while a channel plays in the guide's picture (null: the usual hint). */
+/** What OK does on [p] while a channel plays in the guide's picture, or when OK watches (null: the usual hint). */
 private fun liveHint(
     p: Program,
     live: com.mackandall.jdvr.player.MainPicture?,
 ): String? {
-    live ?: return null
+    // Settings › Guide › OK on a programme on now: Watch the channel (hold OK for its actions).
+    val okWatch = Jdvr.prefs.guideOkWatch && p.isOn()
+    if (live == null) return if (okWatch) "OK  Watch · hold OK  record · favourites" else null
     return when {
-        p.channelId == live.channelId && p.isOn() -> "OK  Full screen · Back  " + if (Jdvr.prefs.guideBack == com.mackandall.jdvr.data.Prefs.FULL) "Full screen" else "Stop playing"
+        p.channelId == live.channelId && p.isOn() -> "OK  Full screen · " + (if (okWatch) "hold OK  record · " else "") + "Back  " + if (Jdvr.prefs.guideBack == com.mackandall.jdvr.data.Prefs.FULL) "Full screen" else "Stop playing"
+        okWatch -> "OK  Watch · hold OK  watch here · record"
         p.isOn() -> "OK  Watch here · full screen · record"
         else -> null
     }

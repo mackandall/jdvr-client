@@ -24,6 +24,14 @@ class Prefs(
 
     /** Back from live TV to the guide: the channel keeps playing in the details picture. */
     var guideKeepPlaying by mutableStateOf(p.getBoolean("guideKeepPlaying", true))
+
+    // OK on a programme on now in the guide: false = its actions (as before), true = watch the channel
+    // (hold OK, or Menu, for the actions).
+    var guideOkWatch by mutableStateOf(p.getBoolean("guideOkWatch", false))
+
+    // CH+/CH− in the guide: channels per press (0 = a screenful), and whether holding them speeds up.
+    var guidePageRows by mutableStateOf(p.getInt("guidePageRows", 0).takeIf { it in GUIDE_PAGE_ROWS } ?: 0)
+    var guideFastHold by mutableStateOf(p.getBoolean("guideFastHold", false))
         private set
 
     /** The channel's sound while it plays in the guide: "on", "lower" or "mute". */
@@ -504,6 +512,21 @@ class Prefs(
         p.edit().putString("guideSide", v).apply()
     }
 
+    fun changeGuidePageRows(v: Int) {
+        guidePageRows = v
+        p.edit().putInt("guidePageRows", v).apply()
+    }
+
+    fun changeGuideFastHold(v: Boolean) {
+        guideFastHold = v
+        p.edit().putBoolean("guideFastHold", v).apply()
+    }
+
+    fun changeGuideOkWatch(v: Boolean) {
+        guideOkWatch = v
+        p.edit().putBoolean("guideOkWatch", v).apply()
+    }
+
     fun changeGuideKeepPlaying(v: Boolean) {
         guideKeepPlaying = v
         p.edit().putBoolean("guideKeepPlaying", v).apply()
@@ -592,6 +615,9 @@ class Prefs(
         const val HOLD_DETAILS = "details"
         // The guide's widths, in hours (Settings › Guide, ⏪/⏩ and the Hours button in the guide).
         val GUIDE_HOURS = listOf(2, 3, 4, 6, 8)
+
+        // CH+/CH− page sizes; 0 = a screenful.
+        val GUIDE_PAGE_ROWS = listOf(0, 5, 10, 15, 20, 25, 50)
         const val RIGHT = "right"
         const val LEFT = "left"
         const val LOWER = "lower"
