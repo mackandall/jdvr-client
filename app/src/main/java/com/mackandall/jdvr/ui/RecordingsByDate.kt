@@ -118,6 +118,8 @@ fun RecordingsByDate(
     var lines by remember { mutableStateOf<List<DateLine>>(emptyList()) }
     var logoRight by remember { mutableStateOf(false) }
     var focused by remember { mutableStateOf<DateRecording?>(null) }
+    // The line last played, or whose menu or details were opened: focus comes back to it.
+    var opened by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(filter, reload) {
         val data = Jdvr.backend.recordingsByDate(filter)
         if (data == null) {
@@ -155,7 +157,12 @@ fun RecordingsByDate(
         entry.focusSoon(withinMs = 2000)
     }
 
+    // The screen's entry sits on the line last played (or opened), not the first: back from the
+    // player focus returns to it. On the first line, scrolled away, the entry isn't on screen and
+    // focus stays on whatever was under the player's control (a line or two up), which also takes
+    // [focused] with it: so it's the line OK was pressed on that's kept, not the focused one.
     val firstItem = lines.indexOfFirst { it is DateLine.Item }
+    val entryLine = lines.indexOfFirst { it is DateLine.Item && it.r.id == opened }.takeIf { it >= 0 } ?: firstItem
     Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(28.dp)) {
         LazyColumn(
             state = rememberLazyListState(),
@@ -177,19 +184,22 @@ fun RecordingsByDate(
                             line.r,
                             line.at,
                             logoRight,
-                            if (i == firstItem) Modifier.focusRequester(entry) else Modifier,
+                            if (i == entryLine) Modifier.focusRequester(entry) else Modifier,
                             onFocus = { focused = line.r },
                             onClick = {
+                                opened = line.r.id
                                 line.r.id
                                     .toUuid()
                                     ?.let(onPlay)
                             },
                             onHold = {
+                                opened = line.r.id
                                 line.r.id
                                     .toUuid()
                                     ?.let(onHold)
                             },
                             onDetails = {
+                                opened = line.r.id
                                 line.r.id
                                     .toUuid()
                                     ?.let(onDetails)
