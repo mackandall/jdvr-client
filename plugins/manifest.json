@@ -309,6 +309,14 @@
     "imageUrl": "https://raw.githubusercontent.com/mackandall/jellyfin-plugin-jellydvr-schedule/main/icon.png",
     "versions": [
       {
+        "version": "1.2.1.0",
+        "changelog": "Tuners are counted per device (\"Plan with\": Use device, 1-16 or No limit), with an alert when a recording is skipped for lack of a tuner, and Jellyfin's own tuner counts can be kept in step with the plan. Recordings interrupted by a restart, crash or power cut are resumed, with an alert; one you stopped before the restart stays stopped. A recording running past its listed end (Sports overruns) stays in Upcoming until it finishes. Deleting a series recording clears its skipped and moved marks.",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/mackandall/jellyfin-plugin-jellydvr-schedule/releases/download/v1.2.1.0/jellyfin-plugin-jellydvr-schedule_1.2.1.0.zip",
+        "checksum": "763af129dc713cdaf2787ffcb0bf7c7c",
+        "timestamp": "2026-11-23T06:59:17.0000000Z"
+      },
+      {
         "version": "1.2.0.0",
         "changelog": "Sports overruns: follows games on ESPN's scoreboard and moves the end of recordings after a late game (with postgame coverage), gives game recordings extra time and follow-ups joined afterwards; guide marks in the web guide and JDVR with Keep the normal end / Add 15 more minutes. Starts in preview mode.",
         "targetAbi": "12.0.0.0",
