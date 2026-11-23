@@ -33,7 +33,7 @@ import com.mackandall.jdvr.ui.Jc
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 
-enum class TransportIcon { Previous, Rewind, Stop, Play, Pause, Forward, Next, Record, Picture }
+enum class TransportIcon { Previous, Rewind, Stop, Play, Pause, Forward, Next, Record, Picture, Multiview }
 
 /** One transport action: what it draws, whether it does anything here, and what it does. */
 class TransportAction(
@@ -63,6 +63,8 @@ fun TransportBar(
     record: TransportAction? = null,
     // Picture in picture: beside Record, as the live row's text buttons fill the width.
     picture: TransportAction? = null,
+    // Multiview: beside picture in picture, for the same reason.
+    multiview: TransportAction? = null,
     // Off where the screen shows the time elsewhere (live TV: on the key hints line).
     clock: Boolean = true,
     extras: @Composable RowScope.() -> Unit = {},
@@ -79,6 +81,7 @@ fun TransportBar(
             TransportButton(it)
         }
         picture?.let { TransportButton(it) }
+        multiview?.let { TransportButton(it) }
         Spacer(Modifier.width(8.dp))
         extras()
         Spacer(Modifier.weight(1f))
@@ -190,6 +193,13 @@ private fun DrawScope.drawIcon(
         TransportIcon.Picture -> {
             drawRect(color, Offset(0f, h * 0.1f), Size(w, h * 0.8f), style = Stroke(w * 0.09f))
             drawRect(color, Offset(w * 0.48f, h * 0.45f), Size(w * 0.38f, h * 0.32f))
+        }
+        TransportIcon.Multiview -> {
+            // Four pictures.
+            val gap = w * 0.1f
+            val cw = (w - gap) / 2
+            val ch = (h * 0.8f - gap) / 2
+            for (r in 0..1) for (c in 0..1) drawRect(color, Offset(c * (cw + gap), h * 0.1f + r * (ch + gap)), Size(cw, ch))
         }
     }
 }

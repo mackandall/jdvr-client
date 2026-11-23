@@ -90,6 +90,8 @@ internal fun PlayerScreen(
     onExit: () -> Unit,
     onChannelChange: (UUID) -> Unit,
     onPlayRecording: (com.mackandall.jdvr.PlayRecording) -> Unit,
+    // Multiview with this channel (and the picture in picture's, if one is open).
+    onMultiview: (Channel, Channel?) -> Unit = { _, _ -> },
 ) {
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     val context = LocalContext.current
@@ -294,6 +296,10 @@ internal fun PlayerScreen(
                 onRecord = record,
                 onStop = stop,
                 onFromStart = fromStart,
+                onMultiview = {
+                    ui.actionsOpen = false
+                    channel?.let { c -> onMultiview(c, extra?.channel?.takeIf { it.id != c.id }) }
+                },
                 onPicture = {
                     ui.actionsOpen = false
                     when {
@@ -496,6 +502,7 @@ private fun LiveControls(
     onRecord: () -> Unit,
     onStop: () -> Unit,
     onFromStart: (UUID) -> Unit,
+    onMultiview: () -> Unit,
     onPicture: () -> Unit,
 ) {
     val offset = tick.let { stream.behindLiveMs() }
@@ -525,6 +532,7 @@ private fun LiveControls(
             clock = false,
             record = channel?.now?.takeIf { com.mackandall.jdvr.ui.TvRights.info.record }?.let { TransportAction(TransportIcon.Record, active = recording) { onRecord() } },
             picture = TransportAction(TransportIcon.Picture) { onPicture() },
+            multiview = if (Jdvr.isNextPvr) null else TransportAction(TransportIcon.Multiview) { onMultiview() },
         ) {
             Button("Info") {
                 ui.actionsOpen = false

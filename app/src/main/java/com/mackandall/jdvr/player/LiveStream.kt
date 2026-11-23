@@ -82,6 +82,9 @@ internal class LiveStream(
     // 0: the channel being watched. 1 on: a second picture's own stream (no timeshift on NextPVR,
     // and it leaves the main picture's held stream and the recent channels alone).
     private val slot: Int = 0,
+    // Multiview: start and progress reports wait until this says the picture counts as watched
+    // (the ringed or big one), so JellyDVR Live doesn't buffer every small picture.
+    private val report: () -> Boolean = { true },
 ) : LiveTransport {
     // Between choosing a channel and its first picture: the tuning filler covers the old one.
     override var tuning by mutableStateOf(true)
@@ -209,9 +212,20 @@ internal class LiveStream(
                 }
                 // NextPVR's buffer file belongs to the main picture's timeshift session.
                 if (p.hlsUrl == null && Jdvr.backend.liveCopyIsFile && slot == 0) launch { findCopy(p) }
-                Jdvr.backend.reportStart(p)
+                var reported = false
+                if (report()) {
+                    Jdvr.backend.reportStart(p)
+                    reported = true
+                }
                 while (true) {
-                    delay(10_000)
+                    delay(if (reported) 10_000 else 2_000)
+                    if (!reported) {
+                        if (report()) {
+                            Jdvr.backend.reportStart(p)
+                            reported = true
+                        }
+                        continue
+                    }
                     Jdvr.backend.reportProgress(p, paused = !player.isPlaying)
                 }
             } catch (e: CancellationException) {

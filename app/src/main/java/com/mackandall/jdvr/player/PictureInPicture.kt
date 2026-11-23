@@ -67,6 +67,10 @@ internal fun PicturePicker(
     onPick: (Channel) -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
+    // Multiview: every channel already on screen, and its own title and limit line.
+    shown: Set<UUID> = emptySet(),
+    title: String = "Add a picture",
+    limit: String? = null,
 ) {
     BackHandler { onClose() }
     var tuners by remember { mutableStateOf<TunerStatus?>(null) }
@@ -85,7 +89,8 @@ internal fun PicturePicker(
         val now = c.now
         val recording = recordingNow?.contains(c.id) ?: (now != null && now.isRecording && now.isOn() && now.id.toString().replace("-", "").lowercase() !in buffers)
         return when {
-            c.id == mainChannelId -> PictureCost("Playing in the big picture", Jc.Muted, false)
+            c.id == mainChannelId && shown.isEmpty() -> PictureCost("Playing in the big picture", Jc.Muted, false)
+            c.id in shown -> PictureCost("On screen", Jc.Muted, false)
             recording -> PictureCost("Recording now — no extra tuner, a few seconds behind live", Jc.Green, true)
             full -> PictureCost("All tuners are busy", Jc.Recording, false)
             busy != null && capacity != null -> PictureCost("Uses a tuner (${busy + 1} of $capacity)", Jc.Text, true)
@@ -109,11 +114,11 @@ internal fun PicturePicker(
                 .padding(horizontal = 20.dp, vertical = 22.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Text("Add a picture", color = Jc.Title, fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
+            Text(title, color = Jc.Title, fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
             val budget =
                 listOfNotNull(
                     if (busy != null && capacity != null) "Tuners: $busy of $capacity in use" else null,
-                    "this TV plays up to ${LivePictures.decoders.coerceAtMost(4)} pictures",
+                    limit ?: "this TV plays up to ${LivePictures.decoders.coerceAtMost(4)} pictures",
                 ).joinToString(" · ")
             Text(budget, color = Jc.Muted, fontSize = 13.sp)
             LazyColumn(state = list, verticalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.weight(1f)) {

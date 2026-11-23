@@ -29,6 +29,9 @@ object Jdvr {
         private set
     private lateinit var appContext: Context
 
+    /** For reading system settings (the TV's name). */
+    fun contentResolver(): android.content.ContentResolver = appContext.contentResolver
+
     var api: ApiClient? = null
         private set
 

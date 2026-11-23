@@ -403,6 +403,19 @@ fun SettingsScreen(
             options = listOf(Opt(true, "Swap the pictures"), Opt(false, "Off")),
             selected = prefs.holdOkSwap,
         ) { prefs.changeHoldOkSwap(it) }
+        Section("Multiview")
+        Options(
+            label = "Pictures made by",
+            help = "Several channels at once (OK › Multiview in live TV). This TV: a player per picture, for TVs strong enough (a Shield plays 4). Server: JellyDVR Live combines the channels on the server's GPU into one stream, so even a small stick shows 4. Automatic: the server for every TV but a Shield, when the server can.",
+            options = listOf(Opt(Prefs.MV_AUTO, "Automatic"), Opt(Prefs.MV_TV, "This TV"), Opt(Prefs.MV_SERVER, "Server")),
+            selected = prefs.multiviewMode,
+        ) { prefs.changeMultiviewMode(it) }
+        Options(
+            label = "Most pictures on this TV",
+            help = "When this TV makes the pictures itself. Automatic: 4 on a Shield, 2 on other TVs (an onn stick can't decode more). Raise it if your TV keeps up; lower it if pictures stutter.",
+            options = listOf(Opt(0, "Automatic"), Opt(2, "2"), Opt(3, "3"), Opt(4, "4")),
+            selected = prefs.multiviewMax,
+        ) { prefs.changeMultiviewMax(it) }
         Section("Remote")
         Options(
             label = "Hold OK on a poster or episode",
