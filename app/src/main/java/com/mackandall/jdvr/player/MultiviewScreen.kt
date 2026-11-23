@@ -42,6 +42,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.media3.common.util.UnstableApi
 import androidx.tv.material3.Text
+import com.mackandall.jdvr.data.Jdvr
 import com.mackandall.jdvr.ui.Button
 import com.mackandall.jdvr.ui.Jc
 import com.mackandall.jdvr.ui.tryFocus
@@ -265,7 +266,7 @@ internal fun MultiviewScreen(
                         if (Multiview.mode == MultiviewMode.SERVER) {
                             "the server makes up to 4 pictures"
                         } else {
-                            "this TV plays up to ${Multiview.tvMax} pictures"
+                            "this TV's hardware plays up to ${Multiview.tvMax} pictures"
                         },
                 )
             }
@@ -311,6 +312,7 @@ private fun BoxScope.TileMenu(
         }
         Button("Change its channel", modifier = Modifier.fillMaxWidth()) { onPick(ring) }
         if (count < Multiview.max) Button("Add a picture", modifier = Modifier.fillMaxWidth()) { onPick(-1) }
+        Multiview.fullReason?.let { Text(it, color = Jc.Muted, fontSize = 13.sp) }
         if (count > 1) {
             Button("Remove this picture", modifier = Modifier.fillMaxWidth()) {
                 Multiview.remove(ring)
@@ -318,9 +320,12 @@ private fun BoxScope.TileMenu(
             }
         }
         val other = if (Multiview.mode == MultiviewMode.TV) MultiviewMode.SERVER else MultiviewMode.TV
-        Button(if (other == MultiviewMode.SERVER) "Let the server make the pictures" else "Let this TV make the pictures", modifier = Modifier.fillMaxWidth()) {
-            Multiview.switchMode(other)
-            onClose()
+        // NextPVR has no server Multiview, so there's nothing to switch to.
+        if (!Jdvr.isNextPvr) {
+            Button(if (other == MultiviewMode.SERVER) "Let the server make the pictures" else "Let this TV make the pictures", modifier = Modifier.fillMaxWidth()) {
+                Multiview.switchMode(other)
+                onClose()
+            }
         }
         Button("Close Multiview", modifier = Modifier.fillMaxWidth()) { onExit() }
     }

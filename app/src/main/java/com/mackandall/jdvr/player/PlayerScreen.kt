@@ -532,7 +532,7 @@ private fun LiveControls(
             clock = false,
             record = channel?.now?.takeIf { com.mackandall.jdvr.ui.TvRights.info.record }?.let { TransportAction(TransportIcon.Record, active = recording) { onRecord() } },
             picture = TransportAction(TransportIcon.Picture) { onPicture() },
-            multiview = if (Jdvr.isNextPvr) null else TransportAction(TransportIcon.Multiview) { onMultiview() },
+            multiview = TransportAction(TransportIcon.Multiview) { onMultiview() },
         ) {
             Button("Info") {
                 ui.actionsOpen = false

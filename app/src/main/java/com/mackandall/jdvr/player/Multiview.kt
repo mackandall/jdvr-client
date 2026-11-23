@@ -129,6 +129,16 @@ internal object Multiview {
 
     val max: Int get() = if (mode == MultiviewMode.SERVER) 4 else tvMax
 
+    /** Why no more pictures can be added (this TV is at its own limit), or null while there's room. */
+    val fullReason: String?
+        get() =
+            if (mode != MultiviewMode.TV || channels.size < tvMax) {
+                null
+            } else {
+                "This TV can play $tvMax pictures at once: that's a limit of its hardware." +
+                    if (Jdvr.isNextPvr) "" else " The server can make up to 4."
+            }
+
     val ringed: Channel? get() = channels.getOrNull(ring)
 
     /** Debug: Multiview of [list] made by a stand-in server at [base]; never tunes (no fallback to this TV, no give-way). */
@@ -179,6 +189,8 @@ internal object Multiview {
     // several pictures themselves (all but the Shield, so far), when the server can.
     private suspend fun chooseMode(): MultiviewMode {
         if (testing) return MultiviewMode.SERVER
+        // NextPVR has no server Multiview: this TV always makes the pictures.
+        if (Jdvr.isNextPvr) return MultiviewMode.TV
         val want =
             when (Jdvr.prefs.multiviewMode) {
                 Prefs.MV_TV -> return MultiviewMode.TV
