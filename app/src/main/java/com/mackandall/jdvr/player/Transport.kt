@@ -30,6 +30,7 @@ import androidx.tv.material3.LocalContentColor
 import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
 import com.mackandall.jdvr.ui.Jc
+import com.mackandall.jdvr.ui.ignoreOpeningOk
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 
@@ -69,7 +70,8 @@ fun TransportBar(
     clock: Boolean = true,
     extras: @Composable RowScope.() -> Unit = {},
 ) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    // OK opens the controls on its key-down; its release mustn't press Pause.
+    Row(Modifier.fillMaxWidth().ignoreOpeningOk(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         TransportButton(previous)
         TransportButton(rewind)
         TransportButton(stop)

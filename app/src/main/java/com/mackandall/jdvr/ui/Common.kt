@@ -8,10 +8,18 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.composed
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.unit.dp
@@ -296,6 +304,33 @@ val MinimalScroll =
                 offset < 0 && trailing > containerSize -> 0f
                 kotlin.math.abs(offset) < kotlin.math.abs(trailing - containerSize) -> offset
                 else -> trailing - containerSize
+            }
+        }
+    }
+
+/**
+ * For a panel that OK opens on its key-down: that OK is still held, and its repeats and release
+ * would press whatever button just took focus (Pause, Watch full screen). OK does nothing in the
+ * panel until a fresh press.
+ */
+fun Modifier.ignoreOpeningOk(): Modifier =
+    composed {
+        var fresh by remember { mutableStateOf(false) }
+        onPreviewKeyEvent { k ->
+            val ok = k.key == Key.DirectionCenter || k.key == Key.Enter || k.key == Key.NumPadEnter
+            when {
+                !ok || fresh -> {
+                    false
+                }
+
+                k.type == KeyEventType.KeyDown && k.nativeKeyEvent.repeatCount == 0 -> {
+                    fresh = true
+                    false
+                }
+
+                else -> {
+                    true
+                }
             }
         }
     }

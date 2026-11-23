@@ -181,6 +181,8 @@ internal object Multiview {
             mode = chooseMode()
             if (mode == MultiviewMode.TV) channels = channels.take(tvMax)
             apply()
+            // One picture fills the screen and looks like plain live TV: say where you are.
+            if (channels.size == 1 && overlays.note == null) overlays.flash("Multiview · press OK to add a picture", 6000)
         }
         watchGiveWay()
     }
