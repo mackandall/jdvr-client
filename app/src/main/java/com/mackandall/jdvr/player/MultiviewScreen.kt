@@ -30,10 +30,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.nativeKeyCode
 import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -132,6 +134,16 @@ internal fun MultiviewScreen(
         Modifier
             .fillMaxSize()
             .background(Color.Black)
+            // Back with the menu or the channel list up is taken here: Compose's own Back on their
+            // focused button moved focus out to this screen first, leaving the menu up with nothing
+            // focused until a second Back.
+            .onPreviewKeyEvent { e ->
+                if (e.key != Key.Back || (!menu && picking == null)) return@onPreviewKeyEvent false
+                if (e.type == KeyEventType.KeyUp) {
+                    if (picking != null) picking = null else menu = false
+                }
+                true
+            }
             .focusRequester(focus)
             .focusable()
             .onKeyEvent { e ->
