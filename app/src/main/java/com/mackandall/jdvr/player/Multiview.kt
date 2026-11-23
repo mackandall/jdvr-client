@@ -129,6 +129,15 @@ internal object Multiview {
 
     val max: Int get() = if (mode == MultiviewMode.SERVER) 4 else tvMax
 
+    /** Why no more pictures can be added (this TV is at its own limit), or null while there's room. */
+    val fullReason: String?
+        get() =
+            if (mode != MultiviewMode.TV || channels.size < tvMax) {
+                null
+            } else {
+                "This TV can play $tvMax pictures at once: that's a limit of its hardware. The server can make up to 4."
+            }
+
     val ringed: Channel? get() = channels.getOrNull(ring)
 
     /** Debug: Multiview of [list] made by a stand-in server at [base]; never tunes (no fallback to this TV, no give-way). */

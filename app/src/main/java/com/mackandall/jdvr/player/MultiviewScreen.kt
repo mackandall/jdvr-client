@@ -265,7 +265,7 @@ internal fun MultiviewScreen(
                         if (Multiview.mode == MultiviewMode.SERVER) {
                             "the server makes up to 4 pictures"
                         } else {
-                            "this TV plays up to ${Multiview.tvMax} pictures"
+                            "this TV's hardware plays up to ${Multiview.tvMax} pictures"
                         },
                 )
             }
@@ -311,6 +311,7 @@ private fun BoxScope.TileMenu(
         }
         Button("Change its channel", modifier = Modifier.fillMaxWidth()) { onPick(ring) }
         if (count < Multiview.max) Button("Add a picture", modifier = Modifier.fillMaxWidth()) { onPick(-1) }
+        Multiview.fullReason?.let { Text(it, color = Jc.Muted, fontSize = 13.sp) }
         if (count > 1) {
             Button("Remove this picture", modifier = Modifier.fillMaxWidth()) {
                 Multiview.remove(ring)
