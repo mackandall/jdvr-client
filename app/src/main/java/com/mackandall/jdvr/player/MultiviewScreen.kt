@@ -44,6 +44,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.tv.material3.Text
 import com.mackandall.jdvr.ui.Button
 import com.mackandall.jdvr.ui.Jc
+import com.mackandall.jdvr.ui.ignoreOpeningOk
 import com.mackandall.jdvr.ui.tryFocus
 import kotlinx.coroutines.delay
 import java.util.UUID
@@ -294,6 +295,8 @@ private fun BoxScope.TileMenu(
         Modifier
             .align(Alignment.Center)
             .width(360.dp)
+            // OK opens this menu on its key-down; its release mustn't press Watch full screen.
+            .ignoreOpeningOk()
             // Solid: see-through, the ring and the labels under it showed through the buttons.
             .background(Jc.Panel.copy(alpha = 1f), RoundedCornerShape(12.dp))
             .padding(18.dp),
