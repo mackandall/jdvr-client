@@ -50,12 +50,33 @@ import java.util.UUID
 private const val TS_SEARCH_BYTES = 8 * 1024 * 1024
 
 @OptIn(UnstableApi::class)
-internal fun livePlayer(context: Context): ExoPlayer {
+internal fun livePlayer(
+    context: Context,
+    // Several pictures at once (Multiview): each keeps at most 15 s / 16 MB ahead. The default
+    // (50 s) ran a Shield out of memory at three recordings at once (2026-11-22 test).
+    lean: Boolean = false,
+    // How long to wait for the first bytes: the server's combined Multiview stream starts only
+    // once its ffmpeg has opened every channel (4 live channels took over 10 s, 2026-11-22).
+    readTimeoutSec: Long? = null,
+): ExoPlayer {
+    val client = readTimeoutSec?.let { Jdvr.http.newBuilder().readTimeout(it, java.util.concurrent.TimeUnit.SECONDS).build() } ?: Jdvr.http
     val extractors = DefaultExtractorsFactory().setTsExtractorTimestampSearchBytes(TS_SEARCH_BYTES)
     return ExoPlayer
         .Builder(context, renderersFactory(context))
+        .apply {
+            if (lean) {
+                setLoadControl(
+                    androidx.media3.exoplayer.DefaultLoadControl
+                        .Builder()
+                        .setBufferDurationsMs(5_000, 15_000, 1_000, 2_000)
+                        .setTargetBufferBytes(16 * 1024 * 1024)
+                        .setPrioritizeTimeOverSizeThresholds(false)
+                        .build(),
+                )
+            }
+        }
         .setMediaSourceFactory(
-            DefaultMediaSourceFactory(OkHttpDataSource.Factory(Jdvr.http), extractors)
+            DefaultMediaSourceFactory(OkHttpDataSource.Factory(client), extractors)
                 .setLoadErrorHandlingPolicy(NoRetryOnServerError),
         ).build()
         .apply {
@@ -189,10 +210,13 @@ internal class ExtraPicture(
     val channel: Channel,
     private val slot: Int,
     private val ui: LiveOverlays,
+    lean: Boolean = false,
+    // Multiview: tell the server it's watched (so JellyDVR Live buffers it) only once this says so.
+    private val report: () -> Boolean = { true },
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     val player: ExoPlayer =
-        livePlayer(context).apply {
+        livePlayer(context, lean).apply {
             trackSelectionParameters = trackSelectionParameters.buildUpon().setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, true).build()
             volume = 0f
         }
@@ -314,7 +338,7 @@ internal class ExtraPicture(
                     player.prepare()
                 } else {
                     source = PictureSource.Tune
-                    this@ExtraPicture.live = LiveStream(channelId, player, scope, ui, slot)
+                    this@ExtraPicture.live = LiveStream(channelId, player, scope, ui, slot, report)
                 }
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e

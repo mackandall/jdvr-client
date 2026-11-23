@@ -108,7 +108,22 @@ data class Place(
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        testHooks(intent)
         setContent { JdvrTheme { AppShell() } }
+    }
+
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        testHooks(intent)
+    }
+
+    // Debug builds: `--es mvTest http://host:port` starts Multiview against a stand-in server
+    // (recorded files, no tuners: see JdvrDecodeTest/server/mv-standin.py).
+    private fun testHooks(intent: android.content.Intent?) {
+        if (!BuildConfig.DEBUG) return
+        intent?.getStringExtra("mvTest")?.let {
+            com.mackandall.jdvr.player.Multiview.pendingTest = it to intent.getIntExtra("mvCount", 4)
+        }
     }
 }
 
@@ -565,6 +580,12 @@ fun AppRoot(
                     com.mackandall.jdvr.player.LivePictures.closeAll()
                 },
                 onChannelChange = { watchChannel(it) },
+                onMultiview = { first, second ->
+                    playingChannel = null
+                    // Its tuner's grace kept: the first picture opens the same channel at once.
+                    com.mackandall.jdvr.player.LivePictures.closeAll(free = false)
+                    com.mackandall.jdvr.player.Multiview.start(appContext, first, second)
+                },
                 // Rewind into the buffer, or watch the recording from the start.
                 onPlayRecording = {
                     playingChannel = null
@@ -572,6 +593,25 @@ fun AppRoot(
                     com.mackandall.jdvr.player.LivePictures.closeAll(free = false)
                     playingRecording = it
                 },
+            )
+        }
+        // Debug: Multiview against the stand-in server (cleared only once started: cleared first,
+        // the effect left composition and was cancelled before the channels came).
+        val mvTest = com.mackandall.jdvr.player.Multiview.pendingTest
+        LaunchedEffect(mvTest) {
+            val (base, count) = mvTest ?: return@LaunchedEffect
+            val all = attempt { Jdvr.backend.channels() }.orEmpty()
+            if (all.isNotEmpty()) {
+                playingChannel = null
+                com.mackandall.jdvr.player.LivePictures.closeAll()
+                com.mackandall.jdvr.player.Multiview.startTest(appContext, base, all.take(count.coerceIn(1, 4)))
+            }
+            com.mackandall.jdvr.player.Multiview.pendingTest = null
+        }
+        if (com.mackandall.jdvr.player.Multiview.active) {
+            com.mackandall.jdvr.player.MultiviewScreen(
+                onFullScreen = { watchChannel(it) },
+                onExit = { com.mackandall.jdvr.player.Multiview.close() },
             )
         }
         playingRecording?.let { rec ->

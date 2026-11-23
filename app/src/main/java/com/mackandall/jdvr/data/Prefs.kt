@@ -2,6 +2,7 @@ package com.mackandall.jdvr.data
 
 import android.content.Context
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 
@@ -51,6 +52,24 @@ class Prefs(
     /** A border round the small live pictures (the guide's and picture in picture): "off", "thin" or "medium". */
     var pictureBorder by mutableStateOf(p.getString("pictureBorder", OFF_BORDER) ?: OFF_BORDER)
         private set
+
+    /** Multiview: who makes the pictures, "auto" (the server for TVs that can't play several), "tv" or "server". */
+    var multiviewMode by mutableStateOf(p.getString("multiviewMode", MV_AUTO) ?: MV_AUTO)
+        private set
+
+    /** Multiview on this TV: most pictures at once (0 = automatic: 4 on a Shield, 2 elsewhere). */
+    var multiviewMax by mutableIntStateOf(p.getInt("multiviewMax", 0))
+        private set
+
+    fun changeMultiviewMode(v: String) {
+        multiviewMode = v
+        p.edit().putString("multiviewMode", v).apply()
+    }
+
+    fun changeMultiviewMax(v: Int) {
+        multiviewMax = v
+        p.edit().putInt("multiviewMax", v).apply()
+    }
 
     /** Live TV with a second picture open: holding OK swaps the two (off: holding OK is just a press). */
     var holdOkSwap by mutableStateOf(p.getBoolean("holdOkSwap", true))
@@ -587,6 +606,9 @@ class Prefs(
     }
 
     companion object {
+        const val MV_AUTO = "auto"
+        const val MV_TV = "tv"
+        const val MV_SERVER = "server"
         const val OFF_BORDER = "off"
         const val THIN_BORDER = "thin"
         const val MEDIUM_BORDER = "medium"
