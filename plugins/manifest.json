@@ -9,6 +9,30 @@
     "imageUrl": "https://raw.githubusercontent.com/mackandall/jellyfin-plugin-comskip-segments/main/icon.png",
     "versions": [
       {
+        "version": "1.3.9.1",
+        "changelog": "Web item menu: on a show, season or other folder only the scan is offered, saying how many episodes it covers (\"Scan all 8 episodes for commercials\"); the audio-format fix and Find program start, which work on one recording, stay on single recordings.",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/mackandall/jellyfin-plugin-comskip-segments/releases/download/v1.3.9.1/jellyfin-plugin-comskip-segments_1.3.9.1.zip",
+        "checksum": "08ea3d1bc8fd0410e8b0be07a68890ce",
+        "timestamp": "2026-11-23T06:52:13.0000000Z"
+      },
+      {
+        "version": "1.3.9.0",
+        "changelog": "Hand edits become lessons for their show (new Lessons tab, Scan the rest of the show), and re-running Comskip on an edited episode warns first. Break edges go on the black's keyframe (learned per show, new setting). Breaks run on to the channel's countdown that ends them, and a show's break pattern no longer leaves a break of pure show. With JellyDVR Schedule's Sports overruns, the program-start card is looked for through the extra time, so a show after a late game is skipped or cut to where it really starts; an automatic cut needs a strong match (new setting, 0.90), a weaker one is only marked. After a program-start trim the commercial marks are found again, also for archived recordings.",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/mackandall/jellyfin-plugin-comskip-segments/releases/download/v1.3.9.0/jellyfin-plugin-comskip-segments_1.3.9.0.zip",
+        "checksum": "a9b980c35cfb8a50bb3e6c6becebf2f3",
+        "timestamp": "2026-11-23T06:36:33.0000000Z"
+      },
+      {
+        "version": "1.3.8.0",
+        "changelog": "Commercial editor: the selected break shows a few frames either side of where it starts and ends, with buttons to go there and to move each edge a frame, a keyframe or to black frames. Close up shows one edge big, with a row of frames to click or drag and 40 seconds of timeline around it.",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/mackandall/jellyfin-plugin-comskip-segments/releases/download/v1.3.8.0/jellyfin-plugin-comskip-segments_1.3.8.0.zip",
+        "checksum": "0e06121e90567e400a373fa54210cbb4",
+        "timestamp": "2026-11-19T18:08:50.0000000Z"
+      },
+      {
         "version": "1.3.7.0",
         "changelog": "Letterboxed shows get their opening acts back from the commercial breaks (new settings Give back letterboxed show, on, and Letterbox minimum 120 s). Audio trim: movies whose trim began with a few seconds of the old stereo sound now show their real 5.1 layout in Jellyfin.",
         "targetAbi": "12.0.0.0",
@@ -284,6 +308,14 @@
     "category": "Live TV",
     "imageUrl": "https://raw.githubusercontent.com/mackandall/jellyfin-plugin-jellydvr-schedule/main/icon.png",
     "versions": [
+      {
+        "version": "1.2.1.0",
+        "changelog": "Tuners are counted per device (\"Plan with\": Use device, 1-16 or No limit), with an alert when a recording is skipped for lack of a tuner, and Jellyfin's own tuner counts can be kept in step with the plan. Recordings interrupted by a restart, crash or power cut are resumed, with an alert; one you stopped before the restart stays stopped. A recording running past its listed end (Sports overruns) stays in Upcoming until it finishes. Deleting a series recording clears its skipped and moved marks.",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/mackandall/jellyfin-plugin-jellydvr-schedule/releases/download/v1.2.1.0/jellyfin-plugin-jellydvr-schedule_1.2.1.0.zip",
+        "checksum": "763af129dc713cdaf2787ffcb0bf7c7c",
+        "timestamp": "2026-11-23T06:59:17.0000000Z"
+      },
       {
         "version": "1.2.0.0",
         "changelog": "Sports overruns: follows games on ESPN's scoreboard and moves the end of recordings after a late game (with postgame coverage), gives game recordings extra time and follow-ups joined afterwards; guide marks in the web guide and JDVR with Keep the normal end / Add 15 more minutes. Starts in preview mode.",
