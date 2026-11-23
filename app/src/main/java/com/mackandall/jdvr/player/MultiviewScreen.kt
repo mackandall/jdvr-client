@@ -72,7 +72,9 @@ internal fun MultiviewScreen(
     var labelsUntil by remember { mutableLongStateOf(System.currentTimeMillis() + 5000) }
     var tick by remember { mutableIntStateOf(0) }
 
+    // Focus first: loading the channels takes a moment, and OK pressed meanwhile must reach the menu.
     LaunchedEffect(Unit) {
+        focus.tryFocus()
         info.loadChannels()
         focus.tryFocus()
     }

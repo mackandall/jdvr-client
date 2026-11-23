@@ -281,9 +281,12 @@ fun AppRoot(
     // Back from a player, focus has usually fallen onto whatever was under the player's focused
     // control already (so the screen "has focus"), but not where the user was: ask for the entry anyway.
     var leftPlayer by remember { mutableStateOf(false) }
-    LaunchedEffect(screen, libraryId, railOpen, playingChannel, playingRecording) {
-        if (playingChannel != null || playingRecording != null) leftPlayer = true
-        if (railOpen || playingChannel != null || playingRecording != null) return@LaunchedEffect
+    // Multiview counts as a player: live TV closes as it opens, and this pulled focus back into the
+    // screen under it, so OK there started the last channel unseen behind the pictures.
+    val multiviewUp = com.mackandall.jdvr.player.Multiview.active
+    LaunchedEffect(screen, libraryId, railOpen, playingChannel, playingRecording, multiviewUp) {
+        if (playingChannel != null || playingRecording != null || multiviewUp) leftPlayer = true
+        if (railOpen || playingChannel != null || playingRecording != null || multiviewUp) return@LaunchedEffect
         val fromPlayer = leftPlayer
         leftPlayer = false
         repeat(150) { attempt ->
@@ -313,7 +316,7 @@ fun AppRoot(
             }.onKeyEvent { e ->
                 // Left that nothing on the screen used: at the left edge (in the guide: at "now",
                 // nothing earlier to scroll to), so open the rail.
-                if (!railOpen && !themedHome && playingChannel == null && playingRecording == null &&
+                if (!railOpen && !themedHome && playingChannel == null && playingRecording == null && !multiviewUp &&
                     e.type == KeyEventType.KeyDown && e.key == Key.DirectionLeft
                 ) {
                     if (!focusManager.moveFocus(FocusDirection.Left)) railOpen = true
@@ -333,7 +336,7 @@ fun AppRoot(
         // goes back to it full screen. Always composed, after the one below, so it comes first.
         val guideBackLive = inGuidePicture && !railOpen && screen == Screen.Guide
         if (inGuidePicture) com.mackandall.jdvr.player.OnLeaveApp { com.mackandall.jdvr.player.LivePictures.closeAll() }
-        BackHandler(enabled = !railOpen && playingChannel == null && playingRecording == null) {
+        BackHandler(enabled = !railOpen && playingChannel == null && playingRecording == null && !multiviewUp) {
             when {
                 backStack.isNotEmpty() -> {
                     goBack()
@@ -371,7 +374,7 @@ fun AppRoot(
         // for (Down at the bottom of its controls) made the focus search step into this screen,
         // and the next OK started whatever was selected there (another recording over the live
         // channel). Focus can't enter it, and any key that still reaches it is dropped.
-        val playerUp = playingChannel != null || playingRecording != null
+        val playerUp = playingChannel != null || playingRecording != null || multiviewUp
         // Channels JDVR: its icon strip down the left of every screen (Home draws its own).
         val channelsStrip = Jc.Style == com.mackandall.jdvr.ui.UiStyle.Channels && screen != Screen.Home
         if (channelsStrip) {
