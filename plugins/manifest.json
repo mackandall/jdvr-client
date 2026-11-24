@@ -309,6 +309,14 @@
     "imageUrl": "https://raw.githubusercontent.com/mackandall/jellyfin-plugin-jellydvr-schedule/main/icon.png",
     "versions": [
       {
+        "version": "1.2.3.0",
+        "changelog": "Problems on the TV now carry their key, so JDVR 0.4.22's \"Don't record again\" also works for a failed recording that left no file. A skipped airing that was recorded at another airing no longer stays an open problem.",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/mackandall/jellyfin-plugin-jellydvr-schedule/releases/download/v1.2.3.0/jellyfin-plugin-jellydvr-schedule_1.2.3.0.zip",
+        "checksum": "d10ac999d6b0caf5663f0317d8751bec",
+        "timestamp": "2026-11-24T08:02:15.0000000Z"
+      },
+      {
         "version": "1.2.2.0",
         "changelog": "Tuners list: tuners held by JellyDVR Live's server Multiview show as \"Multiview on <TV>\" (needs JellyDVR Live 1.1.0.0).",
         "targetAbi": "12.0.0.0",
