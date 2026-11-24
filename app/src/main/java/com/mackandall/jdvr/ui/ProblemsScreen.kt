@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
@@ -82,6 +83,7 @@ fun ProblemsScreen(
     var airingsFor by remember { mutableStateOf<ServerAlert?>(null) }
     var dismissed by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    val listState = rememberLazyListState()
 
     LaunchedEffect(reload) {
         attempt { Jdvr.backend.alerts() }?.let {
@@ -91,9 +93,15 @@ fun ProblemsScreen(
         loaded = true
         // Seen here: the popup won't bring these up again.
         list?.let { Jdvr.session.problemsSeenUtc = newestOf(it.open) ?: Jdvr.session.problemsSeenUtc }
-        // After a dismiss the row that had focus is gone: back to the top of the list.
+        // After a dismiss the row that had focus is gone: back to the top of the list. The row stays
+        // open (its button focused) until now: closing it at the press left focus with nothing under
+        // it, and it fell to "Dismiss all", one OK away from dismissing everything (2026-11-24).
+        // The list keeps its place by the row's key, so it had followed the dismissed row down into
+        // "Cleared this week", leaving the top row (where focus goes) off screen: back to the top first.
         if (reload > 0 && dismissed) {
             dismissed = false
+            open = null
+            listState.scrollToItem(0)
             entry.focusSoon()
         }
     }
@@ -153,7 +161,7 @@ fun ProblemsScreen(
 
             else -> {
                 val first = (openOnes + closed).first().id
-                LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp), contentPadding = PaddingValues(bottom = 40.dp)) {
+                LazyColumn(state = listState, verticalArrangement = Arrangement.spacedBy(4.dp), contentPadding = PaddingValues(bottom = 40.dp)) {
                     items(openOnes, key = { it.id }) { a ->
                         ProblemRow(
                             a = a,
@@ -166,7 +174,6 @@ fun ProblemsScreen(
                                 scope.launch {
                                     val ok = attempt { Jdvr.backend.dismissAlert(a.id) } ?: false
                                     note = if (ok) "Dismissed: ${a.title}" else "Couldn't dismiss it."
-                                    open = null
                                     dismissed = true
                                     reload++
                                 }
@@ -177,7 +184,6 @@ fun ProblemsScreen(
                                         scope.launch {
                                             val ok = attempt { Jdvr.backend.dontRecordAgain(a) } ?: false
                                             note = if (ok) "Won't record it again: ${a.title}" else "Couldn't stop it being recorded again."
-                                            open = null
                                             dismissed = ok
                                             reload++
                                         }
