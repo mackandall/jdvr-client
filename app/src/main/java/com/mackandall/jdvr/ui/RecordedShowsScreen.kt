@@ -43,6 +43,7 @@ import androidx.tv.material3.Text
 import coil3.compose.AsyncImage
 import com.mackandall.jdvr.data.CommercialBadge
 import com.mackandall.jdvr.data.Jdvr
+import com.mackandall.jdvr.data.LibItem
 import com.mackandall.jdvr.data.Prefs
 import com.mackandall.jdvr.data.RecordingCard
 import com.mackandall.jdvr.data.attempt
@@ -510,6 +511,30 @@ private fun ShowEpisodes(
         Answers.peek(ask)?.let { episodes = it }
         episodes = Answers.get(ask) ?: episodes ?: emptyList()
     }
+    // The show's seasons on the server (TV library included: Jellyfin groups the show's folders).
+    val seriesUuid = show.id.toUuid()
+    val seasonsAsk = showSeasonsAsk(show.id)
+    var seasons by remember { mutableStateOf(Answers.peek(seasonsAsk)) }
+    LaunchedEffect(show.id, refresh, reload, Jdvr.prefs.moreSeasons) {
+        if (Jdvr.prefs.moreSeasons && seriesUuid != null) seasons = Answers.get(seasonsAsk) ?: seasons
+    }
+    // A season opened from there: the show's library page at that season; Back comes here, to it.
+    var opened by remember { mutableStateOf<Pair<LibItem, Int?>?>(null) }
+    var backSeason by remember { mutableStateOf<Int?>(null) }
+    LaunchedEffect(opened) {
+        if (opened == null && backSeason != null) {
+            kotlinx.coroutines.delay(2500)
+            backSeason = null
+        }
+    }
+    opened?.let { (lib, n) ->
+        BackHandler {
+            opened = null
+            reload++
+        }
+        ShowPage(lib, refresh, onPlayItem, startSeason = n)
+        return
+    }
     info?.let { id ->
         BackHandler {
             info = null
@@ -543,6 +568,19 @@ private fun ShowEpisodes(
         emptyText = "No recordings of this show here.",
         onHold = { quick = it },
         onPlayItem = onPlayItem,
+        moreSeasons =
+            if (!Jdvr.prefs.moreSeasons || seriesUuid == null) {
+                null
+            } else {
+                moreSeasonsOf(seriesUuid, seasons, episodes, backSeason, open = { s ->
+                    scope.launch {
+                        val lib = attempt { Jdvr.backend.libItem(seriesUuid) } ?: return@launch
+                        forgetSeasonListReturn(seriesUuid)
+                        backSeason = s.number
+                        opened = lib to s.number
+                    }
+                }, play = { onPlay(it) })
+            },
     )
     quick?.let { q ->
         QuickActions(
@@ -574,6 +612,31 @@ private fun showsAsk(filter: String) =
 
 // The cards' badges: kept by the grid (only ever put, never asked on their own).
 private fun cardBadgesAsk(filter: String) = Ask<Map<String, CommercialBadge>>("cardBadges:$filter") { null }
+
+// A show's seasons, across every folder Jellyfin groups it from.
+private fun showSeasonsAsk(showId: String) = Ask("showSeasons:$showId") { showId.toUuid()?.let { Jdvr.backend.seasons(it) } }
+
+/**
+ * The show's seasons for "More seasons on the server", or null when the server has nothing of
+ * it beyond its recordings (every season's episodes are the ones recorded).
+ */
+private fun moreSeasonsOf(
+    seriesId: UUID,
+    seasons: List<LibItem>?,
+    recordings: List<EpisodeEntry>?,
+    back: Int?,
+    open: (SeasonCard) -> Unit,
+    play: (UUID) -> Unit,
+): MoreSeasons? {
+    if (seasons.isNullOrEmpty() || recordings == null) return null
+    val recorded = recordings.groupBy { it.season }.mapValues { (_, l) -> l.mapNotNull { it.episode }.distinct().size.coerceAtLeast(if (l.isEmpty()) 0 else 1) }
+    val cards =
+        seasons
+            .distinctBy { it.season?.toString() ?: it.id.toString() }
+            .map { SeasonCard(it.id, it.season, it.name, it.childCount ?: 0, it.unplayed ?: 0, recorded = it.season != null && it.season in recorded) }
+    if (cards.none { it.episodes > (recorded[it.number] ?: 0) }) return null
+    return MoreSeasons(seriesId, cards, back, open, play)
+}
 
 // A show's recordings, as its page lists them.
 private fun showEpisodesAsk(

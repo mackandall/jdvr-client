@@ -263,6 +263,15 @@ class Prefs(
         p.edit().putBoolean("infoBoxTop", v).apply()
     }
 
+    /** A recorded show's page: the show's seasons in the libraries below its recordings. */
+    var moreSeasons by mutableStateOf(p.getBoolean("moreSeasons", true))
+        private set
+
+    fun changeMoreSeasons(v: Boolean) {
+        moreSeasons = v
+        p.edit().putBoolean("moreSeasons", v).apply()
+    }
+
     /** Up Next: near the end of a show's recording or archive episode, a card naming the next one. */
     var upNext by mutableStateOf(p.getBoolean("upNext", true))
         private set

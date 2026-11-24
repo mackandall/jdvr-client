@@ -632,9 +632,10 @@ class JellyfinBackend private constructor(
     override suspend fun seasons(seriesId: UUID): List<LibItem> =
         io {
             api.tvShowsApi
-                .getSeasons(seriesId = seriesId, userId = Jdvr.userId, enableUserData = true)
+                .getSeasons(seriesId = seriesId, userId = Jdvr.userId, fields = listOf(ItemFields.CHILD_COUNT), enableUserData = true)
                 .content.items
-                .map { toLibItem(it) }
+                // A season's number is its own index (toLibItem reads an episode's parent's).
+                .map { toLibItem(it).copy(season = it.indexNumber, episode = null, childCount = it.childCount) }
         }
 
     override suspend fun episodes(

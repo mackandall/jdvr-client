@@ -94,6 +94,31 @@ suspend fun withCommercialBadges(list: List<EpisodeEntry>): List<EpisodeEntry> {
     return if (badges.isEmpty()) list else list.map { e -> badges[e.id.plain()]?.let { e.copy(commercials = it.label, commercialState = it.state) } ?: e }
 }
 
+/** A season of the show on the server, as "More seasons on the server" lists it. */
+data class SeasonCard(
+    val id: UUID,
+    val number: Int?,
+    val name: String,
+    val episodes: Int,
+    val unplayed: Int,
+    // Some of its episodes are among the show's recordings.
+    val recorded: Boolean,
+)
+
+/**
+ * A recorded show's seasons on the server, below its recordings: OK on one [open]s the show at
+ * that season; [back] is the season opened last (focus returns to it); [play] plays an episode.
+ */
+class MoreSeasons(
+    val seriesId: UUID,
+    val seasons: List<SeasonCard>,
+    val back: Int?,
+    val open: (SeasonCard) -> Unit,
+    val play: (UUID) -> Unit,
+) {
+    val summary: String get() = "${seasons.size} season" + (if (seasons.size == 1) "" else "s") + " · ${seasons.sumOf { it.episodes }} episodes"
+}
+
 private fun seasonTitle(n: Int?) =
     when (n) {
         null -> "Other recordings"
@@ -127,6 +152,10 @@ fun EpisodeBrowser(
     onShowChanged: () -> Unit = {},
     // Plays what's opened from a cast member's page (their cards open it when this is given).
     onPlayItem: ((com.mackandall.jdvr.PlayRecording) -> Unit)? = null,
+    // A recorded show: its seasons on the server, below the recordings.
+    moreSeasons: MoreSeasons? = null,
+    // Opened at this season (from a recorded show's "More seasons on the server").
+    startSeason: Int? = null,
 ) {
     // The show's actions (mark all watched, move or delete all of it, forget it) behind a button
     // of their own, so they don't depend on holding OK.
@@ -176,9 +205,9 @@ fun EpisodeBrowser(
                     Text(if (list == null) "Loading…" else emptyText, color = Jc.Muted, fontSize = 16.sp)
                 }
             } else if (tiles) {
-                TilesView(seriesId, backdrop, title, subtitle, list, entry, { e, fromStart -> if (fromStart) onPlayFromStart(e) else onPlay(e) }, onInfo, onToggleWatched, actions, hold, onPlayItem)
+                TilesView(seriesId, backdrop, title, subtitle, list, entry, { e, fromStart -> if (fromStart) onPlayFromStart(e) else onPlay(e) }, onInfo, onToggleWatched, actions, hold, onPlayItem, moreSeasons, startSeason)
             } else {
-                ListView(seriesId?.toString() ?: title, title, subtitle, list, entry, onPlay, onInfo, onToggleWatched, hold, recordings = actions != null)
+                ListView(listKey(seriesId, title, startSeason != null), title, subtitle, list, entry, onPlay, onInfo, onToggleWatched, hold, recordings = actions != null, moreSeasons = moreSeasons, startSeason = startSeason)
             }
         }
     }
@@ -216,6 +245,19 @@ private object ListReturn {
     val last = mutableMapOf<String, UUID>()
 }
 
+// A show opened at a season from its recordings keeps its own return point (its list holds the
+// recordings too, so the recordings page's would win over the season asked for).
+private fun listKey(
+    seriesId: UUID?,
+    title: String,
+    atSeason: Boolean,
+) = (seriesId?.toString() ?: title) + (if (atSeason) "@season" else "")
+
+/** Forgets where the show's list opened at a season was left: a new season was asked for. */
+fun forgetSeasonListReturn(seriesId: UUID) {
+    ListReturn.last.remove(listKey(seriesId, "", atSeason = true))
+}
+
 @Composable
 private fun ListView(
     showKey: String,
@@ -229,16 +271,24 @@ private fun ListView(
     onHold: ((EpisodeEntry) -> Unit)?,
     // Recordings (not a library's episodes): their menus' questions are asked ahead too.
     recordings: Boolean,
+    moreSeasons: MoreSeasons?,
+    startSeason: Int?,
 ) {
-    // Back from an episode's page (a new list): the episode that was pressed, else the first.
-    val remembered = ListReturn.last[showKey]?.takeIf { id -> list.any { it.id == id } }
+    // Back from an episode's page (a new list): the episode that was pressed, else (opened at a
+    // season) that season's first unwatched episode, else the first.
+    val remembered =
+        ListReturn.last[showKey]?.takeIf { id -> list.any { it.id == id } }
+            ?: startSeason?.let { n -> (list.firstOrNull { it.season == n && !it.played } ?: list.firstOrNull { it.season == n })?.id }
     var focusedId by remember { mutableStateOf(remembered ?: list.first().id) }
+    // A season row has focus: the pane shows that season.
+    var focusedSeason by remember { mutableStateOf<SeasonCard?>(null) }
     val focused = list.firstOrNull { it.id == focusedId } ?: list.first()
     val first = remember { FocusRequester() }
     // The episode just played (or opened): back from the player or its page, the list reloads and
     // focus goes to that row again, scrolled into view. (Focus asked for the first row before,
     // which in a long list isn't on screen, so Android dropped it on a row nearby.)
-    var returnTo by remember { mutableStateOf(remembered) }
+    // Back from a season opened below: focus goes to that season's row instead.
+    var returnTo by remember { mutableStateOf(if (moreSeasons?.back != null) null else remembered) }
     val back = remember { FocusRequester() }
     val listState =
         androidx.compose.foundation.lazy
@@ -275,6 +325,26 @@ private fun ListView(
         }
         if (listState.layoutInfo.visibleItemsInfo.none { it.key == id }) runCatching { listState.scrollToItem(index) }
         back.focusSoon(withinMs = 2000)
+    }
+    val seasonBack = remember { FocusRequester() }
+    LaunchedEffect(moreSeasons?.back) {
+        val m = moreSeasons ?: return@LaunchedEffect
+        val i = m.seasons.indexOfFirst { it.number == m.back }
+        if (m.back == null || i < 0) return@LaunchedEffect
+        // The heading comes after the episodes, then the seasons.
+        runCatching { listState.scrollToItem(list.size + 1 + i) }
+        seasonBack.focusSoon(withinMs = 2000)
+    }
+    // Each season's next unwatched episode, fetched as its row gets focus (null: all watched).
+    val nextUp = remember { mutableStateMapOf<UUID, LibItem?>() }
+
+    suspend fun nextUpOf(s: SeasonCard): LibItem? {
+        if (s.id in nextUp) return nextUp[s.id]
+        val eps = attempt { Jdvr.backend.episodes(moreSeasons!!.seriesId, s.id) } ?: return null
+        return eps.firstOrNull { !it.played }.also { nextUp[s.id] = it }
+    }
+    LaunchedEffect(focusedSeason?.id) {
+        focusedSeason?.let { nextUpOf(it) }
     }
     // Descriptions the list didn't come with (recordings), fetched as episodes get focus.
     val more = remember { mutableStateMapOf<UUID, LibItem>() }
@@ -321,7 +391,12 @@ private fun ListView(
                     // Focus anywhere in the row (the episode, or its Info / Watched buttons) shows
                     // that episode on the right.
                     Row(
-                        Modifier.fillMaxWidth().heightIn(min = 64.dp).onFocusChanged { if (it.hasFocus) focusedId = e.id },
+                        Modifier.fillMaxWidth().heightIn(min = 64.dp).onFocusChanged {
+                            if (it.hasFocus) {
+                                focusedId = e.id
+                                focusedSeason = null
+                            }
+                        },
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
@@ -363,8 +438,36 @@ private fun ListView(
                         onToggleWatched?.let { t -> Button(if (e.played) "Unwatch" else "Watched") { t(e) } }
                     }
                 }
+                moreSeasons?.let { m ->
+                    item(key = "more-seasons") {
+                        Row(Modifier.fillMaxWidth().padding(top = 14.dp, bottom = 2.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Text("More seasons on the server", color = Jc.Text, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                            Box(Modifier.weight(1f).height(1.dp).background(Jc.Line))
+                            Text(m.summary, color = Jc.Muted, fontSize = 13.sp)
+                        }
+                    }
+                    items(m.seasons, key = { "season-" + it.id }) { s ->
+                        Row(
+                            Modifier.fillMaxWidth().onFocusChanged { if (it.hasFocus) focusedSeason = s },
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            SeasonRow(s, (if (s.number == m.back) Modifier.focusRequester(seasonBack) else Modifier).weight(1f)) { m.open(s) }
+                            if (s.unplayed > 0) {
+                                Button("Next up") {
+                                    scope.launch { nextUpOf(s)?.let { m.play(it.id) } }
+                                }
+                            }
+                        }
+                    }
+                }
             }
-            EpisodePane(focused, more[focused.id], Modifier.weight(0.4f))
+            val fs = focusedSeason
+            if (fs != null && moreSeasons != null) {
+                SeasonPane(fs, nextUp[fs.id], fs.id in nextUp, Modifier.weight(0.4f))
+            } else {
+                EpisodePane(focused, more[focused.id], Modifier.weight(0.4f))
+            }
         }
     }
 }
@@ -460,6 +563,8 @@ private fun TilesView(
     actions: (@Composable androidx.compose.foundation.layout.RowScope.(EpisodeEntry, (String) -> Unit) -> Unit)?,
     onHold: ((EpisodeEntry) -> Unit)?,
     onPlayItem: ((com.mackandall.jdvr.PlayRecording) -> Unit)?,
+    moreSeasons: MoreSeasons?,
+    startSeason: Int?,
 ) {
     var note by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(note) {
@@ -470,7 +575,7 @@ private fun TilesView(
     }
     val bySeason = list.groupBy { it.season }
     val seasons = bySeason.keys.toList()
-    var picked by remember { mutableStateOf(seasons.firstOrNull { s -> bySeason[s].orEmpty().any { !it.played } } ?: seasons.first()) }
+    var picked by remember { mutableStateOf(startSeason?.takeIf { it in bySeason } ?: seasons.firstOrNull { s -> bySeason[s].orEmpty().any { !it.played } } ?: seasons.first()) }
     // The picked season goes when its last episode is deleted: then the next one along (or the last).
     val season = picked.takeIf { it in bySeason } ?: seasons.firstOrNull { (it ?: -1) > (picked ?: -1) } ?: seasons.last()
     val shown = bySeason[season].orEmpty()
@@ -597,6 +702,9 @@ private fun TilesView(
                 actions?.invoke(this, focused) { note = it }
             }
             note?.let { Text(it, color = Jc.Focus, fontSize = 14.sp, modifier = Modifier.padding(horizontal = 36.dp)) }
+
+            // The show's seasons on the server (a recorded show's page).
+            moreSeasons?.let { MoreSeasonsRow(it) }
 
             // Who's in it.
             d?.let { det ->
@@ -773,5 +881,131 @@ private fun PeopleRow(
                 }
             }
         }
+    }
+}
+
+// ---- More seasons on the server (a recorded show's page) ---------------------------------------
+
+@Composable
+private fun MoreSeasonsRow(m: MoreSeasons) {
+    val back = remember { FocusRequester() }
+    LaunchedEffect(m.back) { if (m.seasons.any { it.number == m.back && m.back != null }) back.focusSoon(withinMs = 2000) }
+    Column(Modifier.padding(top = 6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(Modifier.padding(horizontal = 36.dp), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("More seasons on the server", color = Jc.Text, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+            Text(m.summary, color = Jc.Muted, fontSize = 13.sp)
+        }
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(14.dp), contentPadding = PaddingValues(horizontal = 36.dp, vertical = 6.dp)) {
+            items(m.seasons, key = { it.id }) { s ->
+                SeasonPoster(s, if (s.number == m.back) Modifier.focusRequester(back) else Modifier) { m.open(s) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SeasonPoster(
+    s: SeasonCard,
+    modifier: Modifier,
+    onClick: () -> Unit,
+) {
+    Column(Modifier.width(110.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Surface(
+            onClick = onClick,
+            modifier = modifier.fillMaxWidth().aspectRatio(2f / 3f),
+            shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(9.dp)),
+            colors = ClickableSurfaceDefaults.colors(containerColor = Jc.Panel2, focusedContainerColor = Jc.Panel2),
+            border = ClickableSurfaceDefaults.border(focusedBorder = Border(BorderStroke(3.dp, Jc.Focus))),
+            scale = ClickableSurfaceDefaults.scale(focusedScale = 1.08f),
+        ) {
+            Box(Modifier.fillMaxSize()) {
+                // The number shows where the season has no picture.
+                Column(Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(if (s.number == null) "" else "SEASON", color = Jc.Muted, fontSize = 10.sp)
+                    Text(s.number?.toString() ?: s.name, color = Jc.Text, fontSize = 28.sp, fontWeight = FontWeight.Bold)
+                }
+                AsyncImage(model = Jdvr.backend.imageUrl(s.id, 330), contentDescription = s.name, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+                if (s.recorded) {
+                    Box(Modifier.align(Alignment.TopStart).padding(5.dp)) { Tag("Recorded", Jc.Panel) }
+                }
+                Box(Modifier.align(Alignment.BottomStart).padding(5.dp)) {
+                    when {
+                        s.episodes > 0 && s.unplayed == 0 -> Tag("✓", Jc.Green)
+                        s.unplayed > 0 -> Tag("${s.unplayed} new", Jc.FocusFill)
+                    }
+                }
+            }
+        }
+        Text(s.name, color = Jc.Text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text("${s.episodes} episode" + (if (s.episodes == 1) "" else "s"), color = Jc.Muted, fontSize = 12.sp)
+    }
+}
+
+@Composable
+private fun SeasonRow(
+    s: SeasonCard,
+    modifier: Modifier,
+    onClick: () -> Unit,
+) {
+    Surface(
+        onClick = onClick,
+        modifier = modifier.heightIn(min = 56.dp),
+        shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(10.dp)),
+        colors = ClickableSurfaceDefaults.colors(containerColor = Jc.Panel.seeThrough(0.92f), focusedContainerColor = Jc.FocusFill, contentColor = Jc.Text, focusedContentColor = Jc.Text),
+        border = ClickableSurfaceDefaults.border(focusedBorder = Border(BorderStroke(2.dp, Jc.Focus))),
+        scale = ClickableSurfaceDefaults.scale(focusedScale = 1.01f),
+    ) {
+        Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(horizontal = 14.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Box(Modifier.width(30.dp).height(44.dp).clip(RoundedCornerShape(4.dp)).background(Jc.Panel2), contentAlignment = Alignment.Center) {
+                Text(s.number?.toString() ?: "", color = Jc.Muted, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                AsyncImage(model = Jdvr.backend.imageUrl(s.id, 90), contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+            }
+            Text(s.name, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+            if (s.recorded) Tag("Recorded", Jc.Panel2)
+            Text("${s.episodes} episode" + (if (s.episodes == 1) "" else "s"), color = Jc.Muted, fontSize = 13.sp)
+            Text(
+                if (s.unplayed == 0) "✓ watched" else "${s.unplayed} new",
+                color = if (s.unplayed == 0) Jc.Muted else Jc.Green,
+                fontSize = 13.sp,
+                modifier = Modifier.width(76.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun SeasonPane(
+    s: SeasonCard,
+    next: LibItem?,
+    nextKnown: Boolean,
+    modifier: Modifier,
+) {
+    Column(modifier.background(Jc.Panel.seeThrough(0.9f), RoundedCornerShape(12.dp)).padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            Box(Modifier.width(130.dp).aspectRatio(2f / 3f).clip(RoundedCornerShape(8.dp)).background(Jc.Panel2), contentAlignment = Alignment.Center) {
+                Text(s.number?.toString() ?: "", color = Jc.Muted, fontSize = 30.sp, fontWeight = FontWeight.Bold)
+                AsyncImage(model = Jdvr.backend.imageUrl(s.id, 330), contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+            }
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(s.name, color = Jc.Text, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+                Text("${s.episodes} episode" + (if (s.episodes == 1) "" else "s"), color = Jc.Muted, fontSize = 14.sp)
+                Text(if (s.unplayed == 0) "All watched" else "${s.unplayed} unwatched", color = if (s.unplayed == 0) Jc.Muted else Jc.Green, fontSize = 14.sp)
+                if (s.recorded) Text("Some are recordings", color = Jc.Muted, fontSize = 13.sp)
+            }
+        }
+        if (s.unplayed > 0) {
+            Text(
+                when {
+                    next != null -> "Next up: " + listOfNotNull(next.seasonEpisode, next.name).joinToString(" · ")
+                    nextKnown -> "Next up: —"
+                    else -> "Next up: …"
+                },
+                color = Jc.Text,
+                fontSize = 14.sp,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Text("OK opens the show at this season; Back comes back here.", color = Jc.Muted, fontSize = 12.sp)
     }
 }

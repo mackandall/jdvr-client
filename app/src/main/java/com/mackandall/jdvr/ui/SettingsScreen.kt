@@ -198,6 +198,12 @@ fun SettingsScreen(
             selected = prefs.seriesOptionsFirst,
         ) { prefs.changeSeriesOptionsFirst(it) }
         Options(
+            label = "More seasons on the server",
+            help = "On a recorded show's page, below its recordings: every season of the show on the server (TV library included). OK opens the show at that season.",
+            options = listOf(Opt(true, "On"), Opt(false, "Off")),
+            selected = prefs.moreSeasons,
+        ) { prefs.changeMoreSeasons(it) }
+        Options(
             label = "Commercials",
             help = "Found by Comskip, also while a programme is still recording.",
             options = SkipOptions,

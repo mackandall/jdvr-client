@@ -130,6 +130,7 @@ interface TvBackend :
     /** Guide programmes whose name matches, still to come or on now, soonest first. */
     suspend fun searchGuide(term: String): List<Program>
 
+    /** A show's seasons (`season` = its number, `childCount` = its episodes), across every folder Jellyfin groups the show from. */
     suspend fun seasons(seriesId: UUID): List<LibItem>
 
     /** A show's episodes, in order (one season, or all of them). */

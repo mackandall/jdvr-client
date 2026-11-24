@@ -25,6 +25,8 @@ data class LibItem(
     val seriesId: UUID?,
     val seriesName: String?,
     val officialRating: String?,
+    // A season's (or show's) number of episodes, where asked for.
+    val childCount: Int? = null,
 ) {
     val seasonEpisode: String? get() = if (season != null && episode != null) "S$season:E$episode" else null
 }

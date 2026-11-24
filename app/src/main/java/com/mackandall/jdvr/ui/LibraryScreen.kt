@@ -451,6 +451,8 @@ internal fun ShowPage(
     show: LibItem,
     refresh: Int,
     onPlay: (PlayRecording) -> Unit,
+    // Opened at this season (from a recorded show's "More seasons on the server").
+    startSeason: Int? = null,
 ) {
     var episodes by remember { mutableStateOf<List<EpisodeEntry>?>(null) }
     var reload by remember { mutableIntStateOf(0) }
@@ -494,6 +496,7 @@ internal fun ShowPage(
         },
         onHold = { quick = it },
         onPlayItem = onPlay,
+        startSeason = startSeason,
     )
     quick?.let { q ->
         QuickActions(
