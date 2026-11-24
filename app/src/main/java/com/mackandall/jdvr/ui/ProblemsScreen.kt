@@ -171,6 +171,20 @@ fun ProblemsScreen(
                                     reload++
                                 }
                             },
+                            onDontRecord =
+                                if (a.rerecordable) {
+                                    {
+                                        scope.launch {
+                                            val ok = attempt { Jdvr.backend.dontRecordAgain(a) } ?: false
+                                            note = if (ok) "Won't record it again: ${a.title}" else "Couldn't stop it being recorded again."
+                                            open = null
+                                            dismissed = ok
+                                            reload++
+                                        }
+                                    }
+                                } else {
+                                    null
+                                },
                         )
                     }
                     if (closed.isNotEmpty()) {
@@ -212,6 +226,7 @@ private fun ProblemRow(
     onPlay: (() -> Unit)?,
     onAirings: (() -> Unit)?,
     onDismiss: (() -> Unit)?,
+    onDontRecord: (() -> Unit)? = null,
 ) {
     val isOpen = a.state == "open"
     Column {
@@ -270,6 +285,7 @@ private fun ProblemRow(
                         }
                     onPlay?.let { Button("Play what was recorded", modifier = mod(), onClick = it) }
                     onAirings?.let { Button("Other airings", modifier = mod(), onClick = it) }
+                    onDontRecord?.let { Button("Don't record again", modifier = mod(), onClick = it) }
                     onDismiss?.let { Button("Dismiss", modifier = mod(), onClick = it) }
                     Button("Close", modifier = mod(), onClick = onToggle)
                 }
