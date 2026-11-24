@@ -61,8 +61,15 @@ class NextPvrBackend(
 
     // ---- the API ----------------------------------------------------------------------------
 
-    private fun get(url: String): JsonElement =
-        Jdvr.http
+    // Starting a channel answers only once NextPVR has tuned and opened its buffer file: 18 s on .200
+    // with the buffer on a slow share (2026-11-23), past OkHttp's 10 s, so the channel "couldn't start".
+    private val slowHttp by lazy { Jdvr.http.newBuilder().readTimeout(45, java.util.concurrent.TimeUnit.SECONDS).build() }
+
+    private fun get(
+        url: String,
+        slow: Boolean = false,
+    ): JsonElement =
+        (if (slow) slowHttp else Jdvr.http)
             .newCall(
                 okhttp3.Request
                     .Builder()
@@ -107,13 +114,14 @@ class NextPvrBackend(
         params: Map<String, Any?> = emptyMap(),
     ): JsonElement =
         withContext(Dispatchers.IO) {
-            var reply = get(serviceUrl(method, params, session()))
+            val slow = method == "channel.stream.start"
+            var reply = get(serviceUrl(method, params, session()), slow)
             // Only an expired session (code 8, "Invalid Session."): signing in again on any failure
             // ("Not Allowed" from setting.connections on a tuner) swapped the session under the
             // live picture, whose timeshift then lapsed without its lease (2026-11-17).
             if (sessionExpired(reply)) {
                 sid = null
-                reply = get(serviceUrl(method, params, session()))
+                reply = get(serviceUrl(method, params, session()), slow)
             }
             if (failed(reply)) error("NextPVR: " + ((reply as JsonObject)["msg"]?.jsonPrimitive?.contentOrNull ?: "failed"))
             reply
