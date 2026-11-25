@@ -386,6 +386,22 @@ class Prefs(
     var menuIcons by mutableStateOf(p.getBoolean("menuIcons", true))
         private set
 
+    /** Themes (by id) whose icon strip was turned on, or off, by hand; the rest follow [stripByDefault]. */
+    private var stripOn by mutableStateOf(p.getStringSet("stripOn", emptySet())?.toSet() ?: emptySet())
+    private var stripOff by mutableStateOf(p.getStringSet("stripOff", emptySet())?.toSet() ?: emptySet())
+
+    /** Channels JDVR starts with its icon strip; every other theme without. */
+    private fun stripByDefault() = com.mackandall.jdvr.ui.Jc.Style == com.mackandall.jdvr.ui.UiStyle.Channels
+
+    /** The menu's places as an icon strip down the left of the screens, for the current theme. */
+    val iconStrip: Boolean get() = theme in stripOn || (theme !in stripOff && stripByDefault())
+
+    fun changeIconStrip(v: Boolean) {
+        stripOn = if (v) stripOn + theme else stripOn - theme
+        stripOff = if (v) stripOff - theme else stripOff + theme
+        p.edit().putStringSet("stripOn", stripOn).putStringSet("stripOff", stripOff).apply()
+    }
+
     /**
      * How the server's problems reach this TV: [PROBLEMS_POPUP], [PROBLEMS_QUIET] (a count in the
      * menu, a mark on its edge, the Home tile), [PROBLEMS_SILENT] (only on the Problems page), or ""

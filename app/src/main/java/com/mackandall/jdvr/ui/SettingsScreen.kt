@@ -800,6 +800,14 @@ private fun MenuSettings(libraries: List<Library>) {
             options = listOf(Opt(true, "Icons under the menu"), Opt(false, "Last in the list")),
             selected = prefs.menuIcons,
         ) { prefs.changeMenuIcons(it) }
+        Options(
+            label = "Icon strip down the left",
+            help =
+                "The menu's places as icons on every screen, in the menu's order. ◄ from a screen lands on the strip; ◄ again opens the menu " +
+                    "with the names. Kept for each theme (this is ${Jc.palette.name}'s): Channels JDVR starts On, the others Off.",
+            options = listOf(Opt(true, "On"), Opt(false, "Off")),
+            selected = prefs.iconStrip,
+        ) { prefs.changeIconStrip(it) }
         // Icons beside the entries: a set (ui/MenuIcons.kt), how they move with focus, how big.
         val set = iconSetFor(prefs.menuIconSet)
         Options(

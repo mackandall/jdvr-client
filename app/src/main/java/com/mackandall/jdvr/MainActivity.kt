@@ -197,6 +197,9 @@ fun AppRoot(
         }
     }
     var railOpen by remember { mutableStateOf(false) }
+    // Opened from the icon strip: the entry to start on, and whether with the libraries open.
+    var railFocusKey by remember { mutableStateOf<String?>(null) }
+    var railLibraries by remember { mutableStateOf(false) }
     // The rail uses Right itself just now (Settings icon → Sign out, or opening Libraries).
     var railKeepsRight by remember { mutableStateOf(false) }
     // The server's video libraries, each its own menu entry (minus the ones hidden in Settings);
@@ -319,7 +322,12 @@ fun AppRoot(
                 if (!railOpen && !themedHome && playingChannel == null && playingRecording == null && !multiviewUp &&
                     e.type == KeyEventType.KeyDown && e.key == Key.DirectionLeft
                 ) {
-                    if (!focusManager.moveFocus(FocusDirection.Left)) railOpen = true
+                    val fromStrip = com.mackandall.jdvr.ui.IconStripFocus.key
+                    if (!focusManager.moveFocus(FocusDirection.Left)) {
+                        railFocusKey = fromStrip
+                        railLibraries = false
+                        railOpen = true
+                    }
                     true
                 } else {
                     false
@@ -375,22 +383,35 @@ fun AppRoot(
         // and the next OK started whatever was selected there (another recording over the live
         // channel). Focus can't enter it, and any key that still reaches it is dropped.
         val playerUp = playingChannel != null || playingRecording != null || multiviewUp
-        // Channels JDVR: its icon strip down the left of every screen (Home draws its own).
-        val channelsStrip = Jc.Style == com.mackandall.jdvr.ui.UiStyle.Channels && screen != Screen.Home
+        // The icon strip (Settings › Menu, kept per theme): the menu's places down the left of every
+        // screen; not on a Home that is itself a menu (SageTV, Gemstone) or JDVR Estuary's.
+        val channelsStrip =
+            Jdvr.prefs.iconStrip &&
+                !(screen == Screen.Home && (Jc.Style.menuHome || Jc.Style == com.mackandall.jdvr.ui.UiStyle.Estuary))
         if (channelsStrip) {
-            com.mackandall.jdvr.ui.ChannelsSideStrip(
+            com.mackandall.jdvr.ui.IconStrip(
                 selected = screen,
                 libraryId = libraryId,
                 libraries = shownLibraries,
                 showRecorded = hasDvr,
+                showTrash = hasTrash,
+                problems =
+                    com.mackandall.jdvr.ui.OpenProblems.count.takeIf {
+                        com.mackandall.jdvr.ui.OpenProblems.mode != com.mackandall.jdvr.data.Prefs.PROBLEMS_SILENT
+                    } ?: 0,
                 onSelect = { startAt(Place(it)) },
                 onSelectLibrary = { startAt(Place(Screen.Library, libraryId = it)) },
+                onOpenLibraries = {
+                    railFocusKey = "libraries"
+                    railLibraries = true
+                    railOpen = true
+                },
             )
         }
         Box(
             Modifier
                 .fillMaxSize()
-                .padding(start = if (channelsStrip) 58.dp else 0.dp)
+                .padding(start = if (channelsStrip) com.mackandall.jdvr.ui.IconStripWidth else 0.dp)
                 .focusProperties { onEnter = { if (playerUp) cancelFocusChange() } }
                 .focusGroup()
                 .onPreviewKeyEvent { playerUp }
@@ -544,6 +565,8 @@ fun AppRoot(
                 // Focus moved off the rail (Right into the screen): it's done, put it away.
                 onDismiss = { railOpen = false },
                 onKeepsRight = { railKeepsRight = it },
+                focusKey = railFocusKey,
+                openLibraries = railLibraries,
                 selected = screen,
                 onSelect = {
                     startAt(Place(it))

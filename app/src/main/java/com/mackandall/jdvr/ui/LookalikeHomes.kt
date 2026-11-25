@@ -423,24 +423,10 @@ private fun ChannelsHome(
     d: LookData,
 ) {
     // The heading says where the icon strip's focused icon goes.
-    var heading by remember { mutableStateOf<String?>(null) }
     Row(Modifier.fillMaxSize()) {
-        // The icon strip.
-        Column(
-            Modifier
-                .width(58.dp)
-                .fillMaxHeight()
-                .padding(top = 46.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            ChannelsStripIcon(MenuIcon.Home, selected = true, onFocus = { heading = if (it) "Home" else null }) {}
-            d.nav.filter { it.key != "settings" }.take(7).forEach { n -> ChannelsStripIcon(n.icon, selected = false, onFocus = { heading = if (it) n.label else null }, onClick = n.go) }
-            d.nav.firstOrNull { it.key == "settings" }?.let { n -> ChannelsStripIcon(n.icon, selected = false, onFocus = { heading = if (it) n.label else null }, onClick = n.go) }
-        }
         Column(Modifier.weight(1f).fillMaxHeight()) {
             Box(Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 4.dp, end = 58.dp)) {
-                Text(heading ?: "Home", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.align(Alignment.Center))
+                Text(IconStripFocus.label ?: "Home", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.align(Alignment.Center))
                 Text(d.now.time(), color = Color(0xFFD6CDEE), fontSize = 13.sp, modifier = Modifier.align(Alignment.CenterEnd).offset(x = 40.dp))
             }
             Column(
@@ -466,42 +452,6 @@ private fun ChannelsHome(
         }
     }
 }
-
-@Composable
-private fun ChannelsStripIcon(
-    icon: MenuIcon,
-    selected: Boolean,
-    onFocus: (Boolean) -> Unit,
-    onClick: () -> Unit,
-) {
-    var focused by remember { mutableStateOf(false) }
-    Surface(
-        onClick = onClick,
-        modifier =
-            Modifier.size(38.dp).onFocusChanged {
-                focused = it.isFocused
-                onFocus(it.isFocused)
-            },
-        shape = ClickableSurfaceDefaults.shape(CircleShape),
-        colors = ClickableSurfaceDefaults.colors(containerColor = Color.Transparent, focusedContainerColor = Color(0xFF4A2F84)),
-        scale = ClickableSurfaceDefaults.scale(focusedScale = 1.08f),
-    ) {
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Glyph(
-                icon,
-                20.dp,
-                if (focused) {
-                    Color.White
-                } else if (selected) {
-                    Color(0xFFA77BFF)
-                } else {
-                    Color(0xFFA99CC8)
-                },
-            )
-        }
-    }
-}
-
 @Composable
 private fun ChannelsCard(
     c: LookCard,
@@ -733,42 +683,5 @@ private fun EstuaryPoster(
                 )
             }
         }
-    }
-}
-
-/**
- * Channels JDVR's icon strip down the left of every screen but Home (which draws its own): the
- * places, the current one in purple. ◄ from the screen's left edge lands here; ◄ again opens the
- * slide-out menu with the names.
- */
-@Composable
-fun ChannelsSideStrip(
-    selected: Screen,
-    libraryId: UUID?,
-    libraries: List<Library>,
-    showRecorded: Boolean,
-    onSelect: (Screen) -> Unit,
-    onSelectLibrary: (UUID) -> Unit,
-) {
-    val rights = deviceRights()
-    Column(
-        Modifier
-            .width(58.dp)
-            .fillMaxHeight()
-            .verticalScroll(rememberScrollState())
-            .padding(top = 46.dp, bottom = 16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        fun on(s: Screen) = selected == s && s != Screen.Library
-        ChannelsStripIcon(MenuIcon.Home, selected = false, onFocus = {}) { onSelect(Screen.Home) }
-        if (showRecorded) ChannelsStripIcon(MenuIcon.Recorded, selected = on(Screen.RecordedShows), onFocus = {}) { onSelect(Screen.RecordedShows) }
-        if (rights.liveTv) ChannelsStripIcon(MenuIcon.LiveTv, selected = on(Screen.LiveTv), onFocus = {}) { onSelect(Screen.LiveTv) }
-        ChannelsStripIcon(MenuIcon.Guide, selected = on(Screen.Guide), onFocus = {}) { onSelect(Screen.Guide) }
-        ChannelsStripIcon(MenuIcon.Scheduled, selected = on(Screen.Scheduled), onFocus = {}) { onSelect(Screen.Scheduled) }
-        if (rights.record) ChannelsStripIcon(MenuIcon.Series, selected = on(Screen.Series), onFocus = {}) { onSelect(Screen.Series) }
-        libraries.inMenuOrder().forEach { lib -> ChannelsStripIcon(lib.menuIcon(), selected = selected == Screen.Library && libraryId == lib.id, onFocus = {}) { onSelectLibrary(lib.id) } }
-        ChannelsStripIcon(MenuIcon.Search, selected = on(Screen.Search), onFocus = {}) { onSelect(Screen.Search) }
-        ChannelsStripIcon(MenuIcon.Settings, selected = on(Screen.Settings), onFocus = {}) { onSelect(Screen.Settings) }
     }
 }

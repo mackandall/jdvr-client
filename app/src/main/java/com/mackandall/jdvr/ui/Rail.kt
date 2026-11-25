@@ -69,6 +69,11 @@ fun List<Library>.inMenuOrder(): List<Library> {
 
 private enum class Kind { Item, Group, Child }
 
+/** The menu's row height as last drawn, so the icon strip can put each icon level with its entry. */
+object RailMetrics {
+    var rowPx by androidx.compose.runtime.mutableIntStateOf(0)
+}
+
 private data class Entry(
     val key: String,
     val label: String,
@@ -106,15 +111,22 @@ fun Rail(
     showTrash: Boolean = false,
     // Open server problems: a Problems entry with their count while there are any.
     problems: Int = 0,
+    // Opened from the icon strip: the entry to start on (the icon's), not the current section's.
+    focusKey: String? = null,
+    // Opened from the strip's Libraries icon: with the libraries open.
+    openLibraries: Boolean = false,
 ) {
     val prefs = Jdvr.prefs
     val rights = deviceRights()
     var open by remember {
         mutableStateOf(
-            when (prefs.librariesStart) {
+            when {
+                openLibraries -> true
+                else -> when (prefs.librariesStart) {
                 Prefs.OPEN -> true
                 Prefs.CLOSED -> false
                 else -> prefs.librariesOpen
+                }
             },
         )
     }
@@ -132,36 +144,28 @@ fun Rail(
     val icons = prefs.menuIcons
     val entries =
         buildList {
-            prefs.menuOrder.filter { it == "home" || it !in prefs.hiddenMenu }.forEach { k ->
-                if (k == "libraries") {
-                    if (libs.isEmpty()) return@forEach
-                    if (prefs.librariesGrouped) {
-                        add(Entry(k, "Libraries", !open && selected == Screen.Library, Kind.Group, icon = MenuIcon.Libraries) { setOpen(!open) })
-                        if (open) libs.forEach { l -> add(Entry("lib:${l.id}", l.name, selected == Screen.Library && l.id == selectedLibrary, Kind.Child, icon = l.menuIcon()) { onSelectLibrary(l) }) }
-                    } else {
-                        libs.forEachIndexed { i, l ->
-                            add(Entry("lib:${l.id}", l.name, selected == Screen.Library && l.id == selectedLibrary, Kind.Item, divider = i == 0, icon = l.menuIcon()) { onSelectLibrary(l) })
-                        }
+            menuPlaces(libraries, showRecorded, showTrash, problems, selected, rights, librariesOpen = open).forEach { p ->
+                val kind =
+                    when (p.kind) {
+                        PlaceKind.Item -> Kind.Item
+                        PlaceKind.Group -> Kind.Group
+                        PlaceKind.Child -> Kind.Child
                     }
-                } else {
-                    val s = Screen.entries.firstOrNull { it.key == k } ?: return@forEach
-                    if (s == Screen.RecordedShows && !showRecorded) return@forEach
-                    if (s == Screen.Trash && !showTrash) return@forEach
-                    // Problems: only while something is open (Settings › Problems: Silent leaves it out),
-                    // with their count; moved or hidden like the rest in Settings › Menu.
-                    if (s == Screen.Problems) {
-                        if (problems > 0 || selected == Screen.Problems) {
-                            add(Entry(k, s.label, s == selected, Kind.Item, icon = s.menuIcon(), count = problems) { onSelect(s) })
-                        }
-                        return@forEach
+                val on =
+                    when {
+                        p.kind == PlaceKind.Group -> !open && selected == Screen.Library
+                        p.library != null -> selected == Screen.Library && p.library.id == selectedLibrary
+                        else -> p.screen == selected
                     }
-                    // What this TV may not do (JellyDVR Space's device rights) isn't in its menu.
-                    if (s == Screen.LiveTv && !rights.liveTv) return@forEach
-                    if (s == Screen.Series && !rights.record) return@forEach
-                    // A line under the libraries when they're listed one by one.
-                    val afterLibs = lastOrNull()?.let { it.kind == Kind.Item && it.key.startsWith("lib:") } == true
-                    add(Entry(k, s.label, s == selected, Kind.Item, divider = afterLibs, icon = s.menuIcon()) { onSelect(s) })
-                }
+                add(
+                    Entry(p.key, p.label, on, kind, divider = p.divider, icon = p.icon, count = p.count) {
+                        when {
+                            p.kind == PlaceKind.Group -> setOpen(!open)
+                            p.library != null -> onSelectLibrary(p.library)
+                            p.screen != null -> onSelect(p.screen)
+                        }
+                    },
+                )
             }
             if (!icons) {
                 add(Entry("settings", Screen.Settings.label, selected == Screen.Settings, Kind.Item, divider = true, icon = MenuIcon.Settings) { onSelect(Screen.Settings) })
@@ -181,6 +185,8 @@ fun Rail(
     val last = entries.lastOrNull()?.let { req(it.key) } ?: FocusRequester.Default
     val current =
         when {
+            focusKey == "settings" && icons -> gear
+            focusKey != null && entries.any { it.key == focusKey } -> req(focusKey)
             icons && selected == Screen.Settings -> gear
             else -> entries.firstOrNull { it.on }?.let { req(it.key) } ?: entries.firstOrNull()?.let { req(it.key) } ?: gear
         }
@@ -459,7 +465,11 @@ private fun RailItem(
     val npvr = Jc.Style == UiStyle.NextPvr
     Surface(
         onClick = onClick,
-        modifier = modifier.width(width).onFocusChanged { focused = it.isFocused }.onSizeChanged { rowHeight = it.height },
+        modifier =
+            modifier.width(width).onFocusChanged { focused = it.isFocused }.onSizeChanged {
+                rowHeight = it.height
+                if (!small) RailMetrics.rowPx = it.height
+            },
         shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(if (npvr) 3.dp else 12.dp)),
         colors =
             ClickableSurfaceDefaults.colors(
