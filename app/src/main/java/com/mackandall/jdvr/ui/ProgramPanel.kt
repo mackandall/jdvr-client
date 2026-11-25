@@ -135,8 +135,19 @@ internal fun ProgramPanel(
     // fetched ahead, then brought up to date.
     LaunchedEffect(program.id) { Answers.get(ProgramAsk.panel(program))?.let(::apply) }
 
-    fun act(block: suspend () -> String?) {
+    // An action under way: said at once, and further presses wait for it (a slow server otherwise
+    // looks like a missed press, and the next OK lands on whatever has focus after it).
+    var busy by remember(program.id) { mutableStateOf(false) }
+
+    fun act(
+        working: String? = null,
+        block: suspend () -> String?,
+    ) {
+        if (busy) return
+        busy = true
+        if (working != null) note = working
         scope.launch {
+            val t0 = System.currentTimeMillis()
             val msg =
                 try {
                     block()
@@ -146,7 +157,10 @@ internal fun ProgramPanel(
                     android.util.Log.w("JDVR", "guide action failed", e)
                     note = "Didn't work: ${e.message ?: e.javaClass.simpleName}"
                     return@launch
+                } finally {
+                    busy = false
                 }
+            android.util.Log.i("JDVR", "guide action done in ${System.currentTimeMillis() - t0} ms: $msg")
             val done = onActed
             if (done != null) {
                 done(msg)
@@ -328,7 +342,7 @@ internal fun ProgramPanel(
                         } else if (p.isRecording && !isBuffer) {
                             // Under way it stops (what's recorded so far is kept); later, it won't record.
                             Button(if (p.isOn()) "Stop recording" else "Cancel recording", modifier = recordModifier, leading = { if (p.isOn()) Dot(Jc.Recording) else CancelDot() }) {
-                                act {
+                                act(if (p.isOn()) "Stopping…" else "Cancelling…") {
                                     Jdvr.backend.cancelRecording(p.timerId!!)
                                     if (p.isOn()) "Recording stopped: what was recorded so far is kept." else "Recording cancelled."
                                 }
@@ -356,7 +370,7 @@ internal fun ProgramPanel(
                             }
                         } else {
                             Button("Record", modifier = recordModifier, leading = { Dot(Jc.Recording) }) {
-                                act {
+                                act("Scheduling…") {
                                     Jdvr.backend.record(p.id, series = false)
                                     "Recording scheduled."
                                 }

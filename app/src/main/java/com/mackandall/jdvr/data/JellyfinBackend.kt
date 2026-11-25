@@ -198,15 +198,21 @@ class JellyfinBackend private constructor(
 
     override suspend fun cancelRecording(timerId: String): Unit =
         io {
-            val apiId =
-                runCatching {
+            val t0 = System.currentTimeMillis()
+            // The guide's timer id is the server's own: cancel it at once. Only an id the server doesn't
+            // know (a plugin's external id) is looked up in the whole timer list, which is slow on a
+            // busy server.
+            val direct = runCatching { api.liveTvApi.cancelTimer(timerId) }
+            if (direct.isFailure) {
+                val apiId =
                     api.liveTvApi
                         .getTimers()
                         .content.items
-                        .firstOrNull { it.id == timerId || it.externalId == timerId }
-                        ?.id
-                }.getOrNull() ?: timerId
-            api.liveTvApi.cancelTimer(apiId)
+                        .firstOrNull { it.externalId == timerId }
+                        ?.id ?: throw direct.exceptionOrNull()!!
+                api.liveTvApi.cancelTimer(apiId)
+            }
+            android.util.Log.i("JDVR", "cancelRecording ${if (direct.isSuccess) "direct" else "via lookup"} in ${System.currentTimeMillis() - t0} ms")
         }
 
     override suspend fun cancelSeries(seriesTimerId: String): Unit =

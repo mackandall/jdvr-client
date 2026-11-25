@@ -246,6 +246,9 @@ internal fun GuideScreen(
                         .distinctBy { it.id }
                         .sortedBy { it.start }
                 }
+            // The details show the programme the cursor rests on: take its fresh copy, so a recording
+            // just cancelled (or set) loses (or gets) its tag without moving off and back.
+            focused?.let { f -> programs[f.channelId]?.firstOrNull { it.id == f.id }?.let { focused = it } }
             loaded =
                 loaded?.takeIf { (f, t) -> !from.isAfter(t) && !to.isBefore(f) }?.let { (f, t) -> minOf(f, from) to maxOf(t, to) }
                     ?: (from to to)
