@@ -24,6 +24,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -64,6 +65,11 @@ fun ScheduledScreen(
     var open by remember { mutableStateOf<String?>(null) }
     var note by remember { mutableStateOf<String?>(null) }
     var bufferIds by remember { mutableStateOf<Set<String>>(emptySet()) }
+    // A cancel under way: said at once, and further presses wait for it.
+    var cancelling by remember { mutableStateOf(false) }
+    // Each row's focus handle: after a cancel, focus goes to the row that took its place (not the menu).
+    val rowFocus = remember { mutableMapOf<String, FocusRequester>() }
+    var focusAfter by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(reload) {
@@ -74,6 +80,12 @@ fun ScheduledScreen(
             launch { bufferIds = Jdvr.backend.bufferPrograms() }
         }
         loaded = true
+        // Again once the list is redrawn without the cancelled row.
+        focusAfter?.let { id ->
+            delay(50)
+            rowFocus[id]?.focusSoon(1000)
+            focusAfter = null
+        }
     }
 
     Column(Modifier.fillMaxSize().padding(start = 28.dp, top = 24.dp, end = 28.dp)) {
@@ -115,7 +127,7 @@ fun ScheduledScreen(
                                 r = r,
                                 expanded = open == r.timerId,
                                 buffer = r.programId?.plainId() in bufferIds,
-                                modifier = if (r == list.first()) Modifier.focusRequester(entry) else Modifier,
+                                modifier = (if (r == list.first()) Modifier.focusRequester(entry) else Modifier).focusRequester(rowFocus.getOrPut(r.timerId) { FocusRequester() }),
                                 onToggle = { open = if (open == r.timerId) null else r.timerId },
                                 onNote = { msg ->
                                     note = msg
@@ -137,13 +149,22 @@ fun ScheduledScreen(
                                     }
                                 },
                                 onCancel = {
+                                    if (cancelling) return@ScheduleRow
+                                    cancelling = true
+                                    // Then the next row (not the menu, when its buttons go and then the row).
+                                    val i = list.indexOf(r)
+                                    val next = (list.getOrNull(i + 1) ?: list.getOrNull(i - 1))?.timerId
+                                    note = if (r.recordingNow) "Stopping ${r.name}…" else "Cancelling ${r.name}…"
                                     scope.launch {
                                         note =
                                             attemptResult {
                                                 Jdvr.backend.cancelRecording(r.timerId)
                                                 "Won't record ${r.name} at ${localTime(r.start)?.time()}."
                                             }.getOrElse { "Couldn't cancel: ${it.message}" }
+                                        cancelling = false
                                         open = null
+                                        focusAfter = next
+                                        next?.let { id -> launch { rowFocus[id]?.focusSoon(1000) } }
                                         delay(800)
                                         reload++
                                     }
@@ -170,10 +191,16 @@ private fun ScheduleRow(
 ) {
     val start = localTime(r.start)
     val end = localTime(r.end)
+    // ▼ from an opened row goes to its first action (Compose's own search picked the one nearest
+    // the row's middle: "Keep it").
+    val firstAction = remember { FocusRequester() }
+    var firstTaken = false
+
+    fun first(): Modifier = if (firstTaken) Modifier else Modifier.focusRequester(firstAction).also { firstTaken = true }
     Column {
         Surface(
             onClick = onToggle,
-            modifier = modifier.fillMaxWidth().height(52.dp),
+            modifier = modifier.fillMaxWidth().height(52.dp).focusProperties { if (expanded) down = firstAction },
             shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(8.dp)),
             colors = ClickableSurfaceDefaults.colors(containerColor = Jc.Panel, focusedContainerColor = Jc.FocusFill, contentColor = Jc.Text, focusedContentColor = Jc.Text),
             border = ClickableSurfaceDefaults.border(focusedBorder = Border(BorderStroke(2.dp, Jc.Focus))),
@@ -208,7 +235,7 @@ private fun ScheduleRow(
             Row(Modifier.padding(start = 14.dp, top = 6.dp, bottom = 6.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 // Only a recording in progress has something to watch.
                 if (r.recordingNow) {
-                    Button(if (buffer) "Watch the buffer from the start" else "Watch from the start", leading = { Text("⏮", color = Jc.Text) }) { onWatch(true) }
+                    Button(if (buffer) "Watch the buffer from the start" else "Watch from the start", modifier = first(), leading = { Text("⏮", color = Jc.Text) }) { onWatch(true) }
                     Button("Watch live", leading = { Text("▶", color = Jc.Text) }) { onWatch(false) }
                 }
                 // Only on a TV allowed to record (JellyDVR Space's device rights).
@@ -222,6 +249,7 @@ private fun ScheduleRow(
                             confirmCancel.isArmed -> "Press again to stop recording"
                             else -> "Stop this recording"
                         },
+                        modifier = first(),
                         leading = { if (r.recordingNow) Dot(Jc.Recording) else CancelDot() },
                     ) {
                         if (r.recordingNow) confirmCancel.press { onCancel() } else onCancel()
@@ -230,14 +258,14 @@ private fun ScheduleRow(
                 // Another airing of it instead (fewer tuners busy, commercial-free); Episode History.
                 if (!r.recordingNow && r.programId != null && !buffer) {
                     var airings by remember(r.timerId) { mutableStateOf(false) }
-                    Button("Other airings") { airings = true }
+                    Button("Other airings", modifier = first()) { airings = true }
                     if (airings) {
                         r.programId.toUuid()?.let { pid ->
                             AiringsDialog(programId = pid, onNote = onNote, onDismiss = { airings = false })
                         }
                     }
                 }
-                Button("Keep it", onClick = onToggle)
+                Button("Keep it", modifier = first(), onClick = onToggle)
             }
         }
     }

@@ -202,7 +202,13 @@ class JellyfinBackend private constructor(
             // The guide's timer id is the server's own: cancel it at once. Only an id the server doesn't
             // know (a plugin's external id) is looked up in the whole timer list, which is slow on a
             // busy server.
-            val direct = runCatching { api.liveTvApi.cancelTimer(timerId) }
+            var direct = runCatching { api.liveTvApi.cancelTimer(timerId) }
+            // A raw (timers.json) id, as JellyDVR Schedule's Upcoming lists them: Jellyfin's API id is
+            // derived from it, so work it out rather than fetch every timer.
+            if (direct.isFailure) {
+                val internal = internalTimerId(timerId)
+                if (internal != timerId) runCatching { api.liveTvApi.cancelTimer(internal) }.let { if (it.isSuccess) direct = it }
+            }
             if (direct.isFailure) {
                 val apiId =
                     api.liveTvApi
@@ -212,8 +218,18 @@ class JellyfinBackend private constructor(
                         ?.id ?: throw direct.exceptionOrNull()!!
                 api.liveTvApi.cancelTimer(apiId)
             }
-            android.util.Log.i("JDVR", "cancelRecording ${if (direct.isSuccess) "direct" else "via lookup"} in ${System.currentTimeMillis() - t0} ms")
+            android.util.Log.i("JDVR", "cancelRecording in ${System.currentTimeMillis() - t0} ms")
         }
+
+    /**
+     * Jellyfin's API id for a timer from its raw id (LiveTvDtoService.GetInternalTimerId): MD5 of
+     * "Emby" + id + "4", lower-cased, as UTF-16LE, printed as a .NET Guid (first three groups byte-swapped).
+     */
+    private fun internalTimerId(externalId: String): String {
+        val h = java.security.MessageDigest.getInstance("MD5").digest(("Emby" + externalId + "4").lowercase().toByteArray(Charsets.UTF_16LE))
+        val order = intArrayOf(3, 2, 1, 0, 5, 4, 7, 6, 8, 9, 10, 11, 12, 13, 14, 15)
+        return order.joinToString("") { "%02x".format(h[it]) }
+    }
 
     override suspend fun cancelSeries(seriesTimerId: String): Unit =
         io {
