@@ -59,17 +59,21 @@ class HomeData {
         get() = channels?.let { cs -> cs.firstOrNull { it.id.toString() == Jdvr.session.lastChannelId } ?: cs.firstOrNull() }
 
     suspend fun refresh() {
-        // All at once: the channel list is slow on a small box, and the other panels needn't wait for it.
+        // All at once: the channel list is slow on a small box (~2.5 s to read on an onn stick, the
+        // server answers in 40 ms), and the other panels needn't wait for it: the round counts as
+        // done once they're in, and the channels show when they come.
         coroutineScope {
             launch { attempt { Jdvr.backend.channels() }?.let { channels = it } }
-            launch { schedule = Jdvr.backend.schedule() ?: schedule.orEmpty() }
-            launch { Jdvr.backend.recordedShows()?.let { shows = it } }
-            launch { Jdvr.backend.tuners(null)?.let { tuners = it } }
-            launch { attempt { Jdvr.backend.homeExtras() }?.let { extras = it } }
-            launch { attempt { Jdvr.backend.alerts() }?.let { alerts = it } }
-            launch { bufferIds = Jdvr.backend.bufferPrograms() }
+            coroutineScope {
+                launch { schedule = Jdvr.backend.schedule() ?: schedule.orEmpty() }
+                launch { Jdvr.backend.recordedShows()?.let { shows = it } }
+                launch { Jdvr.backend.tuners(null)?.let { tuners = it } }
+                launch { attempt { Jdvr.backend.homeExtras() }?.let { extras = it } }
+                launch { attempt { Jdvr.backend.alerts() }?.let { alerts = it } }
+                launch { bufferIds = Jdvr.backend.bufferPrograms() }
+            }
+            round++
         }
-        round++
     }
 }
 

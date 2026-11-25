@@ -236,18 +236,23 @@ internal fun GuideScreen(
         val from = block
         val to = block.plusHours(fetchHours)
         try {
-            val fetched = Jdvr.backend.programs(list.map { it.id }, from, to).groupBy { it.channelId }
-            // Keep what was loaded outside this block (moving back shows it at once); drop what has ended.
+            // The first screenful of channels first, then the rest: decoding a whole block (~600
+            // programmes, ~670 KB) takes an onn stick ~3.5 s; the server answers in ~40 ms.
             val keepAfter = floorToHalfHour(LocalDateTime.now()).minusHours(1)
-            programs =
-                (programs.keys + fetched.keys).associateWith { id ->
-                    (fetched[id].orEmpty() + programs[id].orEmpty().filter { !it.end.isAfter(from) || !it.start.isBefore(to) })
-                        .filter { it.end.isAfter(keepAfter) }
-                        .distinctBy { it.id }
-                        .sortedBy { it.start }
-                }
-            // The details show the programme the cursor rests on: take its fresh copy, so a recording
-            // just cancelled (or set) loses (or gets) its tag without moving off and back.
+            val batches = if (list.size > FIRST_BATCH) listOf(list.take(FIRST_BATCH), list.drop(FIRST_BATCH)) else listOf(list)
+            for (batch in batches) {
+                val fetched = Jdvr.backend.programs(batch.map { it.id }, from, to).groupBy { it.channelId }
+                val asked = batch.map { it.id }.toSet()
+                // Keep what was loaded outside this block (moving back shows it at once); drop what has ended.
+                programs =
+                    (programs.keys + fetched.keys).associateWith { id ->
+                        val old = programs[id].orEmpty()
+                        (fetched[id].orEmpty() + if (id in asked) old.filter { !it.end.isAfter(from) || !it.start.isBefore(to) } else old)
+                            .filter { it.end.isAfter(keepAfter) }
+                            .distinctBy { it.id }
+                            .sortedBy { it.start }
+                    }
+            }
             focused?.let { f -> programs[f.channelId]?.firstOrNull { it.id == f.id }?.let { focused = it } }
             loaded =
                 loaded?.takeIf { (f, t) -> !from.isAfter(t) && !to.isBefore(f) }?.let { (f, t) -> minOf(f, from) to maxOf(t, to) }
@@ -989,7 +994,7 @@ private fun InfoBand(
         }
         Column(Modifier.weight(0.6f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(p.overview ?: "", color = Jc.Text.copy(alpha = 0.85f), fontSize = 15.sp, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-            Text(hint ?: ("OK  Watch · record · favourites" + if (deviceRights().archive && !p.isMovie) " · store" else ""), color = Jc.Muted, fontSize = 13.sp)
+            Text(hint ?: panelHint(p, store = deviceRights().archive && !p.isMovie), color = Jc.Muted, fontSize = 13.sp)
         }
     }
 }
@@ -1047,7 +1052,7 @@ private fun InfoPanel(
         p.overview?.let { Text(it, color = Jc.Muted, fontSize = 15.sp, maxLines = 10, overflow = TextOverflow.Ellipsis) }
         androidx.compose.foundation.layout
             .Spacer(Modifier.weight(1f))
-        Text(hint ?: "OK: watch, record, favourites", color = Jc.Muted, fontSize = 13.sp)
+        Text(hint ?: panelHint(p), color = Jc.Muted, fontSize = 13.sp)
     }
 }
 
@@ -1211,6 +1216,9 @@ private fun GuideRow(
         }
     }
 }
+
+/** Channels whose programmes the guide asks for first (about a screenful). */
+private const val FIRST_BATCH = 12
 
 private const val TILE_HINT = "OK  This channel's schedule"
 
@@ -1535,6 +1543,11 @@ internal fun estuaryGenreColour(p: Program): Color {
         else -> EstuaryOther
     }
 }
+
+/** What OK opens on [p] when it doesn't watch: the programme panel, and its main choices (Watch only while on). */
+private fun panelHint(p: Program, store: Boolean = false): String =
+    "OK: " + listOfNotNull(if (p.isOn()) "watch" else null, "record", if (p.isOn()) null else "other airings", "favourites", if (store) "store" else null)
+        .joinToString(", ")
 
 /** What OK does on [p] while a channel plays in the guide's picture, or when OK watches (null: the usual hint). */
 private fun liveHint(
