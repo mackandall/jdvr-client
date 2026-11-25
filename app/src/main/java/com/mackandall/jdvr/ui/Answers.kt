@@ -89,6 +89,13 @@ internal object Answers {
     /** For a screen opening: a kept answer is asked again (it may have changed); one on its way is waited for. */
     suspend fun <T> get(a: Ask<T>): T? = start(a, fresh = known(a)).await()
 
+    /** Drops a kept answer (something just changed it): the next screen asks afresh. */
+    fun forget(a: Ask<*>) {
+        checkServer()
+        done.remove(a.key)
+        pending.remove(a.key)
+    }
+
     /** Ask ahead, unless it's known or on its way. */
     fun prefetch(a: Ask<*>) {
         if (!known(a) && pending[a.key] == null) start(a)

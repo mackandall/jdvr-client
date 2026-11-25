@@ -53,6 +53,7 @@ import coil3.compose.AsyncImage
 import com.mackandall.jdvr.data.DateChannel
 import com.mackandall.jdvr.data.DateRecording
 import com.mackandall.jdvr.data.Jdvr
+import com.mackandall.jdvr.data.Prefs
 import com.mackandall.jdvr.data.toUuid
 import kotlinx.coroutines.delay
 import java.time.Instant
@@ -414,7 +415,14 @@ private fun DateDetails(r: DateRecording) {
             }
         }
         r.overview?.let { ScrollingText(it, r.id, Modifier.heightIn(max = 130.dp)) }
-        Text("OK Play  ·  Hold OK Options", color = Jc.Muted, fontSize = 14.sp)
+        // What Hold OK does here follows Settings › Remote (nothing, when it's off).
+        val hold =
+            when (Jdvr.prefs.holdOk) {
+                Prefs.HOLD_MENU -> "  ·  Hold OK Options"
+                Prefs.HOLD_DETAILS -> "  ·  Hold OK Details"
+                else -> ""
+            }
+        Text("OK Play$hold", color = Jc.Muted, fontSize = 14.sp)
     }
 }
 

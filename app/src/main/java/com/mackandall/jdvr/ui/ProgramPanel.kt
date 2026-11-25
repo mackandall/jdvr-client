@@ -145,7 +145,7 @@ internal fun ProgramPanel(
     ) {
         if (busy) return
         busy = true
-        if (working != null) note = working
+        note = working ?: "Working…"
         scope.launch {
             val t0 = System.currentTimeMillis()
             val msg =
@@ -161,6 +161,8 @@ internal fun ProgramPanel(
                     busy = false
                 }
             android.util.Log.i("JDVR", "guide action done in ${System.currentTimeMillis() - t0} ms: $msg")
+            // What was kept for this menu (watched, favourite, recording) is out of date now.
+            Answers.forget(ProgramAsk.panel(p))
             val done = onActed
             if (done != null) {
                 done(msg)

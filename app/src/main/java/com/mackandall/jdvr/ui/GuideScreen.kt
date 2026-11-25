@@ -369,6 +369,9 @@ internal fun GuideScreen(
                 guideScope.launch {
                     delay(1500) // the server schedules in the background
                     reload++
+                    // A favourite's airings are scheduled after it's saved: look again once they're in.
+                    delay(4500)
+                    reload++
                 }
             },
             modifier = Modifier.onFocusChanged { panelHasFocus = it.hasFocus },
@@ -757,6 +760,7 @@ internal fun GuideScreen(
                                                 GuideRow(
                                                     channel = ch,
                                                     programs = programs[ch.id].orEmpty(),
+                                                    loading = loaded == null,
                                                     windowStart = windowStart,
                                                     perMinute = perMinute,
                                                     gridWidth = gridWidth,
@@ -1078,6 +1082,8 @@ private fun NowLine(
 private fun GuideRow(
     channel: Channel,
     programs: List<Program>,
+    // Nothing loaded yet: an empty row is still coming, not missing.
+    loading: Boolean,
     windowStart: LocalDateTime,
     perMinute: Dp,
     gridWidth: Dp,
@@ -1118,7 +1124,7 @@ private fun GuideRow(
             }
             if (visible.isEmpty()) {
                 Box(Modifier.width(gridWidth).fillMaxHeight().background(Jc.Panel, RoundedCornerShape(8.dp)), contentAlignment = Alignment.CenterStart) {
-                    Text("No guide data", color = Jc.Muted, fontSize = 14.sp, modifier = Modifier.padding(start = 12.dp))
+                    Text(if (loading) "Loading…" else "No guide data", color = Jc.Muted, fontSize = 14.sp, modifier = Modifier.padding(start = 12.dp))
                 }
                 return@Row
             }
