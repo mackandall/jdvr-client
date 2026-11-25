@@ -53,6 +53,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.UUID
 
+/** A recording just scheduled from the panel, before the guide's reload gives its id. */
+internal const val PENDING_TIMER = "pending"
+
 /** The selected programme: details and what can be done with it. */
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
@@ -79,6 +82,9 @@ internal fun ProgramPanel(
     extra: (@Composable () -> Unit)? = null,
     // A channel plays in the guide's picture: "Watch here" puts this one there instead.
     onWatchHere: (() -> Unit)? = null,
+    // Record or Cancel worked: the programme as it is now (the guide marks its cell at once,
+    // before its reload brings the server's copy).
+    onProgramChanged: ((Program) -> Unit)? = null,
 ) {
     var p by remember(program.id) { mutableStateOf(program) }
     var airingsHere by remember(program.id) { mutableStateOf(false) }
@@ -141,6 +147,7 @@ internal fun ProgramPanel(
 
     fun act(
         working: String? = null,
+        changed: ((Program) -> Program)? = null,
         block: suspend () -> String?,
     ) {
         if (busy) return
@@ -163,6 +170,10 @@ internal fun ProgramPanel(
             android.util.Log.i("JDVR", "guide action done in ${System.currentTimeMillis() - t0} ms: $msg")
             // What was kept for this menu (watched, favourite, recording) is out of date now.
             Answers.forget(ProgramAsk.panel(p))
+            changed?.let { c ->
+                p = c(p)
+                onProgramChanged?.invoke(p)
+            }
             val done = onActed
             if (done != null) {
                 done(msg)
@@ -344,13 +355,18 @@ internal fun ProgramPanel(
                         } else if (p.isRecording && !isBuffer) {
                             // Under way it stops (what's recorded so far is kept); later, it won't record.
                             Button(if (p.isOn()) "Stop recording" else "Cancel recording", modifier = recordModifier, leading = { if (p.isOn()) Dot(Jc.Recording) else CancelDot() }) {
-                                act(if (p.isOn()) "Stopping…" else "Cancelling…") {
-                                    Jdvr.backend.cancelRecording(p.timerId!!)
+                                act(if (p.isOn()) "Stopping…" else "Cancelling…", changed = { it.copy(timerId = null) }) {
+                                    // Just scheduled here (marked before the guide's reload): ask for its id.
+                                    val id =
+                                        p.timerId?.takeIf { it != PENDING_TIMER }
+                                            ?: Jdvr.backend.program(p.id)?.timerId
+                                            ?: error("It isn't scheduled any more.")
+                                    Jdvr.backend.cancelRecording(id)
                                     if (p.isOn()) "Recording stopped: what was recorded so far is kept." else "Recording cancelled."
                                 }
                             }
                             // Start early / end late, and (JellyDVR Space) where this one is stored.
-                            Button("Recording options…", modifier = Modifier.fillMaxWidth()) { recordingOptions = p.timerId }
+                            Button("Recording options…", modifier = Modifier.fillMaxWidth()) { recordingOptions = p.timerId?.takeIf { it != PENDING_TIMER } }
                             // Sports overruns: put the normal end back, or add time by hand.
                             val om = OverrunMarks.latest
                             val ov = om?.recording(p.id.toString().plainId())
@@ -372,7 +388,7 @@ internal fun ProgramPanel(
                             }
                         } else {
                             Button("Record", modifier = recordModifier, leading = { Dot(Jc.Recording) }) {
-                                act("Scheduling…") {
+                                act("Scheduling…", changed = { it.copy(timerId = it.timerId ?: PENDING_TIMER) }) {
                                     Jdvr.backend.record(p.id, series = false)
                                     "Recording scheduled."
                                 }

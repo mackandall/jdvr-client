@@ -299,6 +299,8 @@ internal fun GuideScreen(
 
     // "Other airings" of a programme, opened from its panel (which closes as the dialog takes focus).
     var airingsFor by remember { mutableStateOf<Program?>(null) }
+    // The panel Other airings was opened from: closing them opens it again.
+    var panelBehindAirings by remember { mutableStateOf<Program?>(null) }
 
     // Focus gone from the actions panel (◄ to the menu, or back into the grid): it closes. After a
     // moment, so a button the panel swaps for another (Record → Cancel recording) doesn't close it.
@@ -346,7 +348,10 @@ internal fun GuideScreen(
             },
             onChanged = { reload++ },
             onClose = { closePanel() },
-            onOtherAirings = { airingsFor = it },
+            onOtherAirings = {
+                panelBehindAirings = p
+                airingsFor = it
+            },
             // The channel schedule has no details band: its menu shows the picture and every tag,
             // and the show's next airings on the channel.
             rich = scheduleFor != null,
@@ -362,6 +367,10 @@ internal fun GuideScreen(
                 } else {
                     null
                 },
+            onProgramChanged = { np ->
+                programs = programs + (np.channelId to programs[np.channelId].orEmpty().map { if (it.id == np.id) np else it })
+                if (focused?.id == np.id) focused = np
+            },
             // An action that worked: close the panel, say what happened, refresh the guide.
             onActed = { msg ->
                 guideNote = msg
@@ -829,6 +838,12 @@ internal fun GuideScreen(
                     },
                     onDismiss = {
                         airingsFor = null
+                        // Back to the panel it was opened from (its programme may have changed there).
+                        panelBehindAirings?.let { from ->
+                            panelBehindAirings = null
+                            selected = programs[from.channelId]?.firstOrNull { it.id == from.id } ?: from
+                            return@AiringsDialog
+                        }
                         // Back to the programme it was opened from.
                         guideScope.launch {
                             repeat(10) {

@@ -276,7 +276,9 @@ fun RecordedShowsScreen(
         // Unwatched (SageTV's submenu): shows with something new in them.
         val list = cards?.let { all -> if (unwatchedOnly) all.filter { it.unplayedCount > 0 } else all }
         when {
-            byDate && !plain && loaded -> {
+            // Not waiting for the cards: the list by date asks the server for its own (a plain
+            // server's answer sends it back to the cards).
+            byDate && !plain -> {
                 RecordingsByDate(
                     filter = filter,
                     reload = reloadCards,

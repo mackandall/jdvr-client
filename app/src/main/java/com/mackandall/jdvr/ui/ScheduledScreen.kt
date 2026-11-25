@@ -158,7 +158,7 @@ fun ScheduledScreen(
                                     scope.launch {
                                         note =
                                             attemptResult {
-                                                Jdvr.backend.cancelRecording(r.timerId)
+                                                Jdvr.backend.cancelRecording(r.apiId ?: r.timerId)
                                                 "Won't record ${r.name} at ${localTime(r.start)?.time()}."
                                             }.getOrElse { "Couldn't cancel: ${it.message}" }
                                         cancelling = false

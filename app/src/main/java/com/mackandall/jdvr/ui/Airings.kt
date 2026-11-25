@@ -92,11 +92,16 @@ private fun summary(
         }
     val f = r.guideFirst?.label
     val l = r.guideLast?.label
+    // Numbered episodes as a range ("S2 E3 to S2 E9"); titles alone (a sports matchup, a news
+    // headline) don't make one: how many showings instead.
+    val numbered = r.guideFirst?.episode != null && r.guideLast?.episode != null
     val has =
         when {
             r.isMovie || r.guideShowings == 0 -> null
-            f != null && l != null && f != l -> "$f to $l"
-            else -> l
+            numbered && f != l -> "$f to $l"
+            numbered -> l
+            r.guideShowings == 1 -> l?.let { "one showing ($it)" } ?: "one showing"
+            else -> "${r.guideShowings} showings"
         }
     val reach =
         when {

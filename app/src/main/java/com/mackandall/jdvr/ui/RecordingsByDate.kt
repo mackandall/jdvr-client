@@ -38,6 +38,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import kotlinx.coroutines.launch
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
@@ -52,6 +59,7 @@ import androidx.tv.material3.Text
 import coil3.compose.AsyncImage
 import com.mackandall.jdvr.data.DateChannel
 import com.mackandall.jdvr.data.DateRecording
+import com.mackandall.jdvr.data.DateRecordings
 import com.mackandall.jdvr.data.Jdvr
 import com.mackandall.jdvr.data.Prefs
 import com.mackandall.jdvr.data.toUuid
@@ -98,6 +106,9 @@ private sealed interface DateLine {
     ) : DateLine
 }
 
+/** The last list by date (server and filter, and the answer): shown at once on coming back. */
+private var lastByDate: Pair<String, DateRecordings>? = null
+
 /**
  * Recorded Shows as a list by date (SageTV's and Channels DVR's recent recordings): one line per
  * recording, newest first, grouped by day, each with the logo and number of the channel it came
@@ -121,12 +132,7 @@ fun RecordingsByDate(
     var focused by remember { mutableStateOf<DateRecording?>(null) }
     // The line last played, or whose menu or details were opened: focus comes back to it.
     var opened by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(filter, reload) {
-        val data = Jdvr.backend.recordingsByDate(filter)
-        if (data == null) {
-            onUnavailable()
-            return@LaunchedEffect
-        }
+    fun show(data: DateRecordings) {
         logoRight = data.dateLogo == "right"
         val result = mutableListOf<DateLine>()
         var day: String? = null
@@ -142,6 +148,19 @@ fun RecordingsByDate(
         lines = result
         focused = focused?.let { f -> data.recordings.firstOrNull { it.id == f.id } } ?: data.recordings.firstOrNull()
         loaded = true
+    }
+    LaunchedEffect(filter, reload) {
+        // The list as it was last time, at once (the server takes a few seconds); then brought up to date.
+        val key = Jdvr.serverKey + "|" + filter
+        val kept = lastByDate?.takeIf { it.first == key && !loaded }?.second
+        kept?.let(::show)
+        val data = Jdvr.backend.recordingsByDate(filter)
+        if (data == null) {
+            if (kept == null) onUnavailable()
+            return@LaunchedEffect
+        }
+        lastByDate = key to data
+        show(data)
     }
 
     if (!loaded) {
@@ -163,11 +182,36 @@ fun RecordingsByDate(
     // focus stays on whatever was under the player's control (a line or two up), which also takes
     // [focused] with it: so it's the line OK was pressed on that's kept, not the focused one.
     val firstItem = lines.indexOfFirst { it is DateLine.Item }
+    // Day by day: ► (or ⏩, CH−, Page down) to the next day's first line, ⏪ (CH+, Page up) back.
+    val listState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
+    val lineFocus = remember { HashMap<String, FocusRequester>() }
+    var focusedLine by remember { mutableStateOf(0) }
+
+    fun jumpDay(forward: Boolean) {
+        val days = lines.indices.filter { lines[it] is DateLine.Day }
+        val today = days.lastOrNull { it <= focusedLine } ?: return
+        val target = if (forward) days.firstOrNull { it > today } else days.lastOrNull { it < today }
+        val item = (target ?: return) + 1
+        val line = lines.getOrNull(item) as? DateLine.Item ?: return
+        scope.launch {
+            listState.scrollToItem(target)
+            lineFocus[line.r.id]?.focusSoon()
+        }
+    }
     val entryLine = lines.indexOfFirst { it is DateLine.Item && it.r.id == opened }.takeIf { it >= 0 } ?: firstItem
     Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(28.dp)) {
         LazyColumn(
-            state = rememberLazyListState(),
-            modifier = Modifier.weight(0.58f).fillMaxHeight(),
+            state = listState,
+            modifier =
+                Modifier.weight(0.58f).fillMaxHeight().onPreviewKeyEvent { k ->
+                    if (k.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                    when (k.key) {
+                        Key.DirectionRight, Key.MediaFastForward, Key.ChannelDown, Key.PageDown -> true.also { jumpDay(forward = true) }
+                        Key.MediaRewind, Key.ChannelUp, Key.PageUp -> true.also { jumpDay(forward = false) }
+                        else -> false
+                    }
+                },
             verticalArrangement = Arrangement.spacedBy(6.dp),
             contentPadding = PaddingValues(top = 6.dp, bottom = 40.dp, start = 6.dp, end = 6.dp),
         ) {
@@ -185,8 +229,12 @@ fun RecordingsByDate(
                             line.r,
                             line.at,
                             logoRight,
-                            if (i == entryLine) Modifier.focusRequester(entry) else Modifier,
-                            onFocus = { focused = line.r },
+                            (if (i == entryLine) Modifier.focusRequester(entry) else Modifier)
+                                .focusRequester(lineFocus.getOrPut(line.r.id) { FocusRequester() }),
+                            onFocus = {
+                                focused = line.r
+                                focusedLine = i
+                            },
                             onClick = {
                                 opened = line.r.id
                                 line.r.id
@@ -422,7 +470,7 @@ private fun DateDetails(r: DateRecording) {
                 Prefs.HOLD_DETAILS -> "  ·  Hold OK Details"
                 else -> ""
             }
-        Text("OK Play$hold", color = Jc.Muted, fontSize = 14.sp)
+        Text("OK Play$hold  ·  ► next day", color = Jc.Muted, fontSize = 14.sp)
     }
 }
 

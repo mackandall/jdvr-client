@@ -195,6 +195,8 @@ data class FavouritesList(
 @Serializable
 data class Upcoming(
     @SerialName("TimerId") val timerId: String = "",
+    // Jellyfin's API id for the timer (JellyDVR Schedule's TimerId is the stored one); null: TimerId is it.
+    @SerialName("ApiId") val apiId: String? = null,
     @SerialName("ProgramId") val programId: String? = null,
     @SerialName("Name") val name: String = "",
     @SerialName("EpisodeTitle") val episodeTitle: String? = null,
