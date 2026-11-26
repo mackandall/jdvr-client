@@ -266,6 +266,14 @@
     "imageUrl": "https://raw.githubusercontent.com/mackandall/jellyfin-plugin-jellydvr-space/master/icon.png",
     "versions": [
       {
+        "version": "1.1.3.0",
+        "changelog": "Storage folders: + Add folder opens a folder picker (drives with free space, new folder, TV + Movies subfolders), Browse… on each row, Add to library… for folders outside a library, and library + free space shown per folder. New-folder defaults (floor % of drive, use when low, TV/Movies split) are settings.",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/mackandall/jellyfin-plugin-jellydvr-space/releases/download/v1.1.3.0/jellyfin-plugin-jellydvr-space_1.1.3.0.zip",
+        "checksum": "90d7ddf6262bf5bb37d9c2c7959ed1ac",
+        "timestamp": "2026-11-26T08:08:00.0000000Z"
+      },
+      {
         "version": "1.1.2.0",
         "changelog": "Archive automatically (off by default): rules move finished recordings to your storage folders once they are processed (scanned, joined, not waiting to be recorded again) and watched or old enough; Preview shows what would move and what each recording waits for. Moving the last recording out of a folder no longer leaves a duplicate behind.",
         "targetAbi": "12.0.0.0",
